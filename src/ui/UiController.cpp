@@ -153,7 +153,7 @@ void UiController::build() {
     lv_obj_set_style_length(scale, width_*2/100, LV_PART_ITEMS); lv_obj_set_style_length(scale, width_*4/100, LV_PART_INDICATOR);
     lv_obj_remove_flag(scale, LV_OBJ_FLAG_CLICKABLE);
     title_ = label(face_, page_ == Screen::Main ? app_.name() : page_ == Screen::Magic ? "MAGIC MODES" :
-        page_ == Screen::Eccentric ? "ECCENTRIC OVERLOAD" : "DROPSET", cw, height_*14/100, &lv_font_montserrat_18);
+        page_ == Screen::Eccentric ? "ECCENTRIC" : "DROPSET", cw, height_*14/100, &lv_font_montserrat_18);
     if (page_ == Screen::Main) bind(title_, BackDevices);
     lv_label_set_long_mode(title_, LV_LABEL_LONG_DOT);
     status_ = label(face_, "", cw, height_*21/100);
