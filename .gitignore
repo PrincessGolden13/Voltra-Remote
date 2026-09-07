@@ -1,0 +1,12 @@
+.venv/
+.pio/
+.tools/
+build/
+out/
+__pycache__/
+*.pyc
+LocalConfig.h
+local/
+*.local.json
+*.log
+.DS_Store
