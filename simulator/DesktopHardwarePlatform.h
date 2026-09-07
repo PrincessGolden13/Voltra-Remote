@@ -17,6 +17,7 @@ public:
     Display& display() override { return *this; }
     TouchInput& touch() override { return *this; }
     RotaryInput& rotary() override { return *this; }
+    std::optional<uint8_t> batteryPercent() const override { return 75; } // Explicit simulated remote battery.
     uint16_t width() const override { return size_; }
     uint16_t height() const override { return size_; }
     uint64_t nowMs() const override {

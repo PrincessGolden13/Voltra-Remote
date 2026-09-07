@@ -18,6 +18,10 @@ The Magic, EO and Dropset controls below the weight toggle on a short tap.
 Hold a control to edit it. Turn the wheel in the editor, then Apply & Back.
 In RP, tap Drops, Drop % or Hold to choose which value the wheel changes.
 Device-reported settings choose LB/KG and percentage/absolute modifiers.
+The UI follows the supplied mockups with cyan circular controls, pink EO
+accents, a four-tile device picker and three simultaneously visible RP dials.
+Use the picker's touch arrows for additional devices. The outlined RP dial
+selects rotary focus; all three RP parameters remain active.
 
 ## Offline scenarios
 

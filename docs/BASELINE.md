@@ -30,3 +30,13 @@ remain explicit future milestones.
   blocked by the Windows capture helper's unsupported SetIsBorderRequired API.
 - No new test code was created; no new interaction/safety pass is claimed.
 - Physical BLE remains unimplemented and no physical motor was engaged.
+
+## Mockup visual update
+
+- Native build passes after adding the smaller/larger dial fonts and vector UI.
+- All six layouts (including Stairs and RP) render at 360, 466 and 480 pixels.
+- Additional KG, loaded Twin and unsupported-MTN layouts render successfully.
+- Visual review corrected device-name wrapping, Magic footer clipping, and
+  RP scale-label stacking. RP keeps all three values visible and active.
+- Native interaction capture remains blocked as documented above; no new
+  interaction test or physical validation is claimed.

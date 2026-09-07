@@ -13,8 +13,9 @@ editing Auto Load/Unload configuration is still outside this app.
 - Show online devices bright and remembered offline devices dim. Offline taps
   do nothing; online taps connect and open the weight screen.
 - Refresh availability every five seconds. Rotary rotation and press do nothing.
-- More discoveries can be shown in the touch-scrollable list beyond four saved
-  entries; discovering a device does not evict a saved connection.
+- Show four circular tiles per page, with touch arrows for additional discoveries;
+  discovering a device does not evict a saved connection. Online tiles glow cyan;
+  offline tiles, their link icons and status badges are dim.
 
 ## 2. Weight
 
@@ -67,6 +68,8 @@ Magic, without the IC/C/MTN selector.
 - All three mandatory RP settings stay visible and active together (e.g. Drops
   2, Drop % 50%, Hold 1s). An outlined field indicates rotary editing focus;
   the other fields are not disabled or deselected.
+- The supplied visual mockup places these values in three large circular dials
+  across the center. The outer tick scale and caption follow the editing focus.
 - Require movement before a qualifying stationary hold. One uninterrupted hold
   produces one drop, not repeated drops. Movement rearms the next set.
 - RP reductions compound from the last reported weight, rounded down to one
@@ -94,6 +97,14 @@ Encoder press remains an unload/load shortcut outside Devices; a small weight
 status target provides unload/cancel on editor screens.
 
 ## Evidence boundary
+
+The user's five supplied visual mockups guide the native LVGL presentation:
+cyan rings and active ticks, white active numbers, dark inactive numbers,
+pink EO accents, circular device/mode selectors, and outlined Apply buttons.
+Scale endpoints and midpoint are computed from the current reported limit;
+the illustrative 230/300 maxima in artwork are not hard-coded capabilities.
+Remote battery comes through HardwarePlatform. Desktop explicitly simulates
+75% and labels the footer SIM; hardware without a reading shows unknown.
 
 CONFIRMED (official UI documentation): long press on the weight activates Auto
 Load; the existing device behavior uses a stable cable hold.
