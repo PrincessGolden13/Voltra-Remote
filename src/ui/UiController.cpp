@@ -219,8 +219,11 @@ void UiController::build() {
             if (draftDrops_.mode == DropMode::RestPause) {
                 for (int i=0; i<3; ++i) {
                     auto* field = button(face_, i == 0 ? "DROPS" : i == 1 ? "DROP %" : "HOLD",
-                        width_*(17+i*23)/100, height_*66/100, width_*21/100, height_*9/100, FieldDrops+i);
+                        width_*(17+i*23)/100, height_*66/100, width_*21/100, height_*12/100, FieldDrops+i);
                     miniValue_[i] = lv_obj_get_child(field, 0); miniArc_[i] = field;
+                    lv_label_set_long_mode(miniValue_[i], LV_LABEL_LONG_WRAP);
+                    lv_obj_set_style_radius(field, width_/40, 0);
+                    lv_obj_set_style_border_width(field, 2, 0);
                 }
             }
         }
@@ -301,8 +304,17 @@ void UiController::update() {
                 std::to_string(draftDrops_.drops+1)+" total sets" : dropField_ == 1 ? "Reduction each set" : "Hold steady to drop");
             lv_arc_set_value(arc_, percentOf(std::abs(n), editMaximum()));
             for (int i=0; i<2; ++i) color(choice_[i], int(draftDrops_.mode) == i ? amber : muted);
-            if (draftDrops_.mode == DropMode::RestPause)
-                for (int i=0; i<3; ++i) color(miniArc_[i], dropField_ == i ? amber : muted);
+            if (draftDrops_.mode == DropMode::RestPause) {
+                value(miniValue_[0], "DROPS\n"+std::to_string(draftDrops_.drops));
+                value(miniValue_[1], "DROP %\n"+std::to_string(draftDrops_.percent)+"%");
+                value(miniValue_[2], "HOLD\n"+std::to_string(draftDrops_.holdSeconds)+"s");
+                for (int i=0; i<3; ++i) {
+                    // Every RP parameter is active. The border denotes rotary focus only.
+                    color(miniArc_[i], amber);
+                    lv_obj_set_style_border_color(miniArc_[i], lv_color_hex(dropField_ == i ? amber : 0x344152), 0);
+                    lv_obj_set_style_bg_color(miniArc_[i], lv_color_hex(dropField_ == i ? 0x293140 : 0x17202d), 0);
+                }
+            }
         } else {
             draftValue_ = std::clamp(draftValue_, 0, editMaximum());
             value(weight_, std::to_string(draftValue_)); color(weight_, page_ == Screen::Magic ? purple : blue);

@@ -64,6 +64,9 @@ Magic, without the IC/C/MTN selector.
   Drops are 0–9; percentage 0–80; hold 1–9 seconds. Single-digit ceilings follow
   the requested single-digit fields. Zero drops or 0% produce no reduction.
 - Tap the RP field to assign the rotary dial to it. The center shows that value.
+- All three mandatory RP settings stay visible and active together (e.g. Drops
+  2, Drop % 50%, Hold 1s). An outlined field indicates rotary editing focus;
+  the other fields are not disabled or deselected.
 - Require movement before a qualifying stationary hold. One uninterrupted hold
   produces one drop, not repeated drops. Movement rearms the next set.
 - RP reductions compound from the last reported weight, rounded down to one
