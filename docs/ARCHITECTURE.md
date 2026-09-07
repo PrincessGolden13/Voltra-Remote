@@ -1,0 +1,64 @@
+# Application architecture
+
+The product is standalone. Phone, PC, cloud, Wi-Fi, Home Assistant and Cortex
+are not runtime requirements. The Windows simulator is a development host.
+
+```text
+UiController (Devices / Main / Magic / EO / Drops)
+  -> TrainingApplication (selection, intent, limits, dropset engine)
+     -> DeviceMemory (four recent IDs/names; desktop file adapter)
+     -> VoltraController (connection, GATT discovery, packet observations)
+        -> BleTransport (generic scan/connect/subscribe/write)
+     -> ControlSession (VOLTRA semantic operations and TrainingReport)
+        -> MockTransport / per-device synthetic state
+        -> physical implementation: NOT PROVIDED
+
+UiController -> HardwarePlatform -> Display / Touch / Rotary
+                                  -> Windows adapter
+                                  -> unidentified prototype: BLOCKED
+```
+
+LVGL 9.3.0 is shared application code. Relative geometry supports 360, 466 and
+480 px round displays. The host applies a circular Windows region and reserves
+only the top 10% rim for dragging, so the connected-name touch target works.
+
+TrainingApplication scans every five seconds, merges live discoveries with
+four recent successful connections, and leaves the picker touch-only.
+Persistence is injected through DeviceMemory; shared UI/controller code does
+not know Windows paths or file formats. Only the desktop adapter persists to
+the executable directory; hardware storage remains a future adapter.
+
+TrainingReport is a full semantic observation: displayed weight/units, modifier
+representation and values, explicit capabilities/combined limit, Twin state,
+load/Auto Load state, and normalized rep/movement/hold telemetry. Only the
+offline mock implements this report currently. The existing strict protocol
+decoder still validates fragmented base-state packets independently. Mock
+semantic reports are not claimed to be captured packets or a physical decoder.
+
+Editor drafts live in UiController. Main-screen weight, modifier values and
+activation come from reports, never transport acceptance. Weight intent is
+retained only to accumulate explicit rotary input while a response is pending.
+A later report wins even if it differs; three seconds without a report clears
+pending UI state. Neither case triggers a retry or corrective write.
+
+The semantic settings operation is atomic in the mock. A future physical
+adapter must implement proven ordering/transactions and response matching;
+multiple individual BLE writes must not pretend to be atomic.
+
+Dropsets are remote-local settings and controller logic. Rep/hold reports drive
+strictly reducing weight requests. RP requires movement between qualifying
+holds, counts confirmed reductions, and compounds from returned weight.
+Stairs deduplicates counters and stops on gaps/resets. Missing or mismatched
+reports never cause a replay. Unknown/stale telemetry disarms reductions.
+An unload request cancels reductions even if unloading is not confirmed.
+
+Auto Load is an explicit one-shot semantic trigger. Its device-side progress
+is displayed; the remote never runs a timer that sends a load. The mock models
+a three-second stable hold after arming. No Auto Load/Unload configuration setter
+is exposed.
+
+No real-device-safe release exists. Remaining physical work includes validated
+bootstrap/read decoding, capability and modifier representation mapping, MTN,
+Twin routing, rep/hold telemetry normalization, live-setting safety, command
+generations/ordering, and board drivers. Defaults in ControlSession return
+unsupported/unknown; physical features cannot become enabled by UI defaults.

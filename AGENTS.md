@@ -3,6 +3,8 @@
 Read `docs/PROJECT_REQUIREMENTS.md` for the complete user brief. Own development,
 debugging, documentation, builds and Git; request human help only for inaccessible
 information, permissions or physical observations/actions.
+Read `docs/APP_FLOW.md` for the user's later five-screen specification and the
+documented precedence over the original setup milestone.
 
 - Core scope: Weight Training controls. Device settings, cable length, DTR,
   isokinetic testing and additional modes are deferred scope.
@@ -23,9 +25,13 @@ information, permissions or physical observations/actions.
 - Never load on boot, reconnect, restore, mode change, wake or Twin transition.
   Every load requires a current explicit user action and fresh, known-safe machine
   state, readiness, mode, capability and required Twin peer state. No force/bypass.
-- Auto Load and Auto Unload configuration is strictly read-only in every path.
+- Auto Load/Unload configuration remains read-only. The revised five-screen
+  brief authorizes an explicit long press to trigger the existing Auto Load
+  behavior, once, without retries or changing its settings.
 - Keep unload immediately accessible, including while requests are pending or
   state is stale. Never claim a disconnected remote can physically stop a device.
+- The weight number is the primary load/unload touch target; no large separate
+  STOP button. Confirmed loaded numbers are bright, unloaded numbers darker.
 - Initial setup must not enable or physically test resistance commands. Automated
   tests use mocks/fixtures only and never intentionally engage a physical motor.
 - Isolate simulator builds from real BLE at compile/link time.
