@@ -262,6 +262,10 @@ void UiController::build() {
         lv_obj_set_style_transform_scale_y(weight_, width_*340/480, 0);
         unit_ = label(center_, "", size*90/100, size*64/100, small); color(unit_, soft);
         hint_ = label(center_, "", size*90/100, size*77/100, small); color(hint_, soft);
+        if (page_ == Screen::Main) {
+            lv_obj_align(unit_, LV_ALIGN_TOP_MID, 0, size*59/100);
+            lv_obj_align(hint_, LV_ALIGN_TOP_MID, 0, size*70/100);
+        }
     }
     if (page_ == Screen::Main) {
         for (int i=0; i<3; ++i) {
@@ -366,7 +370,7 @@ void UiController::update() {
         color(weight_, !app_.fresh() ? amber : r.loaded ? bright : muted);
         value(unit_, unitName(r.unit));
         value(hint_, !app_.fresh() ? "State unknown\nTap to unload" : r.autoLoadArmed ? "Auto Load armed\nTap to cancel" :
-            r.loaded ? "Tap to unload" : "Tap: On / Off\nHold: Auto Load");
+            r.loaded ? "Tap to unload" : "Tap: On / Off\nHold: Autoload");
         value(status_, r.twinKnown ? (r.twin ? "Twin" : "") : "Twin unknown");
         color(status_, r.twinKnown ? cyan : amber);
         if (r.twinKnown && r.twin) {
