@@ -13,7 +13,9 @@ Necessary fixed values are named and their meaning is documented:
 | simulator/MockVoltra.cpp | 50 lb, 80% battery, modes 4/5 and workout state 1 | Explicitly synthetic scenario data, not defaults for real devices |
 | simulator/MockTransport.h/.cpp | 500 ms reporting, 7-byte fragments | Synthetic transport behavior to exercise reassembly |
 | simulator/MockTransport.h/.cpp | 350 ms command delay; device examples 200 LB, 90 KG, 400 LB | Mock behavior only; no physical capability inference |
-| simulator/main.cpp | Supported 360/466/480 sizes, 16 ms UI timer | Initial desktop validation scope, configurable per run via --size |
+| simulator/SimulatorApp.h and native hosts | Supported 360/466/480 sizes, 16 ms UI timer | Desktop validation scope, configurable per run via --size |
+| simulator/main_mac.mm | 10 trackpad points per encoder step; momentum ignored | Tunable Mac input policy; arrow keys provide exact steps |
+| tools/Build-Desktop.sh | macOS deployment target 12.0 | Initial Mac target, native architecture by default; Mac compile/runtime validation pending |
 | ui/UiController.cpp | Cyan/pink palette; percentage geometry; scaled 48 px weight font; 41 markers over 240 degrees | User mockup reference; labels/progress follow the current limit; physical legibility validation still needed |
 | ui/UiController.cpp / lv_conf.h | 12/14/18/28/36/48 px fonts; four device tiles per touch page | Readable native layout at 360/466/480 px; no rasterized UI text |
 | HardwarePlatform / DesktopHardwarePlatform | Optional battery reading; desktop reports synthetic 75% | Remote battery, not VOLTRA battery; unknown when no hardware reading exists |

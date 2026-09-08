@@ -1,5 +1,7 @@
 #pragma once
+#ifdef _WIN32
 #include <windows.h>
+#endif
 #include "controller/DeviceMemory.h"
 #include <filesystem>
 #include <fstream>
@@ -25,7 +27,14 @@ public:
           for (size_t i = 0; i < std::min(size_t(4), recent.size()); ++i)
               out << std::quoted(recent[i].id) << ' ' << std::quoted(recent[i].name) << '\n';
           out.close(); if (!out) return false; }
+#ifdef _WIN32
         return MoveFileExW(temp.c_str(), path_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+        // POSIX rename atomically replaces an existing file on the same filesystem.
+        std::error_code error;
+        std::filesystem::rename(temp, path_, error);
+        return !error;
+#endif
     }
 private:
     std::filesystem::path path_;

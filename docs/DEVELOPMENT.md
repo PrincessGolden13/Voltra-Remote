@@ -5,7 +5,15 @@ Project-local ignored `.venv` contains the pins in tools/requirements-dev.txt.
 No VS Code, Visual Studio, Arduino IDE, Android toolchain, Cortex or Home
 Assistant installation is needed for the foundation.
 
-## Native build
+## macOS
+
+See [Mac simulator setup](MAC_SIMULATOR.md) for Apple Command Line Tools,
+CMake, the verified LVGL download, build and launch commands. Mac uses
+`build/mac/voltra_simulator.app`; Windows keeps `build/native`. Both hosts share
+`simulator/SimulatorApp.h` for startup, scenarios, arguments and BMP output,
+plus the same LVGL UI and controller. No Windows toolchain is needed on Mac.
+
+## Windows native build
 
 Run `tools/Build-Desktop.ps1` from PowerShell. It uses native CMake, Ninja and
 Zig's bundled Clang/Windows libraries. Compiler/cache paths are derived from the

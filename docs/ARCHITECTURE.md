@@ -1,7 +1,7 @@
 # Application architecture
 
 The product is standalone. Phone, PC, cloud, Wi-Fi, Home Assistant and Cortex
-are not runtime requirements. The Windows simulator is a development host.
+are not runtime requirements. Windows and macOS simulators are development hosts.
 
 ```text
 UiController (Devices / Main / Magic / EO / Drops)
@@ -14,19 +14,29 @@ UiController (Devices / Main / Magic / EO / Drops)
         -> physical implementation: NOT PROVIDED
 
 UiController -> HardwarePlatform -> Display / Touch / Rotary
-                                  -> Windows adapter
+                                  -> Windows / macOS adapters
                                   -> unidentified prototype: BLOCKED
 ```
 
 LVGL 9.3.0 is shared application code. Relative geometry supports 360, 466 and
-480 px round displays. The host applies a circular Windows region and reserves
+480 px round displays. Hosts apply a circular Windows region or transparent
+AppKit window with circular clipping. Each reserves
 only the top 10% rim for dragging, so the connected-name touch target works.
 
 TrainingApplication scans every five seconds, merges live discoveries with
 four recent successful connections, and leaves the picker touch-only.
 Persistence is injected through DeviceMemory; shared UI/controller code does
-not know Windows paths or file formats. Only the desktop adapter persists to
-the executable directory; hardware storage remains a future adapter.
+not know host paths or file formats. Windows stores beside its executable;
+Mac stores in the user's Application Support/VOLTRA Remote directory. File
+replacement uses MoveFileExW on Windows and filesystem rename on Mac.
+Hardware storage remains a future adapter.
+
+SimulatorApp owns the shared application lifetime, scenario keys, argument
+validation and platform-independent BMP encoder. main.cpp supplies Win32
+painting/events; main_mac.mm supplies an AppKit window, main-run-loop timer,
+Retina-scaled framebuffer drawing, mouse/trackpad and keyboard events. Both
+compile/link only the mock BLE implementation. The Mac build is an app bundle;
+the Windows build remains an executable. Build directories are separate.
 
 TrainingReport is a full semantic observation: displayed weight/units, modifier
 representation and values, explicit capabilities/combined limit, Twin state,

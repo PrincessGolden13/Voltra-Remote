@@ -40,3 +40,17 @@ remain explicit future milestones.
   RP scale-label stacking. RP keeps all three values visible and active.
 - Native interaction capture remains blocked as documented above; no new
   interaction test or physical validation is claimed.
+
+## macOS host implementation
+
+- CONFIRMED on Windows: CMake/Ninja/Zig build passes with the shared
+  SimulatorApp runtime. All six layouts render at 360, 466 and 480 pixels.
+- Sixteen of 18 BMP files match the saved mockup renders byte-for-byte. The
+  other two are Main at 466/480, whose old references predate the previously
+  committed unit/hint spacing adjustment; UI source is unchanged in this port.
+- Mac AppKit host, native build/setup/launch scripts and portable memory/BMP
+  handling are implemented. Build output is isolated in build/mac.
+- UNVERIFIED: Mac compilation and interactive execution (including Retina,
+  trackpad, window lifecycle and persistence). No Mac or Apple SDK is available
+  in this Windows session; shell scripts could not be executed here either.
+- No new test code, physical BLE implementation or physical validation added.

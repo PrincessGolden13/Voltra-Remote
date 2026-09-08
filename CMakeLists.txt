@@ -31,10 +31,10 @@ endif()
 add_executable(packet_inspector tools/packet_inspector/main.cpp)
 target_link_libraries(packet_inspector PRIVATE voltra_core)
 
-option(VOLTRA_BUILD_SIMULATOR "Build offline Windows LVGL simulator" ON)
+option(VOLTRA_BUILD_SIMULATOR "Build offline Windows/macOS LVGL simulator" ON)
 if(VOLTRA_BUILD_SIMULATOR)
-    if(NOT WIN32)
-        message(FATAL_ERROR "The initial desktop display adapter supports Windows only")
+    if(NOT WIN32 AND NOT APPLE)
+        message(FATAL_ERROR "Desktop display adapters support Windows and macOS")
     endif()
     set(LVGL_DIR "${CMAKE_SOURCE_DIR}/.tools/lvgl-9.3.0" CACHE PATH "Pinned LVGL source directory")
     if(NOT EXISTS "${LVGL_DIR}/CMakeLists.txt")
@@ -47,10 +47,25 @@ if(VOLTRA_BUILD_SIMULATOR)
     add_subdirectory("${LVGL_DIR}" "${CMAKE_BINARY_DIR}/lvgl")
     add_library(voltra_ui src/ui/UiController.cpp)
     target_link_libraries(voltra_ui PUBLIC voltra_core lvgl)
-    add_executable(voltra_simulator simulator/main.cpp simulator/MockVoltra.cpp simulator/MockTransport.cpp)
+    if(APPLE)
+        enable_language(OBJCXX)
+        add_executable(voltra_simulator MACOSX_BUNDLE simulator/main_mac.mm)
+        set_target_properties(voltra_simulator PROPERTIES
+            OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED YES OBJCXX_EXTENSIONS NO
+            MACOSX_BUNDLE_BUNDLE_NAME "VOLTRA Simulator"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "local.voltra.simulator"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0")
+        target_compile_options(voltra_simulator PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+        target_link_libraries(voltra_simulator PRIVATE "-framework Cocoa" "-framework CoreGraphics")
+    else()
+        add_executable(voltra_simulator simulator/main.cpp)
+        target_link_libraries(voltra_simulator PRIVATE gdi32 user32)
+    endif()
+    target_sources(voltra_simulator PRIVATE simulator/MockVoltra.cpp simulator/MockTransport.cpp)
     target_include_directories(voltra_simulator PRIVATE simulator)
     target_compile_definitions(voltra_simulator PRIVATE VOLTRA_SIMULATOR=1 NOMINMAX)
-    target_link_libraries(voltra_simulator PRIVATE voltra_ui gdi32 user32)
+    target_link_libraries(voltra_simulator PRIVATE voltra_ui)
     # Explicit source lists: no board code, NimBLE or physical BLE library linked.
 endif()
 # New test code is deferred per PROJECT_REQUIREMENTS. No fake CTest targets.

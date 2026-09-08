@@ -1,44 +1,9 @@
-#include "DesktopHardwarePlatform.h"
-#include "MockTransport.h"
-#include "ui/UiController.h"
-#include "DesktopDeviceMemory.h"
+#include "SimulatorApp.h"
 #include <windows.h>
 #include <windowsx.h>
-#include <fstream>
-#include <iostream>
-#include <string>
 
 namespace {
-struct App {
-    voltra::DesktopHardwarePlatform hardware;
-    voltra::MockTransport transport;
-    voltra::VoltraController controller;
-    voltra::DesktopDeviceMemory memory;
-    voltra::TrainingApplication application;
-    voltra::UiController ui;
-    static std::filesystem::path memoryPath() {
-        wchar_t path[32768]{};
-        GetModuleFileNameW(nullptr, path, 32768);
-        return std::filesystem::path(path).parent_path() / "recent-voltras.txt";
-    }
-    explicit App(uint16_t size, bool persist) : hardware(size), controller(transport, {}, &transport),
-        memory(memoryPath()), application(transport, controller, transport, persist ? &memory : nullptr),
-        ui(hardware, application) {}
-};
-void saveBitmap(const voltra::DesktopHardwarePlatform& display, const std::string& path) {
-    BITMAPFILEHEADER file{};
-    BITMAPINFOHEADER info{};
-    info.biSize = sizeof(info); info.biWidth = display.width(); info.biHeight = -int(display.height());
-    info.biPlanes = 1; info.biBitCount = 32; info.biCompression = BI_RGB;
-    info.biSizeImage = DWORD(display.pixels().size()*sizeof(uint32_t));
-    file.bfType = 0x4d42; file.bfOffBits = sizeof(file)+sizeof(info);
-    file.bfSize = file.bfOffBits + info.biSizeImage;
-    std::ofstream out(path, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(&file), sizeof(file));
-    out.write(reinterpret_cast<const char*>(&info), sizeof(info));
-    out.write(reinterpret_cast<const char*>(display.pixels().data()), info.biSizeImage);
-    if (!out) throw std::runtime_error("Could not save render");
-}
+using App = voltra::SimulatorApp;
 LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* app = reinterpret_cast<App*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
     if (message == WM_NCCREATE) {
@@ -71,20 +36,8 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         if (wParam == VK_LEFT) app->hardware.rotate(-1);
         if (wParam == VK_RIGHT) app->hardware.rotate(1);
         if ((wParam == VK_RETURN || wParam == VK_SPACE) && !(lParam & (1L<<30))) app->hardware.press();
-        if (wParam >= VK_F1 && wParam <= VK_F4) {
-            app->application.leave();
-            app->application.scan();
-            app->application.select(voltra::MockTransport::deviceId);
-            app->transport.setProfile(static_cast<voltra::SimulatorProfile>(wParam-VK_F1));
-            app->ui.navigate(voltra::Screen::Main);
-        }
-        if (wParam == VK_F5) { app->application.leave(); app->ui.navigate(voltra::Screen::Devices); }
-        if (wParam == VK_F6) app->application.scan();
-        if (wParam == VK_F7) app->transport.toggleAvailability();
-        if (wParam == VK_F8 && !(lParam & (1L<<30))) app->transport.completeRep();
-        if (wParam == VK_F9) app->transport.setHeld(true);
-        if (wParam == VK_F10) app->transport.setHeld(false);
-        if (wParam == VK_F11) app->transport.ignoreNextRequest();
+        if (wParam >= VK_F1 && wParam <= VK_F11)
+            app->functionKey(int(wParam - VK_F1 + 1), (lParam & (1L << 30)) != 0);
         return 0;
     case WM_TIMER: app->ui.tick(); InvalidateRect(hwnd, nullptr, FALSE); return 0;
     case WM_PAINT: {
@@ -103,44 +56,13 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 int main(int argc, char** argv) {
     try {
-        int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0;
-        std::string renderPath;
-        for (int i = 1; i < argc; ++i) {
-            const std::string option = argv[i];
-            if (i+1 >= argc) throw std::runtime_error("Missing argument value");
-            if (option == "--size") size = std::stoi(argv[++i]);
-            else if (option == "--render") renderPath = argv[++i];
-            else if (option == "--profile") profile = std::stoi(argv[++i]);
-            else if (option == "--screen") screen = std::stoi(argv[++i]);
-            else if (option == "--device") device = std::stoi(argv[++i]);
-            else if (option == "--drop-mode") dropMode = std::stoi(argv[++i]);
-            else throw std::runtime_error("Unknown argument");
-        }
-        if ((size != 360 && size != 466 && size != 480) || profile < 0 || profile > 3)
-            throw std::runtime_error("Supported sizes: 360, 466, 480. Profiles: 0 unloaded, 1 loaded, 2 stale, 3 coworker unknown.");
-        if (screen < 0 || screen > 4 || device < 0 || device > 4 || dropMode < 0 || dropMode > 1)
-            throw std::runtime_error("Screens 0-4; devices 0-4; drops 0 stairs, 1 rest-pause.");
-        App app{uint16_t(size), renderPath.empty()};
-        app.ui.tick();
-        if (screen != 0) {
-            app.application.select(device == 0 ? voltra::MockTransport::deviceId :
-                std::string(voltra::MockTransport::deviceId)+'-'+std::to_string(device));
-            app.transport.setProfile(static_cast<voltra::SimulatorProfile>(profile));
-            app.application.tick(app.hardware.nowMs());
-            if (dropMode == 1) {
-                auto d = app.application.drops(); d.mode = static_cast<voltra::DropMode>(dropMode);
-                app.application.applyDrops(d);
-            }
-            app.ui.navigate(static_cast<voltra::Screen>(screen));
-            app.ui.tick();
-        }
-        if (!renderPath.empty()) {
-            // Native LVGL off-screen output; no window, radio, browser or Internet.
-            lv_refr_now(nullptr);
-            saveBitmap(app.hardware, renderPath);
-            std::cout << "Rendered offline LVGL simulator to " << renderPath << "\n";
-            return 0;
-        }
+        const auto options = voltra::SimulatorOptions::parse(argc, argv);
+        wchar_t executablePath[32768]{};
+        if (!GetModuleFileNameW(nullptr, executablePath, 32768))
+            throw std::runtime_error("Could not find executable path");
+        App app(options, std::filesystem::path(executablePath).parent_path() / "recent-voltras.txt");
+        if (app.render(options)) return 0;
+        const int size = options.size;
         SetProcessDPIAware();
         WNDCLASSA windowClass{}; windowClass.lpfnWndProc = windowProc;
         windowClass.hInstance = GetModuleHandle(nullptr); windowClass.lpszClassName = "VoltraOfflineSimulator";

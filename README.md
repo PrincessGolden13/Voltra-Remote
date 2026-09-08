@@ -1,7 +1,7 @@
 # VOLTRA Remote
 
 Standalone round touchscreen/rotary Weight Training remote, with a shared LVGL
-application and an offline Windows simulator.
+application and offline Windows and macOS simulators.
 
 **Physical BLE control is not enabled.** All current devices, capabilities,
 weight changes, Auto Load and telemetry are synthetic. The unidentified
@@ -9,7 +9,10 @@ prototype board remains blocked.
 
 ## Run
 
-Open `build/native/voltra_simulator.exe`. It starts at the device picker.
+On Windows, open `build/native/voltra_simulator.exe`.
+On Mac, follow [Mac setup](docs/MAC_SIMULATOR.md), then run
+`bash tools/Run-Simulator.sh` or open `build/mac/voltra_simulator.app`.
+Both start at the device picker and share the same screens and controls.
 Tap a VOLTRA; turn the mouse wheel or use Left/Right to adjust weight. Tap the
 weight to load/unload; hold it for 650 ms to request Auto Load. Tap the name to
 return to the picker. Drag the top rim to move the window; Escape closes it.
@@ -45,12 +48,14 @@ after a three-second hold. Tap the weight to cancel.
 
 Five simulated VOLTRAs provide different scenarios. Studio reports KG and
 absolute modifiers; Twin reports its own combined limit; Travel omits MTN.
-Recent connections are stored in `recent-voltras.txt` beside the executable
+Recent connections are stored in `recent-voltras.txt` beside the Windows executable
+or in `~/Library/Application Support/VOLTRA Remote/` on Mac
 (maximum four, most recent first). No load intent is stored.
 
 ## Build and documentation
 
-Build with `tools/Build-Desktop.ps1`.
+Build Windows with `tools/Build-Desktop.ps1`; build Mac with
+`bash tools/Build-Desktop.sh`. See [Mac setup and validation status](docs/MAC_SIMULATOR.md).
 [Revised five-screen specification](docs/APP_FLOW.md),
 [development/render options](docs/DEVELOPMENT.md),
 [architecture](docs/ARCHITECTURE.md),
