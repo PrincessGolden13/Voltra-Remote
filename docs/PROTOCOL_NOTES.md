@@ -3,6 +3,16 @@
 Source revisions are fixed in [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md).
 Physical validation in this project: **none**.
 
+## September 20 SDK follow-up
+
+See the [0.15.0 review](SDK_REVIEW_2026_09_20.md). The release supports retaining
+our strict framing, signed eccentric decoding, reconnect reset and device-report
+confirmation policies. Physical acceptance/refusal plus a post-acceptance read
+remain mandatory before a real session can become ready. IC selector/value and
+width, Auto Load phases and device limits remain unverified here and unresolved
+in the upstream review. Heartbeat per-rep means must not be used as live motion
+observations for rest-pause hold detection.
+
 ## GATT and connection
 
 CONFIRMED (cross-source): service `E4DADA34-0867-8783-9F70-2CA29216C7E4`,

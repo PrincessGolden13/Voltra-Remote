@@ -1,5 +1,10 @@
 # Upstream audit — 2026-09-06 (Mountain time)
 
+Follow-up: [SDK 0.15.0 applicability review, September 20](SDK_REVIEW_2026_09_20.md)
+records the user-supplied 1adf43b commit, fixes already covered by our C++ subset,
+and remaining physical-protocol uncertainties. The original pins below remain
+the historical baseline, not a claim that 0.12.3 is the latest SDK.
+
 The complete user brief is preserved in PROJECT_REQUIREMENTS.md. Repository was
 empty (unborn master, no remote, no configured Git author). Research checkouts
 are outside the application, under `%TEMP%/voltra-reference-audit/`.

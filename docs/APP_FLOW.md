@@ -114,7 +114,12 @@ CONFIRMED (this source only): desktop scenarios implement all five screens and
 synthetic capabilities, modifier reports, rep/hold telemetry and Auto Load.
 The new TrainingReport adapter is not a physical protocol decoder.
 
-UNVERIFIED on hardware: Auto Load trigger/response mapping, MTN wire semantics,
+UNVERIFIED on hardware: IC selector/value mapping and width, Auto Load trigger/response mapping, MTN wire semantics,
 device-selected percentage representation, combined envelope and Twin routing,
 rep/hold detection thresholds and safe live weight changes. No BLE resistance
 commands or physical motor tests have been added.
+
+The [September 20 SDK review](SDK_REVIEW_2026_09_20.md) reinforces that the
+upstream heartbeat contains per-rep means, not a live stationary-cable signal.
+Physical RP requires a verified live motion source; the simulator's explicit
+hold/movement events do not establish that mapping.
