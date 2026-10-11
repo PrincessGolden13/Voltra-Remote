@@ -1,8 +1,9 @@
 # Guition K5 offline hardware validation
 
 User authorization: October 11, proceed with JC3636K518 as the working target
-without dismantling the unit. Physical screen/input behavior remains UNVERIFIED
-until observed. This target does not mark the older prototype_21 as identified.
+without dismantling the unit. User subsequently confirmed the screen and touch
+basically work; input calibration follow-up is below. This target does not mark
+the older prototype_21 as identified.
 
 ## Evidence
 
@@ -24,8 +25,12 @@ The new driver uses the installed Espressif SPI master and Arduino Wire APIs.
 
 - QSPI: clock 13, CS 14, data 15/16/17/18, reset 21, backlight 47.
 - Touch: I2C address 0x15, SDA 11, SCL 12, reset 10, interrupt 9.
-- Encoder A/B: 8/7. Gray-code decoding, four transitions per detent. Direction
-  is a named board constant; clockwise-positive still needs a physical check.
+- Rotary directional contacts: 8 = clockwise, 7 = counterclockwise according to
+  the reference's bidi_switch_knob driver. Each independently completed low pulse
+  produces one signed unit, without a quadrature divider. Minimum low duration
+  is 3 ms, matching the reference's sampling interval; shorter bounce pulses are
+  discarded. Interrupt capture accumulates clicks during display transfers.
+  Direction and one-click calibration await physical confirmation of this fix.
 - Press candidate: GPIO 0, 30 ms debounce. Physical accessibility must be checked.
 - Display: RGB565 wire conversion from the shared XRGB8888 UI buffer, synchronous
   eight-row transfers at a conservative 20 MHz. Init table retains panel delays.
@@ -90,3 +95,25 @@ Physical image quality, touch alignment, encoder direction and press remain
 UNVERIFIED until user observation. First-start diagnostics report missing voltra-ui
 NVS namespace (defaults are used) and invalid old bytes at the new crash-dump
 partition; neither prevents UI startup. No whole-chip erase was performed.
+
+## October 11 input follow-up
+
+CONFIRMED by user: screen and touch basically work, but Green took two taps;
+clockwise reduced weight and many clicks were needed for one unit. Source audit
+found a driver mismatch: this board's reference uses independent directional
+pulses, whereas the first build incorrectly decoded quadrature transitions.
+Replaced that decoder with one debounced pulse per adjustment. The pulse mapping
+is source-confirmed; physical calibration remains UNVERIFIED until retested.
+
+Touch samples now reach LVGL immediately before the main UI tick. Unchanged text
+no longer causes repeated label allocation/layout work. These address possible
+missed short taps; the user's exact double-tap cause is not physically confirmed.
+No new test code was added. Embedded and Windows simulator builds passed; USB
+upload verified the new application hash. Application size: 912,192 bytes.
+
+Real-device discovery remains planned after offline UI validation, as agreed with
+the user. The Devices flow already accepts scan results through BleTransport;
+the hardware release needs the real transport, VOLTRA service filtering,
+connection/handshake, device-reported capabilities, and saved recent devices.
+This build continues using the six synthetic devices and initializes no radio.
+Discovery/connection must never itself issue a load command.

@@ -6,7 +6,7 @@ namespace {
 constexpr uint32_t white = 0xf5f8ff, dim = 0x647384;
 const char* themes[] = {"Red", "Green", "Blue", "Yellow", "Purple", "Pink", "Orange", "Teal", "Gray"};
 std::string number(int index) { char b[8]; std::snprintf(b,sizeof(b),"P%02d",index+1); return b; }
-void text(lv_obj_t* o,const std::string& s) { if(o) lv_label_set_text(o,s.c_str()); }
+void text(lv_obj_t* o,const std::string& s) { if(o && s != lv_label_get_text(o)) lv_label_set_text(o,s.c_str()); }
 }
 uint32_t UiController::accent() const {
     constexpr uint32_t colors[] = {0xff4949,0x48e092,0x479cff,0xffda45,0xad77ff,0xff75bf,0xffa04d,0x00d9e8,0xb9c5ce};

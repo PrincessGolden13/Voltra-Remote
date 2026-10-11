@@ -9,7 +9,7 @@ constexpr uint32_t bg = 0x04080b, bright = 0xf5f8ff, muted = 0x59677d;
 constexpr uint32_t soft = 0x96a7bd, amber = 0xffc374;
 
 void color(lv_obj_t* obj, uint32_t c) { lv_obj_set_style_text_color(obj, lv_color_hex(c), 0); }
-void value(lv_obj_t* obj, const std::string& text) { if (obj) lv_label_set_text(obj, text.c_str()); }
+void value(lv_obj_t* obj, const std::string& text) { if (obj && text != lv_label_get_text(obj)) lv_label_set_text(obj, text.c_str()); }
 int percentOf(int n, int max) { return max > 0 ? std::clamp(n*1000/max, 0, 1000) : 0; }
 }
 lv_obj_t* UiController::label(lv_obj_t* parent, const std::string& text, int w, int y, const lv_font_t* font) {
@@ -619,6 +619,7 @@ void UiController::update() {
 }
 void UiController::largeValue(const std::string& text) {
     if(!weight_) return;
+    if(text == lv_label_get_text(weight_)) return;
     lv_label_set_text(weight_,text.c_str());
     lv_obj_set_width(weight_,LV_SIZE_CONTENT);
     lv_obj_update_layout(weight_);

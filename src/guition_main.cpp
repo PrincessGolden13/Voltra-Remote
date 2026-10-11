@@ -25,6 +25,9 @@ void setup() {
 void loop() {
     if(!ui) {delay(100);return;}
     board.poll();
+    // Deliver each sampled press/release before rendering instead of waiting for
+    // LVGL's separate input timer, which can skip a short tap between frames.
+    ui->readTouch();
     while(Serial.available()) {
         const char c=Serial.read();
         if(c=='r') transport.completeRep();if(c=='h') transport.setHeld(true);if(c=='m') transport.setHeld(false);

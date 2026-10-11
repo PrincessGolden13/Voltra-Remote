@@ -21,14 +21,18 @@ private:
     static constexpr int d0Pin=15,d1Pin=16,d2Pin=17,d3Pin=18;
     static constexpr int touchSda=11,touchScl=12,touchReset=10,touchIrq=9;
     static constexpr int encoderA=8,encoderB=7,pressPin=0;
-    static constexpr int encoderDirection=1, transitionsPerDetent=4;
+    // K5 is a bidirectional pulse switch, not an A/B quadrature encoder.
+    // Reference bidi_switch_knob: GPIO 8 = right, GPIO 7 = left.
+    static constexpr int encoderDirection=1;
+    static constexpr uint32_t minimumPulseUs=3000;
     spi_device_handle_t spi_=nullptr;
     uint8_t* pixels_=nullptr;
     TouchPoint touchPoint_;
-    volatile int edges_=0;
+    volatile int clicks_=0;
     volatile uint8_t encoderState_=0;
+    volatile uint32_t pulseStarted_[2]={0,0};
+    volatile bool pulseActive_[2]={false,false};
     portMUX_TYPE mux_=portMUX_INITIALIZER_UNLOCKED;
-    int remainder_=0;
     bool ready_=false,pressCandidate_=false,pressStable_=false,pressed_=false;
     uint32_t pressChanged_=0,lastTouch_=0;
     static void IRAM_ATTR encoderInterrupt(void*);

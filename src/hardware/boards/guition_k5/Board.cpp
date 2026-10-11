@@ -58,16 +58,28 @@ bool Board::begin() {
 }
 void IRAM_ATTR Board::encoderInterrupt(void* context) {
     auto* b=static_cast<Board*>(context);
+    const uint32_t now=uint32_t(esp_timer_get_time());
     const uint8_t next=(digitalRead(encoderA)<<1)|digitalRead(encoderB);
-    // Gray-code transitions reject simultaneous two-bit jumps/contact noise.
-    static const int8_t steps[]={0,-1,1,0,1,0,0,-1,-1,0,0,1,0,1,-1,0};
     portENTER_CRITICAL_ISR(&b->mux_);
-    b->edges_+=steps[(b->encoderState_<<2)|next];b->encoderState_=next;
+    // Each contact independently pulses low once per click in its direction.
+    // Count release after a stable low pulse; short contact bounces do not count.
+    // Interrupt capture preserves clicks while the display is transferring.
+    for(int channel=0;channel<2;++channel) {
+        const uint8_t mask=channel==0 ? 2 : 1;
+        if((next&mask)==(b->encoderState_&mask)) continue;
+        if(!(next&mask)) {
+            b->pulseStarted_[channel]=now;b->pulseActive_[channel]=true;
+        } else {
+            if(b->pulseActive_[channel] && uint32_t(now-b->pulseStarted_[channel])>=minimumPulseUs)
+                b->clicks_+=channel==0 ? 1 : -1;
+            b->pulseActive_[channel]=false;
+        }
+    }
+    b->encoderState_=next;
     portEXIT_CRITICAL_ISR(&b->mux_);
 }
 int Board::getDelta() {
-    portENTER_CRITICAL(&mux_);int edges=edges_;edges_=0;portEXIT_CRITICAL(&mux_);
-    remainder_+=edges;const int delta=remainder_/transitionsPerDetent;remainder_%=transitionsPerDetent;
+    portENTER_CRITICAL(&mux_);const int delta=clicks_;clicks_=0;portEXIT_CRITICAL(&mux_);
     if(delta) Serial.printf("Knob %d\n",delta*encoderDirection);
     return delta*encoderDirection;
 }
