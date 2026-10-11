@@ -1,22 +1,20 @@
 #include "UiController.h"
+#include "UiActions.h"
 #include <algorithm>
 #include <stdexcept>
 #include <cmath>
 namespace voltra {
 namespace {
 constexpr uint32_t bg = 0x04080b, bright = 0xf5f8ff, muted = 0x59677d;
-constexpr uint32_t cyan = 0x00d9ff, pink = 0xff386f, soft = 0x96a7dd, amber = 0xffc374;
-const char* modeName(MagicMode mode) {
-    return mode == MagicMode::InverseChains ? "Inverse Chains" : mode == MagicMode::Chains ? "Chains" : "Mountain";
-}
-enum Action { Select = 1, BackDevices, Weight, Magic, EO, Drops, Apply, ModeIC, ModeC, ModeMTN,
-    Stairs, RP, FieldDrops, FieldPercent, FieldHold, Unload, PreviousDevices, NextDevices };
+constexpr uint32_t soft = 0x96a7bd, amber = 0xffc374;
+
 void color(lv_obj_t* obj, uint32_t c) { lv_obj_set_style_text_color(obj, lv_color_hex(c), 0); }
 void value(lv_obj_t* obj, const std::string& text) { if (obj) lv_label_set_text(obj, text.c_str()); }
 int percentOf(int n, int max) { return max > 0 ? std::clamp(n*1000/max, 0, 1000) : 0; }
 }
 lv_obj_t* UiController::label(lv_obj_t* parent, const std::string& text, int w, int y, const lv_font_t* font) {
     auto* obj = lv_label_create(parent); value(obj, text); lv_obj_set_width(obj, w);
+    lv_obj_set_style_text_color(obj, lv_color_hex(bright), 0);
     lv_obj_set_style_text_font(obj, font, 0); lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, y); lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     return obj;
@@ -53,7 +51,7 @@ lv_obj_t* UiController::arc(lv_obj_t* parent, int size, uint32_t c) {
 void UiController::glow(lv_obj_t* obj, uint32_t accent, bool active) {
     lv_obj_set_style_border_width(obj, active ? std::max(2, width_/160) : 1, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(active ? accent : 0x39475b), 0);
-    lv_obj_set_style_bg_color(obj, lv_color_hex(active ? 0x073043 : 0x0c131b), 0);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(bg), 0);
     lv_obj_set_style_bg_grad_color(obj, lv_color_hex(bg), 0);
     lv_obj_set_style_bg_grad_dir(obj, LV_GRAD_DIR_VER, 0);
     lv_obj_set_style_shadow_color(obj, lv_color_hex(accent), 0);
@@ -84,33 +82,41 @@ lv_obj_t* UiController::linkIcon(lv_obj_t* parent, int size, uint32_t c) {
 }
 void UiController::buildScale() {
     for (int i=0; i<tickCount; ++i) {
-        const double a = (150.0 + i*240.0/(tickCount-1))*3.141592653589793/180.0;
+        const double a = (180.0 + i*180.0/(tickCount-1))*3.141592653589793/180.0;
         auto& p = tickPoints_[i];
-        p[0] = {lv_value_precise_t(width_*.5 + width_*.39*std::cos(a)), lv_value_precise_t(height_*.44 + width_*.39*std::sin(a))};
-        p[1] = {lv_value_precise_t(width_*.5 + width_*.36*std::cos(a)), lv_value_precise_t(height_*.44 + width_*.36*std::sin(a))};
+        p[0] = {lv_value_precise_t(width_*.5 + width_*.39*std::cos(a)), lv_value_precise_t(height_*.54 + width_*.39*std::sin(a))};
+        p[1] = {lv_value_precise_t(width_*.5 + width_*.36*std::cos(a)), lv_value_precise_t(height_*.54 + width_*.36*std::sin(a))};
         ticks_[i] = lv_line_create(face_); lv_line_set_points(ticks_[i], p.data(), 2);
         lv_obj_set_style_line_width(ticks_[i], std::max(2, width_/125), 0);
         lv_obj_remove_flag(ticks_[i], LV_OBJ_FLAG_CLICKABLE);
     }
     const auto* font = width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14;
-    scaleLabels_[1] = label(face_, "", width_/4, height_/100, font);
-    scaleLabels_[0] = label(face_, "", width_/6, height_*64/100, font);
-    scaleLabels_[2] = label(face_, "", width_/6, height_*64/100, font);
-    lv_obj_align(scaleLabels_[0], LV_ALIGN_TOP_MID, -width_*39/100, height_*64/100);
-    lv_obj_align(scaleLabels_[2], LV_ALIGN_TOP_MID, width_*39/100, height_*64/100);
-    for (auto* item : scaleLabels_) color(item, soft);
+    for (auto& item : scaleLabels_) item = label(face_, "", width_/7, 0, font);
+
 }
 void UiController::updateScale(int selected, int maximum, const std::string& suffix, uint32_t accent, bool negative) {
     const int progress = percentOf(selected, maximum);
     for (int i=0; i<tickCount; ++i)
         lv_obj_set_style_line_color(ticks_[i], lv_color_hex(progress > 0 && i*1000/(tickCount-1) <= progress ? accent : 0x46526b), 0);
-    value(scaleLabels_[0], "0"+suffix);
-    const std::string sign = negative ? "-" : "";
-    value(scaleLabels_[1], sign+std::to_string(maximum/2)+(maximum%2 ? ".5" : ""));
-    value(scaleLabels_[2], sign+std::to_string(maximum)+suffix);
+    const int step = maximum <= 10 ? std::max(1,maximum/4) : maximum <= 100 ? 20 : maximum <= 300 ? 50 : 100;
+    std::vector<int> landmarks{0};
+    for (int n=step;n<maximum && landmarks.size()<6;n+=step) landmarks.push_back(n);
+    if (maximum > 0) landmarks.push_back(maximum);
+    for (size_t i=0;i<7;++i) {
+        if(i >= landmarks.size()) { value(scaleLabels_[i], ""); continue; }
+        const int n=landmarks[i];
+        const double a=(180.0+(maximum > 0 ? 180.0*n/maximum : 0))*3.141592653589793/180;
+        value(scaleLabels_[i],std::string(negative && n ? "-" : "")+std::to_string(n));
+        lv_obj_set_align(scaleLabels_[i],LV_ALIGN_TOP_LEFT);
+        lv_obj_set_pos(scaleLabels_[i],int(width_*.5+width_*.455*std::cos(a))-width_/14,
+            int(height_*.54+width_*.455*std::sin(a))-7);
+    }
+    (void)suffix;
+
 }
 
-UiController::UiController(HardwarePlatform& h, TrainingApplication& app) : hardware_(h), app_(app) {
+UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store) : hardware_(h), app_(app), store_(store) {
+    if (store_) config_ = store_->load();
     if (!h.capabilities().coreInputsValid()) throw std::runtime_error("Unsupported display/input target");
     lv_init(); width_ = h.display().width(); height_ = h.display().height();
     drawBuffer_.resize(size_t(width_)*height_); display_ = lv_display_create(width_, height_);
@@ -126,18 +132,27 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app) : hard
     lv_indev_set_long_press_time(touch_, 650);
     lv_indev_set_read_cb(touch_, [](lv_indev_t* input, lv_indev_data_t* data) {
         auto* s = static_cast<UiController*>(lv_indev_get_user_data(input)); const auto p = s->hardware_.touch().sample();
+        if (p.pressed) {
+            s->activityAt_ = s->hardware_.nowMs();
+            if (s->sleeping_) { s->sleeping_ = false; s->wakeTouch_ = true; }
+        }
         data->point = {int32_t(p.x*(s->width_-1)), int32_t(p.y*(s->height_-1))};
-        data->state = p.pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        data->state = p.pressed && !s->wakeTouch_ ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        if (!p.pressed) s->wakeTouch_ = false;
     });
     lastTickMs_ = hardware_.nowMs();
 }
 UiController::~UiController() { lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
 void UiController::readTouch() { lv_indev_read(touch_); }
 void UiController::navigate(Screen page) {
+    if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
+    if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
+    editorFocus_ = 0; editDirty_ = returnAfterEdit_ = false;
     next_ = page; rebuild_ = true;
     const auto r = app_.report();
     if (page == Screen::Magic || page == Screen::Eccentric) {
         draftMode_ = r.settings.magicMode;
+        draftPercent_ = (page == Screen::Magic ? r.settings.magic : r.settings.eccentric).percent;
         if (page == Screen::Magic && !r.magicSupported[int(draftMode_)])
             for (int i = 0; i < 3; ++i) if (r.magicSupported[i]) { draftMode_ = MagicMode(i); break; }
         draftValue_ = page == Screen::Magic ? r.settings.magic.value : r.settings.eccentric.value;
@@ -145,6 +160,7 @@ void UiController::navigate(Screen page) {
     if (page == Screen::Drops) { draftDrops_ = app_.drops(); dropField_ = 1; }
 }
 void UiController::act(int action, const std::string& id, bool held) {
+    activityAt_ = hardware_.nowMs();
     if (!held && (action == PreviousDevices || action == NextDevices)) {
         const size_t count = (app_.devices().size()+3)/4;
         if (action == PreviousDevices && devicePage_ > 0) --devicePage_;
@@ -153,9 +169,62 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action == Select) { if (!held && app_.select(id)) navigate(Screen::Main); return; }
     if (action == BackDevices && !held) { app_.leave(); navigate(Screen::Devices); return; }
-    if (action == Weight) { if (held) app_.autoLoad(); else app_.toggleWeight(); return; }
+    if (action == Weight) {
+        if (held) app_.autoLoad();
+        else if (!weightFocused_ && !app_.report().loaded && app_.fresh() && !app_.pending()) weightFocused_ = true;
+        else app_.toggleWeight();
+        return;
+    }
+    if (action == OpenPresets && !held) { presetIndex_ = std::max(0,activePreset_); navigate(Screen::Presets); return; }
+    if (action == ChoosePreset) {
+        if (presetIndex_ == int(config_.presets.size())) { saveDraft_ = app_.currentPreset(); navigate(Screen::SavePreset); }
+        else if (held) { saveDraft_ = app_.currentPreset(); navigate(Screen::OverridePreset); }
+        else if (app_.applyPreset(config_.presets[presetIndex_])) { pendingPreset_ = presetIndex_; navigate(Screen::Main); }
+        return;
+    }
+    if (held) {
+        if (action != Magic && action != EO && action != Drops) return;
+    }
+    if (action == PrevPreset || action == NextPreset) { rotate(action == PrevPreset ? -1 : 1); return; }
+    if (action == CancelRecipe) { navigate(page_ == Screen::Presets ? Screen::Main : Screen::Presets); return; }
+    if (action == SaveRecipe) {
+        auto previous = config_;
+        if (presetIndex_ == int(config_.presets.size()) && config_.presets.size() < 99) config_.presets.push_back(saveDraft_);
+        else if (presetIndex_ < int(config_.presets.size())) config_.presets[presetIndex_] = saveDraft_;
+        if (store_ && !store_->save(config_)) { config_ = previous; value(message_, "Could not save preset"); return; }
+        navigate(Screen::Presets); return;
+    }
+    if (action == OpenSettings) { navigate(Screen::Settings); return; }
+    if (action == CloseSettings) { saveConfiguration(); navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return; }
+    if (action >= ThemeField && action <= SleepField) { settingsField_ = action-ThemeField; return; }
+    if (action >= OpenWifi && action <= OpenReset) {
+        navigate(action == OpenWifi ? Screen::Wifi : action == OpenUpdates ? Screen::Updates : action == OpenAbout ? Screen::About : Screen::Reset); return;
+    }
+    if (action == ConfirmReset) {
+        auto old = config_; config_ = {};
+        if (store_ && !store_->save(config_)) { config_ = old; value(message_, "Reset could not be saved"); return; }
+        activePreset_ = pendingPreset_ = -1; navigate(Screen::Settings); return;
+    }
+    if (action == Disable) { editDirty_ = false; activePreset_ = pendingPreset_ = -1; app_.disableModifier(page_ == Screen::Magic); return; }
+    if (action == ModeFocus) { editorFocus_ = 1; return; }
+    if (action == AmountFocus) { editorFocus_ = 0; return; }
+    if (action == BackMain) {
+        if(editDirty_) { returnAfterEdit_ = true; editedAt_ = 0; }
+        else navigate(Screen::Main);
+        return;
+    }
+    if(action == UnitFocus) { editorFocus_ = 2; return; }
+    if(action == UnitPercent || action == UnitAbsolute) {
+        editorFocus_ = 2;
+        const bool percent=action == UnitPercent;
+        if(app_.report().modifierUnitsSelectable && (!percent || app_.report().percentageSupported) && percent != draftPercent_) {
+            draftPercent_ = percent; draftValue_ = std::clamp(draftValue_,0,editMaximum()); edited();
+        }
+        return;
+    }
     if (action == Unload && !held) { if (app_.report().loaded || app_.report().autoLoadArmed || !app_.fresh()) app_.toggleWeight(); return; }
     if (action == Magic || action == EO || action == Drops) {
+        weightFocused_ = false; activePreset_ = pendingPreset_ = -1;
         const auto r = app_.report();
         if (action == Magic && std::none_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; })) return;
         if (action == EO && !r.eccentricSupported) return;
@@ -167,11 +236,11 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (held) return;
     if (action == Apply) {
         if (page_ == Screen::Drops) { draftDrops_.enabled = true; app_.applyDrops(draftDrops_); }
-        else app_.applyModifier(page_ == Screen::Magic, draftMode_, draftValue_);
+        else app_.applyModifier(page_ == Screen::Magic, draftMode_, draftValue_, draftPercent_);
         navigate(Screen::Main);
     } else if (action >= ModeIC && action <= ModeMTN) {
         auto mode = MagicMode(action-ModeIC);
-        if (app_.report().magicSupported[int(mode)]) draftMode_ = mode;
+        if (app_.report().magicSupported[int(mode)]) { draftMode_ = mode; editorFocus_ = 1; edited(); }
     } else if (action == Stairs || action == RP) {
         draftDrops_.mode = action == Stairs ? DropMode::Stairs : DropMode::RestPause;
         next_ = page_; rebuild_ = true;
@@ -182,10 +251,15 @@ void UiController::build() {
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
+    presetTile_ = presetValue_ = stats_ = start_ = nextWeight_ = nullptr;
+    for (auto& item : settingsValues_) item = nullptr;
+    for (auto& item : liveValues_) item = nullptr;
+    for (auto& item : unitChoices_) item = nullptr;
     for (int i=0; i<3; ++i) {
         stairs_[i] = tiles_[i] = miniArc_[i] = miniValue_[i] = modeLabels_[i] = choice_[i] = nullptr;
-        scaleLabels_[i] = choiceNames_[i] = nullptr;
+        choiceNames_[i] = nullptr;
     }
+    for (auto& item : scaleLabels_) item = nullptr;
     page_ = next_; rebuild_ = false;
     auto* screen = lv_display_get_screen_active(display_);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x030507), 0);
@@ -197,15 +271,18 @@ void UiController::build() {
     lv_obj_set_style_border_color(face_, lv_color_hex(0x2c3440), 0);
     const auto* small = width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14;
     const auto* medium = width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
-    battery_ = label(face_, "", width_*45/100, height_*94/100, small); color(battery_, soft);
+    battery_ = label(face_, "", width_*45/100, height_*91/100, small); color(battery_, soft);
+    if (int(page_) >= int(Screen::Presets)) { buildExtra(); return; }
     if (page_ == Screen::Devices) {
+        auto* gear = button(face_, LV_SYMBOL_SETTINGS, width_*44/100, height_*4/100, width_*12/100, height_*9/100, OpenSettings);
+        color(gear, accent());
         const auto& devices = app_.devices();
         const size_t pages = std::max(size_t(1), (devices.size()+3)/4);
         devicePage_ = std::min(devicePage_, pages-1);
         for (size_t i=0; i<4 && devicePage_*4+i < devices.size(); ++i) {
             const auto& d = devices[devicePage_*4+i];
             const int size = width_*32/100;
-            auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, cyan, d.online);
+            auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, accent(), d.online);
             if (d.online) bind(tile, Select, d.id);
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
             auto* icon = linkIcon(tile, size*40/100, d.online ? bright : muted);
@@ -217,11 +294,11 @@ void UiController::build() {
             auto* badge = lv_obj_create(tile); lv_obj_remove_style_all(badge);
             lv_obj_set_size(badge, size*61/100, size*19/100); lv_obj_align(badge, LV_ALIGN_TOP_MID, 0, size*69/100);
             lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0); lv_obj_set_style_border_width(badge, 1, 0);
-            lv_obj_set_style_border_color(badge, lv_color_hex(d.online ? cyan : muted), 0);
+            lv_obj_set_style_border_color(badge, lv_color_hex(d.online ? accent() : muted), 0);
             lv_obj_remove_flag(badge, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
             auto* online = label(badge, d.online ? "Online" : "Offline", size*61/100, 0, small);
-            lv_obj_center(online); color(online, d.online ? cyan : muted);
+            lv_obj_center(online); color(online, d.online ? accent() : muted);
             deviceRows_.push_back({tile, d.id});
         }
         message_ = label(face_, devices.empty() ? "Searching for VOLTRAs..." : "Tap an available device", width_*74/100, height_*83/100, small);
@@ -229,37 +306,38 @@ void UiController::build() {
         if (pages > 1) {
             auto* prev = button(face_, "<", width_*33/100, height_*87/100, width_*9/100, height_*6/100, PreviousDevices);
             auto* next = button(face_, ">", width_*58/100, height_*87/100, width_*9/100, height_*6/100, NextDevices);
-            color(prev, devicePage_ ? cyan : muted); color(next, devicePage_+1 < pages ? cyan : muted);
+            color(prev, devicePage_ ? accent() : muted); color(next, devicePage_+1 < pages ? accent() : muted);
             label(face_, std::to_string(devicePage_+1)+" / "+std::to_string(pages), width_*16/100, height_*88/100, small);
         }
         return;
     }
     buildScale();
     const bool rp = page_ == Screen::Drops && draftDrops_.mode == DropMode::RestPause;
-    title_ = label(face_, page_ == Screen::Main ? app_.name() : page_ == Screen::Magic ? "Magic Modes" :
-        page_ == Screen::Eccentric ? "Eccentric Overload" : "Dropset", width_*65/100, height_*15/100, medium);
+    title_ = label(face_, page_ == Screen::Main ? app_.name() : page_ == Screen::Magic ? "" :
+        page_ == Screen::Eccentric ? "" : "Dropset", width_*65/100, height_*23/100, medium);
     lv_label_set_long_mode(title_, LV_LABEL_LONG_DOT);
     if (page_ == Screen::Main) { bind(title_, BackDevices); lv_obj_set_ext_click_area(title_, height_/100); }
-    status_ = label(face_, "", width_*62/100, height_*21/100, small);
+    status_ = label(face_, "", width_*62/100, height_*30/100, small);
     color(status_, soft);
     if (page_ == Screen::Main) {
-        twinIcon_ = linkIcon(face_, width_*7/100, cyan);
-        lv_obj_set_pos(twinIcon_, width_*38/100, height_*21/100);
+        twinIcon_ = linkIcon(face_, width_*7/100, accent());
+        lv_obj_set_pos(twinIcon_, width_*38/100, height_*30/100);
     } else { bind(status_, Unload); lv_obj_set_ext_click_area(status_, height_/100); }
     if (!rp) {
-        const uint32_t accent = page_ == Screen::Eccentric ? pink : cyan;
+        const uint32_t centerAccent = accent();
         const int size = width_*42/100;
-        center_ = disc(face_, width_*29/100, height_*25/100, size, accent, true);
-        if (page_ == Screen::Eccentric) {
-            lv_obj_set_style_bg_color(center_, lv_color_hex(0x310c1d), 0);
+        center_ = disc(face_, width_*29/100, height_*32/100, size, centerAccent, true);
+        if (page_ != Screen::Drops) {
+            lv_obj_set_style_border_width(center_, 0, 0); lv_obj_set_style_shadow_width(center_, 0, 0);
+            lv_obj_set_style_bg_opa(center_, LV_OPA_TRANSP, 0);
         }
         if (page_ == Screen::Main) bind(center_, Weight);
         else lv_obj_remove_flag(center_, LV_OBJ_FLAG_CLICKABLE);
-        weight_ = label(center_, "--", size*96/100, size*27/100, &lv_font_montserrat_48);
+        weight_ = label(center_, "--", size*96/100, size*20/100, &lv_font_montserrat_48);
         lv_obj_set_style_transform_pivot_x(weight_, size*96/200, 0);
         lv_obj_set_style_transform_pivot_y(weight_, lv_font_montserrat_48.line_height/2, 0);
-        lv_obj_set_style_transform_scale_x(weight_, width_*340/480, 0);
-        lv_obj_set_style_transform_scale_y(weight_, width_*340/480, 0);
+        lv_obj_set_style_transform_scale_x(weight_, width_*560/480, 0);
+        lv_obj_set_style_transform_scale_y(weight_, width_*560/480, 0);
         unit_ = label(center_, "", size*90/100, size*64/100, small); color(unit_, soft);
         hint_ = label(center_, "", size*90/100, size*77/100, small); color(hint_, soft);
         if (page_ == Screen::Main) {
@@ -269,41 +347,45 @@ void UiController::build() {
     }
     if (page_ == Screen::Main) {
         for (int i=0; i<3; ++i) {
-            const int size = width_*21/100;
-            tiles_[i] = disc(face_, width_*(15+i*25)/100, height_*65/100, size, i == 1 ? pink : cyan, false);
+            const int size = width_*20/100;
+            tiles_[i] = disc(face_, width_*(7+i*22)/100, height_*64/100, size, accent(), false);
             bind(tiles_[i], i == 0 ? Magic : i == 1 ? EO : Drops);
-            miniArc_[i] = arc(tiles_[i], size*92/100, i == 1 ? pink : cyan);
-            miniValue_[i] = label(tiles_[i], "", size*92/100, size*48/100, medium);
+            if (i < 2) miniArc_[i] = arc(tiles_[i], size*92/100, accent());
+            miniValue_[i] = label(tiles_[i], "", size*92/100, size*43/100, medium);
             if (i == 0) {
                 modeLabels_[0] = label(tiles_[i], "", size*85/100, size*24/100, medium);
-                modeLabels_[1] = label(tiles_[i], "", size*83/100, size*76/100, small);
-            } else if (i == 1) label(tiles_[i], "EO", size*90/100, size*24/100, medium);
+
+            } else if (i == 1) modeLabels_[2] = label(tiles_[i], "EO", size*90/100, size*24/100, medium);
             else {
                 dropTitle_ = label(tiles_[i], "", size*90/100, size*19/100, small);
                 for (int step=0; step<3; ++step) {
                     auto* bar = lv_obj_create(tiles_[i]); lv_obj_remove_style_all(bar);
                     stairs_[step] = bar;
-                    lv_obj_set_size(bar, size/9, (step+1)*size/16);
-                    lv_obj_set_pos(bar, size*34/100+step*size/9, size*45/100-(step+1)*size/16);
+                    lv_obj_set_size(bar, size/9, (3-step)*size/16);
+                    lv_obj_set_pos(bar, size*34/100+step*size/9, size*45/100-(3-step)*size/16);
                     lv_obj_set_style_bg_color(bar, lv_color_hex(muted), 0); lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
                     lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
                 }
             }
         }
-        message_ = label(face_, "", width_*70/100, height_*89/100, small); color(message_, soft);
+        presetTile_ = disc(face_, width_*73/100, height_*64/100, width_*20/100, accent(), false);
+        bind(presetTile_, OpenPresets);
+        label(presetTile_, LV_SYMBOL_SAVE, width_*18/100, width_*4/100, medium);
+        presetValue_ = label(presetTile_, "P", width_*18/100, width_*10/100, &lv_font_montserrat_28);
+        separator(62,8); separator(87,20);
+        stats_ = label(face_, "", width_*72/100, height_*87/100, small);
+        message_ = label(face_, "", width_*76/100, height_*84/100, small); color(message_, soft);
         return;
     }
     if (page_ == Screen::Magic) {
-        // Visual order follows the mockup; actions retain their semantic enum mapping.
         const MagicMode order[] = {MagicMode::InverseChains, MagicMode::Mountain, MagicMode::Chains};
-        for (int i=0; i<3; ++i) {
-            const int index = int(order[i]), size = width_*14/100;
-            choice_[index] = disc(face_, width_*(22+i*22)/100, height_*62/100, size, cyan, false);
-            bind(choice_[index], ModeIC+index);
-            auto* txt = label(choice_[index], magicName(order[i]), size, 0, medium); lv_obj_center(txt);
-            choiceNames_[index] = label(face_, order[i] == MagicMode::InverseChains ? "Inverse\nChains" :
-                modeName(order[i]), width_*22/100, height_*77/100, small);
-            lv_obj_align(choiceNames_[index], LV_ALIGN_TOP_MID, width_*(-21+i*22)/100, height_*77/100);
+        auto* picker=button(face_,"",width_*18/100,height_*64/100,width_*64/100,height_*13/100,ModeFocus);
+        glow(picker,accent(),true);
+        for (int i=0;i<3;++i) {
+            const int index=int(order[i]);
+            choice_[index]=label(picker,magicName(order[i]),width_*20/100,height_*3/100,medium);
+            lv_obj_set_align(choice_[index],LV_ALIGN_TOP_LEFT);
+            lv_obj_set_x(choice_[index],width_*(1+i*21)/100); bind(choice_[index],ModeIC+index);
         }
     } else if (page_ == Screen::Drops) {
         for (int i=0; i<2; ++i) {
@@ -313,9 +395,9 @@ void UiController::build() {
         if (rp) {
             for (int i=0; i<3; ++i) {
                 const int size = width_*24/100;
-                tiles_[i] = disc(face_, width_*(12+i*26)/100, height_*39/100, size, cyan, i == dropField_);
+                tiles_[i] = disc(face_, width_*(12+i*26)/100, height_*39/100, size, accent(), i == dropField_);
                 bind(tiles_[i], FieldDrops+i);
-                miniArc_[i] = arc(tiles_[i], size*91/100, i == 2 ? 0x728cff : cyan);
+                miniArc_[i] = arc(tiles_[i], size*91/100, accent());
                 auto* caption = label(tiles_[i], i == 0 ? "Drops" : i == 1 ? "Drop %" : "Hold", size*90/100, size*24/100, small);
                 color(caption, soft);
                 miniValue_[i] = label(tiles_[i], "", size*96/100, size*45/100,
@@ -327,10 +409,31 @@ void UiController::build() {
             lv_obj_set_y(center_, height_*36/100);
         }
     }
+    if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
+        auto* x=button(face_,LV_SYMBOL_CLOSE,width_*79/100,height_*19/100,width_*10/100,height_*10/100,Disable); glow(x,accent(),true);
+        bind(center_,AmountFocus);
+        const int y=page_ == Screen::Magic ? 78 : 68;
+        const auto r=app_.report();
+        const bool both=r.modifierUnitsSelectable && r.percentageSupported;
+        auto* units=button(face_,"",width_*20/100,height_*y/100,width_*60/100,height_*12/100,UnitFocus);
+        glow(units,accent(),true);
+        for(int i=0;i<2;++i) {
+            const bool percent=i == 0;
+            if(!both && percent != draftPercent_) continue;
+            unitChoices_[i]=label(units,percent ? "%" : unitName(r.unit),width_*(both ? 28 : 58)/100,height_*2/100,medium);
+            lv_obj_set_align(unitChoices_[i],LV_ALIGN_TOP_LEFT);
+            lv_obj_set_x(unitChoices_[i],width_*(both ? 1+i*30 : 1)/100);
+            bind(unitChoices_[i],percent ? UnitPercent : UnitAbsolute);
+        }
+        // Back is separate from the X, which only disables the modifier.
+        button(face_,LV_SYMBOL_LEFT,width_*45/100,height_*91/100,width_*10/100,height_*7/100,BackMain);
+        lv_obj_add_flag(battery_,LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
     const int applyY = page_ == Screen::Magic ? 85 : page_ == Screen::Eccentric ? 78 : 81;
-    const int applyH = page_ == Screen::Magic ? 8 : 10;
+    const int applyH = page_ == Screen::Magic ? 7 : 10;
     auto* apply = button(face_, "Apply", width_*30/100, height_*applyY/100, width_*40/100, height_*applyH/100, Apply);
-    glow(apply, cyan, true);
+    glow(apply, accent(), true);
     lv_obj_set_style_text_font(lv_obj_get_child(apply, 0), medium, 0);
     for (auto* legend : scaleLabels_) lv_obj_move_foreground(legend);
 }
@@ -338,13 +441,42 @@ int UiController::editMaximum() const {
     const auto r = app_.report();
     if (page_ == Screen::Drops) return draftDrops_.mode == DropMode::Stairs ? r.maxWeight : dropField_ == 1 ? 80 : 9;
     auto s = r.settings;
-    if (page_ == Screen::Magic) s.magic.enabled = true; else s.eccentric.enabled = true;
+    if (page_ == Screen::Magic) { s.magic.enabled = true; s.magic.percent = draftPercent_; }
+    else { s.eccentric.enabled = true; s.eccentric.percent = draftPercent_; }
     return modifierMaximum(r, s, page_ == Screen::Magic);
 }
 void UiController::rotate(int delta) {
-    if (page_ == Screen::Devices || !app_.fresh()) return;
-    if (page_ == Screen::Main) { app_.adjustWeight(delta); return; }
-    if (page_ != Screen::Drops) { draftValue_ = std::clamp(draftValue_+delta, 0, editMaximum()); return; }
+    if (page_ == Screen::Presets) {
+        presetIndex_ = std::clamp(presetIndex_+delta,0,std::min(98,int(config_.presets.size())));
+        next_ = page_; rebuild_ = true; return;
+    }
+    if (page_ == Screen::Settings) {
+        if (settingsField_ == 0) config_.theme = (config_.theme + delta%9 + 9)%9;
+        if (settingsField_ == 1) config_.restAlertSeconds = std::clamp(config_.restAlertSeconds+delta,0,3599);
+        if (settingsField_ == 2) config_.dimMinutes = std::clamp(config_.dimMinutes+delta,0,120);
+        if (settingsField_ == 3) config_.sleepMinutes = std::clamp(config_.sleepMinutes+delta,0,120);
+        saveConfiguration(); next_ = page_; rebuild_ = true; return;
+    }
+    if (page_ == Screen::Live) { app_.adjustWeight(delta); return; }
+    if (page_ == Screen::Devices || int(page_) >= int(Screen::Presets) || !app_.fresh()) return;
+    if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta); return; }
+    if ((page_ == Screen::Magic || page_ == Screen::Eccentric) && editorFocus_ == 2) {
+        if(app_.report().modifierUnitsSelectable && app_.report().percentageSupported) {
+            const bool percent=delta < 0;
+            if(draftPercent_ != percent) { draftPercent_=percent; draftValue_=std::clamp(draftValue_,0,editMaximum()); edited(); }
+        }
+        return;
+    }
+    if (page_ == Screen::Magic && editorFocus_ == 1) {
+        const MagicMode order[]={MagicMode::InverseChains,MagicMode::Mountain,MagicMode::Chains};
+        std::vector<MagicMode> supported;
+        for(auto mode:order) if(app_.report().magicSupported[int(mode)]) supported.push_back(mode);
+        auto it=std::find(supported.begin(),supported.end(),draftMode_);
+        if(!supported.empty()) { auto mode=supported[std::clamp(int(it-supported.begin())+delta,0,int(supported.size())-1)];
+            if(mode != draftMode_) { draftMode_=mode; edited(); } }
+        return;
+    }
+    if (page_ != Screen::Drops) { draftValue_ = std::clamp(draftValue_+delta, 0, editMaximum()); edited(); return; }
     if (draftDrops_.mode == DropMode::Stairs) draftDrops_.step = std::clamp(draftDrops_.step+delta, -editMaximum(), 0);
     else if (dropField_ == 0) draftDrops_.drops = std::clamp(draftDrops_.drops+delta, 0, 9);
     else if (dropField_ == 1) draftDrops_.percent = std::clamp(draftDrops_.percent+delta, 0, 80);
@@ -365,27 +497,28 @@ void UiController::update() {
         return;
     }
     const auto r = app_.report();
+    if (int(page_) >= int(Screen::Presets)) { updateExtra(); return; }
     if (page_ == Screen::Main) {
         value(weight_, r.revision ? std::to_string(r.settings.weight) : "--");
         color(weight_, !app_.fresh() ? amber : r.loaded ? bright : muted);
-        value(unit_, unitName(r.unit));
+        value(unit_, "");
         value(hint_, !app_.fresh() ? "State unknown\nTap to unload" : r.autoLoadArmed ? "Auto Load armed\nTap to cancel" :
-            r.loaded ? "Tap to unload" : "Tap: On / Off\nHold: Autoload");
+            r.loaded ? "" : "");
         value(status_, r.twinKnown ? (r.twin ? "Twin" : "") : "Twin unknown");
-        color(status_, r.twinKnown ? cyan : amber);
+        color(status_, r.twinKnown ? accent() : amber);
         if (r.twinKnown && r.twin) {
             lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_align(status_, LV_ALIGN_TOP_MID, width_*4/100, height_*21/100);
+            lv_obj_align(status_, LV_ALIGN_TOP_MID, width_*4/100, height_*30/100);
         } else {
             lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*21/100);
+            lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
         }
-        updateScale(r.settings.weight, r.maxWeight, "", cyan);
+        updateScale(r.settings.weight, r.maxWeight, "", accent());
         for (int i=0; i<2; ++i) {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
-            const uint32_t c = i == 0 ? cyan : pink;
+            const uint32_t c = accent();
             color(tiles_[i], m.enabled ? bright : muted);
-            value(miniValue_[i], std::to_string(m.value)+(r.percent ? "%" : unitName(r.unit)));
+            value(miniValue_[i], std::to_string(m.value)+(m.percent ? "%" : unitName(r.unit)));
             color(miniValue_[i], m.enabled ? bright : muted);
             lv_obj_set_style_arc_color(miniArc_[i], lv_color_hex(m.enabled ? c : 0x46536a), LV_PART_INDICATOR);
             lv_arc_set_value(miniArc_[i], percentOf(m.value, modifierMaximum(r, r.settings, i == 0)));
@@ -393,12 +526,7 @@ void UiController::update() {
         }
         value(modeLabels_[0], magicName(r.settings.magicMode));
         color(modeLabels_[0], r.settings.magic.enabled ? bright : muted);
-        std::string otherModes;
-        for (int i=0; i<3; ++i) if (i != int(r.settings.magicMode) && r.magicSupported[i]) {
-            if (!otherModes.empty()) otherModes += "  ";
-            otherModes += magicName(MagicMode(i));
-        }
-        value(modeLabels_[1], otherModes); color(modeLabels_[1], muted);
+        color(modeLabels_[2], r.settings.eccentric.enabled ? bright : muted);
         const bool supported[] = {std::any_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; }),
             r.eccentricSupported, r.liveWeightSupported};
         for (int i=0; i<3; ++i) {
@@ -410,26 +538,32 @@ void UiController::update() {
         for (auto* step : stairs_) {
             if (d.mode == DropMode::RestPause) lv_obj_add_flag(step, LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(step, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_bg_color(step, lv_color_hex(d.enabled ? cyan : muted), 0);
+            lv_obj_set_style_bg_color(step, lv_color_hex(d.enabled ? accent() : muted), 0);
         }
-        value(dropTitle_, d.mode == DropMode::RestPause ? "RP" : "");
+        value(dropTitle_, d.mode == DropMode::RestPause ? LV_SYMBOL_PAUSE " " LV_SYMBOL_DOWN : "");
         value(miniValue_[2], d.mode == DropMode::Stairs ? std::to_string(d.step)+unitName(r.unit) :
-            std::to_string(d.drops)+" / "+std::to_string(d.percent)+"%\n"+std::to_string(d.holdSeconds)+"s");
+            std::to_string(d.drops)+"\n"+std::to_string(d.percent)+"%\n"+std::to_string(d.holdSeconds)+"s");
         lv_obj_set_style_text_font(miniValue_[2], d.mode == DropMode::RestPause ?
             (width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14) :
             (width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18), 0);
         color(miniValue_[2], d.enabled ? bright : muted);
-        lv_obj_set_style_arc_color(miniArc_[2], lv_color_hex(d.enabled ? cyan : 0x46536a), LV_PART_INDICATOR);
-        lv_arc_set_value(miniArc_[2], d.enabled ? 1000 : 0);
-        value(message_, app_.message().empty() ? "Hold icon to change" : app_.message());
+        glow(tiles_[2], accent(), d.enabled);
+        glow(presetTile_, accent(), activePreset_ >= 0);
+        value(presetValue_, activePreset_ >= 0 ? "P"+std::to_string(activePreset_+1) : "P");
+        color(presetValue_,activePreset_ >= 0 ? bright : muted);
+        std::string summary;
+        if (app_.fresh() && r.completedSets && r.lastSetReps) summary = std::to_string(*r.completedSets)+" | "+std::to_string(*r.lastSetReps);
+        if (app_.fresh() && r.restSeconds) summary += "       "+std::to_string(*r.restSeconds/60)+":"+(*r.restSeconds%60 < 10 ? "0" : "")+std::to_string(*r.restSeconds%60);
+        value(stats_,summary);
+        value(message_, app_.message());
         return;
     }
     value(status_, !app_.fresh() ? "Unknown / tap to unload" :
         r.loaded ? std::to_string(r.settings.weight)+" "+unitName(r.unit)+" / tap to unload" :
-        r.autoLoadArmed ? "Auto Load / tap to cancel" : "");
+        r.autoLoadArmed ? "Auto Load / tap to cancel" : app_.message());
     if (page_ == Screen::Drops) {
         for (int i=0; i<2; ++i) {
-            glow(choice_[i], cyan, int(draftDrops_.mode) == i);
+            glow(choice_[i], accent(), int(draftDrops_.mode) == i);
             color(choice_[i], int(draftDrops_.mode) == i ? bright : muted);
         }
         if (draftDrops_.mode == DropMode::RestPause) {
@@ -440,50 +574,97 @@ void UiController::update() {
             for (int i=0; i<3; ++i) {
                 value(miniValue_[i], std::to_string(values[i])+suffix[i]);
                 // All values stay active; the bright outer ring marks rotary focus.
-                glow(tiles_[i], cyan, i == dropField_);
+                glow(tiles_[i], accent(), i == dropField_);
                 lv_arc_set_value(miniArc_[i], percentOf(values[i], maxima[i]));
             }
             value(hint_, names[dropField_]); color(hint_, bright);
-            updateScale(values[dropField_], maxima[dropField_], suffix[dropField_], cyan);
+            updateScale(values[dropField_], maxima[dropField_], suffix[dropField_], accent());
         } else {
             value(weight_, std::to_string(draftDrops_.step)); color(weight_, bright);
             value(unit_, unitName(r.unit)); value(hint_, "After each rep");
-            updateScale(std::abs(draftDrops_.step), r.maxWeight, "", cyan, true);
+            updateScale(std::abs(draftDrops_.step), r.maxWeight, "", accent(), true);
         }
     } else {
         draftValue_ = std::clamp(draftValue_, 0, editMaximum());
-        value(weight_, std::to_string(draftValue_)+(r.percent ? "%" : ""));
+        value(weight_, std::to_string(draftValue_)+(draftPercent_ ? "%" : ""));
         color(weight_, bright);
-        value(unit_, r.percent ? "" : unitName(r.unit));
-        value(hint_, page_ == Screen::Magic ? modeName(draftMode_) : "");
-        updateScale(draftValue_, editMaximum(), r.percent ? "%" : "", page_ == Screen::Magic ? cyan : pink);
-        if (page_ == Screen::Magic) for (int i=0; i<3; ++i) {
-            if (r.magicSupported[i]) {
-                lv_obj_remove_flag(choice_[i], LV_OBJ_FLAG_HIDDEN);
-                lv_obj_remove_flag(choiceNames_[i], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_add_flag(choice_[i], LV_OBJ_FLAG_HIDDEN);
-                lv_obj_add_flag(choiceNames_[i], LV_OBJ_FLAG_HIDDEN);
-            }
-            glow(choice_[i], cyan, int(draftMode_) == i);
-            color(choice_[i], int(draftMode_) == i ? cyan : soft);
-            color(choiceNames_[i], int(draftMode_) == i ? cyan : soft);
+        value(unit_, "");
+        value(hint_, "");
+        updateScale(draftValue_, editMaximum(), draftPercent_ ? "%" : "", accent());
+        for(int i=0;i<2;++i) if(unitChoices_[i]) {
+            const bool selected=(i==0) == draftPercent_;
+            lv_obj_set_style_text_font(unitChoices_[i],selected ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
+            color(unitChoices_[i],selected ? bright : muted);
+        }
+        if (page_ == Screen::Magic) for (int i=0;i<3;++i) {
+            if(r.magicSupported[i]) lv_obj_remove_flag(choice_[i],LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(choice_[i],LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_text_font(choice_[i],int(draftMode_) == i ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
+            color(choice_[i],int(draftMode_) == i ? bright : muted);
         }
     }
+}
+void UiController::edited() {
+    editedAt_ = hardware_.nowMs(); editDirty_ = true;
+    activePreset_ = pendingPreset_ = -1;
 }
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     app_.tick(now);
-    if (page_ != Screen::Devices && !app_.connected()) { app_.leave(); navigate(Screen::Devices); }
+    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected()) { app_.leave(); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {
         std::string signature;
         for (const auto& d : app_.devices()) signature += d.id+d.name+(d.online ? "1" : "0");
         if (signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
     }
+    const auto r = app_.report();
+    if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
+        // Coalesce consecutive rotary events for 150 ms. A report never creates
+        // an edit or retry; only a new input event can set editDirty_.
+        constexpr uint64_t editSettleMs = 150;
+        if(editDirty_ && !app_.pending() && now-editedAt_ >= editSettleMs) {
+            draftValue_ = std::clamp(draftValue_,0,editMaximum());
+            app_.applyModifier(page_ == Screen::Magic,draftMode_,draftValue_,draftPercent_);
+            editDirty_=false;
+            if(returnAfterEdit_) navigate(Screen::Main);
+        } else if(!editDirty_ && !app_.pending()) {
+            const auto m=page_ == Screen::Magic ? r.settings.magic : r.settings.eccentric;
+            draftValue_=m.value; draftPercent_=m.percent; draftMode_=r.settings.magicMode;
+        }
+    }
+    if (pendingPreset_ >= 0 && !app_.pending()) {
+        if (app_.fresh() && samePreset(app_.currentPreset(),config_.presets[pendingPreset_])) activePreset_ = pendingPreset_;
+        pendingPreset_ = -1;
+    }
+    if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),config_.presets[activePreset_]))) activePreset_ = -1;
+    if (app_.fresh() && r.loaded && !liveObserved_ && page_ == Screen::Main) navigate(Screen::Live);
+    if (app_.fresh() && !r.loaded && page_ == Screen::Live) navigate(Screen::Main);
+    if (app_.fresh()) liveObserved_ = r.loaded;
+    if (!app_.connected()) liveObserved_ = false;
+    if (!r.restSeconds || *r.restSeconds == 0) restAlerted_ = false;
+    if (app_.fresh() && r.restSeconds && config_.restAlertSeconds > 0 && *r.restSeconds >= config_.restAlertSeconds && !restAlerted_) {
+        hardware_.restAlert(2000); restAlerted_ = true; alertUntil_ = now+2000;
+    }
     if (rebuild_) build();
-    const int delta = hardware_.rotary().getDelta(); if (delta) rotate(delta);
-    if (hardware_.rotary().wasPressed() && page_ != Screen::Devices) app_.toggleWeight();
-    update(); lv_timer_handler();
+    const int delta = hardware_.rotary().getDelta();
+    const bool pressed = hardware_.rotary().wasPressed();
+    const bool wasSleeping = sleeping_;
+    if (delta || pressed) { activityAt_ = now; sleeping_ = false; }
+    if (delta && !wasSleeping) rotate(delta);
+    if (pressed && !wasSleeping) {
+        if (page_ == Screen::Presets) act(ChoosePreset,"",false);
+        else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
+    }
+    // Keep unload visible while loaded, pending, armed, or connected with unknown state.
+    const bool mustStayAwake = app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending());
+    if (mustStayAwake) activityAt_ = now;
+    sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && now-activityAt_ >= uint64_t(config_.sleepMinutes)*60000;
+    dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && now-activityAt_ >= uint64_t(config_.dimMinutes)*60000;
+    hardware_.setDisplayPower(sleeping_,dimmed_);
+    lv_obj_set_style_opa(face_,sleeping_ ? 0 : dimmed_ ? 65 : 255,0);
+    update();
+    if (now < alertUntil_ && page_ == Screen::Main) value(message_,"Rest alert");
+    lv_timer_handler();
     // Navigation is deferred until after input callbacks return.
     if (rebuild_) { build(); update(); }
 }

@@ -6,10 +6,10 @@
 #include <vector>
 #include <array>
 namespace voltra {
-enum class Screen { Devices, Main, Magic, Eccentric, Drops };
+enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About };
 class UiController {
 public:
-    UiController(HardwarePlatform&, TrainingApplication&);
+    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr);
     ~UiController();
     void tick();
     void readTouch();
@@ -27,7 +27,7 @@ private:
     lv_obj_t *stairs_[3]{};
     lv_obj_t* dropTitle_ = nullptr;
     lv_obj_t *center_ = nullptr, *battery_ = nullptr, *twinIcon_ = nullptr;
-    lv_obj_t *scaleLabels_[3]{}, *choiceNames_[3]{};
+    lv_obj_t *scaleLabels_[7]{}, *choiceNames_[3]{};
     static constexpr int tickCount = 41;
     std::array<lv_obj_t*, tickCount> ticks_{};
     std::array<std::array<lv_point_precise_t, 2>, tickCount> tickPoints_{};
@@ -42,6 +42,28 @@ private:
     DropSettings draftDrops_;
     std::string deviceSignature_;
     uint64_t lastTickMs_ = 0;
+    RemoteConfigurationStore* store_ = nullptr;
+    RemoteConfiguration config_;
+    int presetIndex_ = 0, activePreset_ = -1, pendingPreset_ = -1, settingsField_ = 0, editorFocus_ = 0;
+    bool draftPercent_ = true, editDirty_ = false, returnAfterEdit_ = false;
+    uint64_t editedAt_ = 0;
+    lv_obj_t* unitChoices_[2]{};
+    void edited();
+    bool weightFocused_ = true, liveObserved_ = false, restAlerted_ = false;
+    uint64_t activityAt_ = 0;
+    bool sleeping_ = false, dimmed_ = false;
+    bool wakeTouch_ = false;
+    uint64_t alertUntil_ = 0;
+    Preset saveDraft_;
+    lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
+    lv_obj_t* settingsValues_[4]{};
+    lv_obj_t* liveValues_[3]{};
+    uint32_t accent() const;
+    void saveConfiguration();
+    void buildExtra();
+    void updateExtra();
+    void separator(int y, int inset = 12);
+    std::string presetSummary(const Preset&, bool multiline = false) const;
     lv_obj_t* label(lv_obj_t*, const std::string&, int w, int y, const lv_font_t* = &lv_font_montserrat_14);
     lv_obj_t* button(lv_obj_t*, const std::string&, int x, int y, int w, int h, int action);
     lv_obj_t* arc(lv_obj_t*, int size, uint32_t color);

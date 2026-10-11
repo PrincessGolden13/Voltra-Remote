@@ -8,10 +8,11 @@ MockTransport::MockTransport() {
     for (int i = 0; i < 5; ++i) {
         TrainingReport r; r.maxWeight = i == 1 ? 90 : i == 2 ? 400 : 200;
         r.unit = i == 1 ? WeightUnit::Kilograms : WeightUnit::Pounds;
-        r.percent = i != 1 && i != 3; r.settings.weight = i == 1 ? 25 : 50;
+        r.percentageSupported = i != 3; r.modifierUnitsSelectable = i != 3;
+        r.settings.magic.percent = r.settings.eccentric.percent = i != 1 && i != 3; r.settings.weight = i == 1 ? 25 : 50;
         r.magicSupported = {true, true, i != 3}; r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
         r.twinKnown = true; r.twin = i == 2; r.telemetryValid = true;
-        r.settings.magic.value = r.percent ? 50 : 10; r.settings.eccentric.value = r.percent ? 25 : 5;
+        r.settings.magic.value = r.settings.magic.percent ? 50 : 10; r.settings.eccentric.value = r.settings.magic.percent ? 25 : 5;
         devices_.push_back({i == 0 ? deviceId : std::string(deviceId) + '-' + std::to_string(i), names[i], true, r});
     }
 }
@@ -24,6 +25,7 @@ TransportResult MockTransport::connect(const DeviceId& id) {
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && d.online; });
     if (it == devices_.end()) return TransportResult::Failed;
     active_ = size_t(it-devices_.begin()); connected_ = true; sent_ = subscribed_ = false;
+    restSince_ = 0;
     reported_ = {}; pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
     if (connection_) connection_(true);
     return TransportResult::Accepted;
@@ -51,7 +53,8 @@ void MockTransport::setProfile(SimulatorProfile profile) {
     auto& r = devices_[active_].state;
     r.loaded = profile == SimulatorProfile::Loaded; r.autoLoadArmed = false;
     r.twinKnown = profile != SimulatorProfile::TwinUnknown;
-    r.moving = r.held = false; r.rep = 0;
+    r.moving = r.held = false; r.rep = 0; restSince_ = 0;
+    r.force.reset(); r.setNumber.reset(); r.completedSets.reset(); r.lastSetReps.reset(); r.restSeconds.reset();
 }
 void MockTransport::poll(uint64_t now) {
     nowMs_ = now;
@@ -61,6 +64,13 @@ void MockTransport::poll(uint64_t now) {
     if (now >= dueMs_ && profile_ != SimulatorProfile::Stale) {
         if (pendingSettings_) { state.settings = *pendingSettings_; pendingSettings_.reset(); sent_ = false; }
         if (pendingLoaded_) {
+            if (*pendingLoaded_ && !state.loaded) {
+                state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0;
+                state.restSeconds.reset(); restSince_ = 0;
+            } else if (!*pendingLoaded_ && state.loaded) {
+                state.completedSets = state.setNumber.value_or(1); state.lastSetReps = int(state.rep);
+                restSince_ = now; state.restSeconds = 0;
+            }
             state.loaded = *pendingLoaded_; state.autoLoadArmed = false;
             if (!state.loaded) state.moving = state.held = false;
             pendingLoaded_.reset(); sent_ = false;
@@ -69,12 +79,18 @@ void MockTransport::poll(uint64_t now) {
         // Synthetic device behavior, not a remote timer that issues a load.
         if (state.autoLoadArmed && state.held) {
             if (!heldSince_) heldSince_ = now;
-            if (now-heldSince_ >= 3000) { state.loaded = true; state.autoLoadArmed = false; sent_ = false; }
+            if (now-heldSince_ >= 3000) {
+                state.loaded = true; state.autoLoadArmed = false; sent_ = false;
+                state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0;
+                state.restSeconds.reset(); restSince_ = 0;
+            }
         } else heldSince_ = 0;
     }
     if (sent_ && (profile_ == SimulatorProfile::Stale || now-lastMs_ < notificationIntervalMs)) return;
     if (sent_ && (pendingSettings_ || pendingLoaded_ || pendingAuto_)) return;
     lastMs_ = now; sent_ = true;
+    if (state.loaded) { state.force = state.settings.weight; if (!state.setNumber) state.setNumber = 1; }
+    else { state.force.reset(); if (restSince_) state.restSeconds = int((now-restSince_)/1000); }
     state.receivedAtMs = now; ++state.revision; reported_ = state;
     device_.weightLbs = uint16_t(std::lround(state.settings.weight * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     device_.loaded = state.loaded;
@@ -100,11 +116,11 @@ SessionReadiness MockTransport::readiness() const {
 bool MockTransport::consumeIgnored() { const bool ignored = ignoreNext_; ignoreNext_ = false; return ignored; }
 TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     const auto r = trainingReport();
-    if (!readiness().validated || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
+    if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
         s.weight < 0 || (r.loaded && s.weight == 0) || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && (!r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||
         (s.eccentric.enabled && (!r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
-        envelopeHundredths(s, r.percent) > r.maxWeight*100) return TransportResult::Failed;
+        envelopeHundredths(s) > r.maxWeight*100) return TransportResult::Failed;
     if (consumeIgnored()) return TransportResult::Accepted;
     pendingSettings_ = s; dueMs_ = nowMs_ + confirmationDelayMs; return TransportResult::Accepted;
 }

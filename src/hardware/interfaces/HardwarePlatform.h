@@ -14,5 +14,8 @@ public:
     virtual RotaryInput& rotary() = 0;
     virtual uint64_t nowMs() const = 0;
     virtual std::optional<uint8_t> batteryPercent() const { return std::nullopt; }
+    // Optional outputs; board adapters own electrical timing and power behavior.
+    virtual void restAlert(uint32_t durationMs) { (void)durationMs; }
+    virtual void setDisplayPower(bool asleep, bool dimmed) { (void)asleep; (void)dimmed; }
 };
 }

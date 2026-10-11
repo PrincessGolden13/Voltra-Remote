@@ -1,0 +1,77 @@
+# October 11 UI implementation
+
+The supplied ChatGPT prose is a design specification, not a replacement for
+prior explicit device/safety requirements. Screenshot numbers are illustrations.
+
+## Mockup mapping
+
+1. Rest-Pause live workout: START/current/NEXT, SET/REP/DROPS.
+2. Stairs live workout: START/current/NEXT, SET/REP.
+3. Main setup: weight tick gauge and four modifier/preset tiles.
+4. Existing preset carousel.
+5. Explicit preset override comparison.
+6. Normal live workout: reported force, SET/REP.
+7. New preset save confirmation.
+8. Magic editor: amount gauge and horizontal mode/unit presentation.
+
+## Implemented
+
+- One selectable accent (nine themes), responsive vector LVGL layouts.
+- Main weight without an inner ring or unit suffix; dynamic tick landmarks.
+- Scalar Magic/EO gauges use calculated permitted maxima. Dropset/preset borders
+  represent state only. Descending steps and pause/down glyphs identify dropsets.
+- Presets contain modifier enabled states, mode, values, reported units and
+  dropset parameters, never base weight or a load request. The store is versioned,
+  validated and atomically replaced. P01–P99; one terminal NEW slot, no wrapping.
+- Apply sends one guarded request. Dropset settings activate only after matching
+  modifier readback. Pending, rejected, unsupported, incompatible-unit and
+  out-of-envelope presets do not become active. Manual modifier changes clear
+  active identity; a base change alone does not (an actual modifier trim does).
+- Explicit save and override; safe cancel; restart only restores recipes.
+- Simplified live screens and optional device workout data. The mock produces
+  synthetic force/set/rest data; no physical decoder or live-force claim added.
+- Settings/presets persist separately from device history. Theme/rest-alert/dim/
+  sleep, version/about and confirmed reset. Reset preserves recent-device history.
+- Optional hardware power/haptic interface; desktop dim/sleep and visible rest
+  alert. Loaded/armed/pending/stale-connected states inhibit inactivity blanking.
+- Wi-Fi/captive portal and update entries accurately describe unavailable
+  services. No provisioning backend, release manifest, installer or physical
+  board implementation exists. These are platform integration work, not simulated
+  successful operations; no network is linked into the desktop simulator.
+
+## Resolved interaction decision
+
+The user explicitly chose the new unit picker and immediate edits, superseding
+the earlier APP_FLOW device-selected representation and Apply rules. Magic and EO
+now each carry their own percent/absolute representation. Unknown capabilities
+still disable changes; old simulated firmware exposes only LB. The legacy
+percentage ceiling and combined envelope/floor rules are unchanged. Mixed-unit
+envelopes sum each modifier in its own representation, and base increases still
+trim EO first, then Magic with the existing conservative rounding rule.
+
+Editing amount, mode or unit creates one explicit input intent. Rotary events
+settle for 150 ms before sending. An edit made while a request is pending waits
+for that request to finish; reports never create new intents or retries. The
+confirmed report replaces the editor draft afterward unless another explicit
+input is queued. X disables; the bottom chevron only navigates back. Unit
+switches retain the numeric value, clamped to the new permitted maximum. The
+store reads version-1 recipes and writes version 2 with both modifier units.
+
+## Evidence and validation
+
+CONFIRMED in this source/build only: Windows native build and offscreen renders.
+No physical BLE backend is linked. Existing limits, floors, rounding, Twin
+readiness, load guards and no-retry dropset logic remain in the controller.
+
+UNVERIFIED: native click interactions. Windows Computer Use capture failed twice
+with `SetIsBorderRequired failed: No such interface supported (0x80004002)`.
+Mac compilation and physical compatibility remain unverified.
+
+No new automated test code was created, as explicitly requested. Future cases:
+preset persistence/99 limit/terminal slot; delayed/mismatched preset confirmation;
+manual edits/base-only edits; unsupported units; reset cancel; sleep/wake input
+consumption; optional telemetry; stale live display; rest alert once per rest.
+
+Original build baseline: commit 3977431. The pre-edit executable was preserved
+in ignored build/native/voltra_simulator-before-oct11.exe. This checkout has no
+Git remote configured; all changes and builds are directly in the user's folder.

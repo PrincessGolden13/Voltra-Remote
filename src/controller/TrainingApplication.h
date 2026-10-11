@@ -1,6 +1,7 @@
 #pragma once
 #include "VoltraController.h"
 #include "DeviceMemory.h"
+#include "state/RemoteConfiguration.h"
 #include <map>
 namespace voltra {
 class TrainingApplication {
@@ -21,11 +22,15 @@ public:
     void toggleWeight();
     void autoLoad();
     void toggleModifier(bool magic);
-    void applyModifier(bool magic, MagicMode mode, int value);
+    void applyModifier(bool magic, MagicMode mode, int value, bool percent);
     DropSettings drops() const;
     void applyDrops(DropSettings);
     void toggleDrops();
     int dropsCompleted() const { return dropsCompleted_; }
+    Preset currentPreset() const;
+    bool applyPreset(const Preset&);
+    void disableModifier(bool magic);
+    int startingWeight() const { return startingWeight_; }
 private:
     BleTransport& transport_;
     VoltraController& controller_;
@@ -43,6 +48,9 @@ private:
     bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;
     bool dropsCancelled_ = false;
     int dropsCompleted_ = 0;
+    int startingWeight_ = 0;
+    bool observedLoaded_ = false;
+    std::optional<Preset> presetIntent_;
     void sent(TransportResult);
     bool settingsAllowed() const;
     bool sendSettings(TrainingSettings);

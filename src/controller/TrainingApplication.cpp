@@ -34,6 +34,7 @@ bool TrainingApplication::select(const DeviceId& id) {
     return true;
 }
 void TrainingApplication::leave() {
+    presetIntent_.reset(); observedLoaded_ = false;
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
     pending_ = requestedLoad_ = false; weightIntent_.reset(); message_.clear(); resetDrops();
@@ -53,10 +54,10 @@ void TrainingApplication::sent(TransportResult result) {
 }
 bool TrainingApplication::sendSettings(TrainingSettings s) {
     const auto r = report();
-    if (!settingsAllowed() || s.weight < 0 || s.magic.value < 0 || s.eccentric.value < 0 ||
+    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < 0 || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && s.magic.value > modifierMaximum(r, s, true)) ||
         (s.eccentric.enabled && s.eccentric.value > modifierMaximum(r, s, false)) ||
-        envelopeHundredths(s, r.percent) > r.maxWeight * 100) { message_ = "Outside device limits"; return false; }
+        envelopeHundredths(s) > r.maxWeight * 100) { message_ = "Outside device limits"; return false; }
     const auto result = session_.setTraining(s); sent(result);
     return result == TransportResult::Accepted;
 }
@@ -69,9 +70,9 @@ void TrainingApplication::adjustWeight(int delta) {
     if (r.loaded && s.weight == 0) { message_ = "Unload to select zero"; return; }
     // The original brief specifies reducing modifiers before capping the base.
     // Trim EO first, then magic; this is part of this explicit knob request.
-    const int divisor = r.percent ? s.weight : 100;
     for (auto* m : {&s.eccentric, &s.magic}) {
-        const int excess = envelopeHundredths(s, r.percent) - r.maxWeight*100;
+        const int divisor = m->percent ? s.weight : 100;
+        const int excess = envelopeHundredths(s) - r.maxWeight*100;
         if (excess > 0 && m->enabled && divisor > 0)
             m->value = std::max(0, m->value - (excess+divisor-1)/divisor);
     }
@@ -81,7 +82,7 @@ void TrainingApplication::toggleWeight() {
     auto r = report();
     if (!fresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
         // Unload and cancel are not gated by load readiness or pending settings.
-        resetDrops(); dropsCancelled_ = true; requestedLoad_ = false; weightIntent_.reset();
+        presetIntent_.reset(); resetDrops(); dropsCancelled_ = true; requestedLoad_ = false; weightIntent_.reset();
         sent(session_.setLoaded(false)); return;
     }
     const auto e = session_.readiness();
@@ -106,14 +107,36 @@ void TrainingApplication::toggleModifier(bool magic) {
     m.enabled = !m.enabled;
     sendSettings(s);
 }
-void TrainingApplication::applyModifier(bool magic, MagicMode mode, int value) {
+void TrainingApplication::disableModifier(bool magic) {
+    const auto r = report();
+    if (pending_ || r.loaded) { message_ = "Unload before editing"; return; }
+    auto s = r.settings; (magic ? s.magic : s.eccentric).enabled = false;
+    sendSettings(s);
+}
+Preset TrainingApplication::currentPreset() const {
+    const auto r = report();
+    return {r.settings.magicMode, r.settings.magic, r.settings.eccentric, r.unit, drops()};
+}
+bool TrainingApplication::applyPreset(const Preset& p) {
+    const auto r = report();
+    if (pending_ || r.loaded || p.unit != r.unit ||
+        (p.magic.enabled && !r.magicSupported[int(p.mode)]) ||
+        (p.eccentric.enabled && !r.eccentricSupported) ||
+        (p.drops.enabled && !r.liveWeightSupported) || p.drops.step < -r.maxWeight) {
+        message_ = "Preset unavailable for current state / units"; return false;
+    }
+    auto s = r.settings; s.magicMode = p.mode; s.magic = p.magic; s.eccentric = p.eccentric;
+    if (!sendSettings(s)) return false;
+    presetIntent_ = p; return true;
+}
+void TrainingApplication::applyModifier(bool magic, MagicMode mode, int value, bool percent) {
     const auto r = report();
     if (pending_ || r.loaded || !(magic ? r.magicSupported[int(mode)] : r.eccentricSupported)) {
         message_ = "Unload before applying"; return;
     }
     auto s = r.settings; auto& m = magic ? s.magic : s.eccentric;
     if (magic) s.magicMode = mode;
-    m.enabled = true; m.value = value;
+    m.enabled = true; m.value = value; m.percent = percent;
     sendSettings(s);
 }
 DropSettings TrainingApplication::drops() const {
@@ -179,13 +202,21 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
     if (!scanned_ || now - scannedAt_ >= 5000) scan();
-    if (!connected()) { pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
+    if (!connected()) { presetIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
     const auto r = report();
     // No retries or reconciliation writes: every new report wins, even a mismatch.
     if (pending_ && (r.revision > sentRevision_ || now - sentAt_ >= 3000)) {
         message_ = r.revision > sentRevision_ ? "" : "No confirmation";
         pending_ = requestedLoad_ = false; weightIntent_.reset();
+        if (presetIntent_) {
+            auto actual = currentPreset(); actual.drops = presetIntent_->drops;
+            if (r.revision > sentRevision_ && samePreset(actual, *presetIntent_)) applyDrops(presetIntent_->drops);
+            else message_ = "Preset not confirmed";
+            presetIntent_.reset();
+        }
     }
+    if (fresh() && r.loaded && !observedLoaded_) startingWeight_ = r.settings.weight;
+    if (fresh()) observedLoaded_ = r.loaded;
     runDrops(r);
 }
 }

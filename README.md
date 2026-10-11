@@ -17,14 +17,42 @@ Tap a VOLTRA; turn the mouse wheel or use Left/Right to adjust weight. Tap the
 weight to load/unload; hold it for 650 ms to request Auto Load. Tap the name to
 return to the picker. Drag the top rim to move the window; Escape closes it.
 
-The Magic, EO and Dropset controls below the weight toggle on a short tap.
-Hold a control to edit it. Turn the wheel in the editor, then Apply & Back.
-In RP, tap Drops, Drop % or Hold to choose which value the wheel changes.
-Device-reported settings choose LB/KG and percentage/absolute modifiers.
-The UI follows the supplied mockups with cyan circular controls, pink EO
-accents, a four-tile device picker and three simultaneously visible RP dials.
-Use the picker's touch arrows for additional devices. The outlined RP dial
-selects rotary focus; all three RP parameters remain active.
+The setup screen has one theme color, a device-scaled outer weight dial, and
+four controls: Magic, EO, Dropsets and Presets. Tap the weight to focus it;
+when already focused, tap to load/unload. Unload remains available immediately
+while loaded, pending or stale. Hold the weight for Auto Load.
+
+Magic, EO and Dropsets retain their earlier short-tap toggle / hold-to-edit
+behavior. The Magic picker is ordered IC / MTN / C; touch a mode then turn the
+knob to browse supported modes, or touch the amount to adjust it.
+Modifier editors now apply changes without an Apply button. Touch the amount,
+mode or unit picker to choose the knob's target. Supported devices offer % and
+LB/KG independently for Magic and EO; older profiles show only their supported
+absolute unit. Consecutive knob events settle for 150 ms before one request;
+reported values remain authoritative, with no confirmation-driven retries.
+The X disables the modifier, independently of the bottom Back chevron. Dropsets retain Apply.
+
+Tap Presets to browse P01–P99 with the knob. Tap an existing preset to request
+its modifiers; hold it to compare OLD / NEW before saving an override. The
+single NEW slot at the end saves the current modifier configuration. Presets
+exclude base weight, never load resistance, and become active only when the
+machine report matches. Unsupported units/features or out-of-range recipes
+are rejected instead of silently converted. Presets and remote preferences
+persist in `remote-settings.txt` beside the Windows executable (or in the Mac
+application support directory). Restoring saved data never applies a preset.
+
+Confirmed loading opens the simplified workout screen. F8/F9/F10 provide
+synthetic workout telemetry; unloading returns to setup with mock-device
+completed-set, rep and rest fields. Missing telemetry is omitted.
+
+The device picker's gear opens theme, rest-alert, dim and sleep settings.
+Touch a setting to select it; rotate to change it. Rest alert adjusts in seconds
+(0 is Off); dim/sleep adjust in minutes (0 is Never), defaulting to 15/20.
+The desktop simulates display dim/sleep and shows a two-second rest alert;
+physical haptics require a board adapter. Loaded, armed, pending or unknown
+connected state keeps unload visible. The first wake input only wakes.
+Wi-Fi and Updates currently explain their unavailable platform services.
+Factory reset requires an explicit confirmation and preserves recent devices.
 
 ## Offline scenarios
 

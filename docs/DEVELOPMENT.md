@@ -79,3 +79,12 @@ Git identity. Keep requirements, research and implementation commits separate.
 
 No release/license choice for this project's own code has been made. Before
 commercial distribution, choose it deliberately and retain dependency notices.
+
+## October 11 render screens
+
+Screen numbers 5–13: Presets, SavePreset, OverridePreset, Live, Settings,
+Reset, Wi-Fi, Updates, About. Empty-library Override previews fall back to New.
+Use `--screen 8 --profile 1 --live-drops 1 --drop-mode 0` for Stairs live, or
+`--drop-mode 1` for Rest-Pause live. `--live-drops` only enables synthetic local
+controller automation, never physical BLE. Render mode does not use persistence.
+Drag the top 3% rim to move the desktop window; the gear is below the drag area.

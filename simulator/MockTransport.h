@@ -36,6 +36,7 @@ private:
     std::optional<TrainingSettings> pendingSettings_;
     bool pendingAuto_ = false, ignoreNext_ = false;
     uint64_t heldSince_ = 0;
+    uint64_t restSince_ = 0;
     bool consumeIgnored();
     MockVoltra device_;
     Notification notification_;

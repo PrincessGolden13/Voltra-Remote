@@ -15,7 +15,7 @@ LRESULT CALLBACK windowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_NCHITTEST: {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(hwnd, &point);
-        return point.y < app->hardware.height()*10/100 ? HTCAPTION : HTCLIENT;
+        return point.y < app->hardware.height()*3/100 ? HTCAPTION : HTCLIENT;
     }
     case WM_ERASEBKGND: return 1;
     case WM_LBUTTONDOWN:

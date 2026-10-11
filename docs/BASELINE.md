@@ -54,3 +54,19 @@ remain explicit future milestones.
   trackpad, window lifecycle and persistence). No Mac or Apple SDK is available
   in this Windows session; shell scripts could not be executed here either.
 - No new test code, physical BLE implementation or physical validation added.
+
+## October 11 revision
+
+- CONFIRMED: Windows native build passes. Pre-edit simulator retained locally.
+- 45 offscreen renders completed across 360/466/480, including two live dropset
+  layouts, all new settings pages, New preset, KG, Twin and unsupported MTN.
+- Visual inspection corrected label coordinates, small-screen layout and footer
+  spacing. Existing-preset/override interactions still need manual verification.
+- Native Windows capture again failed twice with the previously documented
+  SetIsBorderRequired error. No interaction test pass is claimed.
+- Existing external reference directories are present but their validator source
+  files are absent in this environment; upstream validators were not rerun.
+- User approved unit selection/immediate editing; the resulting per-modifier
+  model, controller guards and pickers build successfully. Additional final
+  editor renders cover percent/LB/KG and unsupported-percent profiles.
+- Physical network, update, haptic and BLE adapters remain unavailable.

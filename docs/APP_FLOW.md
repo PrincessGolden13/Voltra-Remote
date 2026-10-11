@@ -1,3 +1,9 @@
+> October 11 presentation extension: see [implementation status](UI_IMPLEMENTATION_2026_10_11.md)
+> and [supplied revision](UI_REVISION_2026_10_11.md). Limits, safety, dropset
+> calculations remain authoritative. The user explicitly approved the new
+> selectable modifier units and immediate editing on October 11, superseding
+> the older unit/Apply rules below.
+
 # Revised application flow — September 7, 2026
 
 This records the user's later five-screen specification. It supersedes the

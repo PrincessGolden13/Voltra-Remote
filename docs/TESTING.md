@@ -61,3 +61,10 @@ F7–F11 provide offline inputs for these checks; no physical motor is involved.
 Reuse simulator mocks; introduce a deterministic MockClock for lifecycle tests.
 CI and simulator targets must not link a physical BLE backend. Protocol/safety/
 state/Twin/reconnect/hardware bugs need regression cases as implementation proceeds.
+
+## October 11 review
+
+Windows build and responsive offscreen renders pass (see BASELINE.md). These
+are not interaction/safety test results. No new test code was added. Add future
+coverage for mixed-unit envelope limits, preset unit migration/readback mismatch,
+queued explicit edits versus unsolicited reports, and wake-input consumption.

@@ -63,7 +63,7 @@
 - (void)mouseDown:(NSEvent*)event {
     NSPoint p = [self convertPoint:event.locationInWindow fromView:nil];
     if (![self insideCircle:p]) return;
-    if (p.y < self.bounds.size.height * 0.1) {
+    if (p.y < self.bounds.size.height * 0.03) {
         [self.window performWindowDragWithEvent:event];
         return;
     }
