@@ -205,7 +205,6 @@ void UiController::act(int action, const std::string& id, bool held) {
         if (store_ && !store_->save(config_)) { config_ = old; value(message_, "Reset could not be saved"); return; }
         activePreset_ = pendingPreset_ = -1; navigate(Screen::Settings); return;
     }
-    if (action == Disable) { editDirty_ = false; activePreset_ = pendingPreset_ = -1; app_.disableModifier(page_ == Screen::Magic); return; }
     if (action == ModeFocus) { editorFocus_ = 1; return; }
     if (action == AmountFocus) { editorFocus_ = 0; return; }
     if (action == BackMain) {
@@ -410,8 +409,11 @@ void UiController::build() {
         }
     }
     if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
-        auto* x=button(face_,LV_SYMBOL_CLOSE,width_*79/100,height_*19/100,width_*10/100,height_*10/100,Disable); glow(x,accent(),true);
-        bind(center_,AmountFocus);
+        bind(center_,BackMain);
+        bind(weight_,BackMain);
+        // The outer scale selects amount editing after using mode/unit pickers.
+        for(auto* tick : ticks_) { bind(tick,AmountFocus); lv_obj_set_ext_click_area(tick,width_/60); }
+        for(auto* mark : scaleLabels_) { bind(mark,AmountFocus); lv_obj_set_ext_click_area(mark,width_/60); }
         const int y=page_ == Screen::Magic ? 78 : 68;
         const auto r=app_.report();
         const bool both=r.modifierUnitsSelectable && r.percentageSupported;
@@ -425,7 +427,7 @@ void UiController::build() {
             lv_obj_set_x(unitChoices_[i],width_*(both ? 1+i*30 : 1)/100);
             bind(unitChoices_[i],percent ? UnitPercent : UnitAbsolute);
         }
-        // Back is separate from the X, which only disables the modifier.
+        // Returning never disables the modifier; toggling lives on the main tile.
         button(face_,LV_SYMBOL_LEFT,width_*45/100,height_*91/100,width_*10/100,height_*7/100,BackMain);
         lv_obj_add_flag(battery_,LV_OBJ_FLAG_HIDDEN);
         return;
@@ -500,10 +502,15 @@ void UiController::update() {
     if (int(page_) >= int(Screen::Presets)) { updateExtra(); return; }
     if (page_ == Screen::Main) {
         value(weight_, r.revision ? std::to_string(r.settings.weight) : "--");
-        color(weight_, !app_.fresh() ? amber : r.loaded ? bright : muted);
+        const bool atMaximum = app_.fresh() && r.maxWeight > 0 && r.settings.weight >= r.maxWeight;
+        const uint32_t maximumColor = limitAccent();
+        // Retain a darker unloaded number, even when its hue indicates the limit.
+        const uint32_t numberColor = r.loaded ? maximumColor : ((maximumColor & 0xfefefeu) >> 1);
+        color(weight_, !app_.fresh() ? amber : atMaximum ? numberColor : r.loaded ? bright : muted);
         value(unit_, "");
         value(hint_, !app_.fresh() ? "State unknown\nTap to unload" : r.autoLoadArmed ? "Auto Load armed\nTap to cancel" :
-            r.loaded ? "" : "");
+            atMaximum ? "MAX" : "");
+        color(hint_,atMaximum ? maximumColor : soft);
         value(status_, r.twinKnown ? (r.twin ? "Twin" : "") : "Twin unknown");
         color(status_, r.twinKnown ? accent() : amber);
         if (r.twinKnown && r.twin) {
@@ -513,7 +520,7 @@ void UiController::update() {
             lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
             lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
         }
-        updateScale(r.settings.weight, r.maxWeight, "", accent());
+        updateScale(r.settings.weight, r.maxWeight, "", atMaximum ? maximumColor : accent());
         for (int i=0; i<2; ++i) {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
             const uint32_t c = accent();
@@ -587,10 +594,11 @@ void UiController::update() {
     } else {
         draftValue_ = std::clamp(draftValue_, 0, editMaximum());
         value(weight_, std::to_string(draftValue_)+(draftPercent_ ? "%" : ""));
-        color(weight_, bright);
+        const bool atMaximum = app_.fresh() && draftValue_ >= editMaximum();
+        color(weight_, atMaximum ? limitAccent() : bright);
         value(unit_, "");
         value(hint_, "");
-        updateScale(draftValue_, editMaximum(), draftPercent_ ? "%" : "", accent());
+        updateScale(draftValue_, editMaximum(), draftPercent_ ? "%" : "", atMaximum ? limitAccent() : accent());
         for(int i=0;i<2;++i) if(unitChoices_[i]) {
             const bool selected=(i==0) == draftPercent_;
             lv_obj_set_style_text_font(unitChoices_[i],selected ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);

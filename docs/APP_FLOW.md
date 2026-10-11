@@ -1,3 +1,8 @@
+> Follow-up: tapping the large Magic/EO value returns to setup; its outer scale
+> selects amount editing. X controls are removed. Exact preset modifiers replace
+> current settings, lowering base only as needed (explicitly approved by user).
+> See UI_IMPLEMENTATION_2026_10_11.md for current maximum-feedback behavior.
+
 > October 11 presentation extension: see [implementation status](UI_IMPLEMENTATION_2026_10_11.md)
 > and [supplied revision](UI_REVISION_2026_10_11.md). Limits, safety, dropset
 > calculations remain authoritative. The user explicitly approved the new

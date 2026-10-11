@@ -59,6 +59,7 @@ private:
     lv_obj_t* settingsValues_[4]{};
     lv_obj_t* liveValues_[3]{};
     uint32_t accent() const;
+    uint32_t limitAccent() const;
     void saveConfiguration();
     void buildExtra();
     void updateExtra();

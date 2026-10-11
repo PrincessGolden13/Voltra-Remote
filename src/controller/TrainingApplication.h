@@ -29,7 +29,6 @@ public:
     int dropsCompleted() const { return dropsCompleted_; }
     Preset currentPreset() const;
     bool applyPreset(const Preset&);
-    void disableModifier(bool magic);
     int startingWeight() const { return startingWeight_; }
 private:
     BleTransport& transport_;

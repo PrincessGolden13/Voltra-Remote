@@ -68,3 +68,11 @@ Windows build and responsive offscreen renders pass (see BASELINE.md). These
 are not interaction/safety test results. No new test code was added. Add future
 coverage for mixed-unit envelope limits, preset unit migration/readback mismatch,
 queued explicit edits versus unsolicited reports, and wake-input consumption.
+
+Follow-up regression cases queued (new test code still deferred): continuous
+rotary input beyond two seconds must not starve mock reports; every theme at
+and below maximum; confirmed vs ignored maximum requests; modifier amount tap
+with pending edits; no X controls; exact preset replacement at high base,
+70% IC + 20% EO / max 200 -> base 105; mixed absolute/percentage recipes;
+unsupported recipe rejection; knob input during preset confirmation; mismatch
+must not activate dropsets or the preset indicator. No new automated pass claimed.

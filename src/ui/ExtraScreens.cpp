@@ -12,6 +12,11 @@ uint32_t UiController::accent() const {
     constexpr uint32_t colors[] = {0xff4949,0x48e092,0x479cff,0xffda45,0xad77ff,0xff75bf,0xffa04d,0x00d9e8,0xb9c5ce};
     return colors[config_.theme];
 }
+uint32_t UiController::limitAccent() const {
+    // Paired high-contrast limit colors in the same order as the nine themes.
+    constexpr uint32_t colors[] = {0x45e5ff,0xff79cb,0xffcb60,0xbf95ff,0x64efb5,0xb7ee64,0x65cfff,0xff8273,0xffffff};
+    return colors[config_.theme];
+}
 void UiController::saveConfiguration() {
     if (store_ && !store_->save(config_)) text(message_,"Could not save settings");
 }
@@ -63,7 +68,7 @@ void UiController::buildExtra() {
     }
     if (page_ == Screen::Presets || page_ == Screen::SavePreset || page_ == Screen::OverridePreset) {
         label(face_,page_ == Screen::OverridePreset ? "OVERRIDE "+number(presetIndex_)+"?" : "PRESETS",width_*64/100,height_*12/100,heading);
-        action(LV_SYMBOL_CLOSE,76,19,10,10,CancelRecipe);
+        action(LV_SYMBOL_LEFT,76,19,10,10,CancelRecipe);
         if (page_ == Screen::Presets) {
             const bool isNew = presetIndex_ == int(config_.presets.size());
             auto* selected=disc(face_,width_*31/100,height_*33/100,width_*38/100,accent(),true); bind(selected,ChoosePreset);
@@ -99,7 +104,7 @@ void UiController::buildExtra() {
     }
     label(face_,page_ == Screen::Settings ? "SETTINGS" : page_ == Screen::Reset ? "FACTORY RESET?" :
         page_ == Screen::Wifi ? "WI-FI" : page_ == Screen::Updates ? "UPDATES" : "ABOUT",width_*70/100,height_*12/100,heading);
-    action(LV_SYMBOL_CLOSE,77,19,10,10,CloseSettings);
+    action(LV_SYMBOL_LEFT,77,19,10,10,CloseSettings);
     if (page_ == Screen::Settings) {
         const char* names[]={"Theme", "Rest alert", "Dim", "Sleep"};
         for(int i=0;i<4;++i) {
@@ -136,7 +141,7 @@ void UiController::updateExtra() {
         text(message_,known ? app_.message() : "State unknown / tap weight to unload");
     }
     if(page_ == Screen::Presets || page_ == Screen::SavePreset || page_ == Screen::OverridePreset) {
-        if(r.loaded || r.autoLoadArmed || !app_.fresh()) text(message_,"Tap here to unload / cancel");
+        text(message_,r.loaded || r.autoLoadArmed || !app_.fresh() ? "Tap here to unload / cancel" : app_.message());
     }
     if(page_ == Screen::Settings) {
         const auto mins=[](int n){ return n ? std::to_string(n)+" min" : "Never"; };

@@ -62,6 +62,7 @@ bool TrainingApplication::sendSettings(TrainingSettings s) {
     return result == TransportResult::Accepted;
 }
 void TrainingApplication::adjustWeight(int delta) {
+    if (presetIntent_) { message_ = "Awaiting preset confirmation"; return; }
     if (!settingsAllowed()) { message_ = "Device state unavailable"; return; }
     auto r = report();
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
@@ -76,6 +77,8 @@ void TrainingApplication::adjustWeight(int delta) {
         if (excess > 0 && m->enabled && divisor > 0)
             m->value = std::max(0, m->value - (excess+divisor-1)/divisor);
     }
+    if (!pending_ && s.weight == r.settings.weight && sameModifier(s.magic,r.settings.magic) &&
+        sameModifier(s.eccentric,r.settings.eccentric)) return;
     if (sendSettings(s)) weightIntent_ = s.weight;
 }
 void TrainingApplication::toggleWeight() {
@@ -107,12 +110,6 @@ void TrainingApplication::toggleModifier(bool magic) {
     m.enabled = !m.enabled;
     sendSettings(s);
 }
-void TrainingApplication::disableModifier(bool magic) {
-    const auto r = report();
-    if (pending_ || r.loaded) { message_ = "Unload before editing"; return; }
-    auto s = r.settings; (magic ? s.magic : s.eccentric).enabled = false;
-    sendSettings(s);
-}
 Preset TrainingApplication::currentPreset() const {
     const auto r = report();
     return {r.settings.magicMode, r.settings.magic, r.settings.eccentric, r.unit, drops()};
@@ -125,7 +122,11 @@ bool TrainingApplication::applyPreset(const Preset& p) {
         (p.drops.enabled && !r.liveWeightSupported) || p.drops.step < -r.maxWeight) {
         message_ = "Preset unavailable for current state / units"; return false;
     }
+    // A preset replaces all modifiers as one request. Preserve its exact values;
+    // if needed, lower only the current base to the conservative integer ceiling.
     auto s = r.settings; s.magicMode = p.mode; s.magic = p.magic; s.eccentric = p.eccentric;
+    auto limits = r; limits.settings = s;
+    s.weight = std::min(s.weight,baseMaximum(limits));
     if (!sendSettings(s)) return false;
     presetIntent_ = p; return true;
 }
@@ -210,7 +211,8 @@ void TrainingApplication::tick(uint64_t now) {
         pending_ = requestedLoad_ = false; weightIntent_.reset();
         if (presetIntent_) {
             auto actual = currentPreset(); actual.drops = presetIntent_->drops;
-            if (r.revision > sentRevision_ && samePreset(actual, *presetIntent_)) applyDrops(presetIntent_->drops);
+            if (r.revision > sentRevision_ && fresh() && !r.loaded &&
+                envelopeHundredths(r.settings) <= r.maxWeight*100 && samePreset(actual, *presetIntent_)) applyDrops(presetIntent_->drops);
             else message_ = "Preset not confirmed";
             presetIntent_.reset();
         }

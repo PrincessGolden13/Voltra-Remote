@@ -75,3 +75,33 @@ consumption; optional telemetry; stale live display; rest alert once per rest.
 Original build baseline: commit 3977431. The pre-edit executable was preserved
 in ignored build/native/voltra_simulator-before-oct11.exe. This checkout has no
 Git remote configured; all changes and builds are directly in the user's folder.
+
+## Follow-up: maximum feedback, editor navigation and exact preset replacement
+
+User feedback supersedes the earlier X-disable and amount-focus gestures:
+tapping the large Magic/EO amount now returns to setup. The outer tick scale
+selects amount editing. X controls are removed throughout; preset/settings
+pages use Back arrows and existing cancel actions. Modifier toggling remains
+on the main tiles. Pending explicit edits are submitted before returning.
+
+Maximum feedback is derived from fresh confirmed base weight, persists while
+at the device maximum, and clears below it. Each theme has a paired contrasting
+limit color; the unloaded number remains darker than the loaded number. MAX
+text makes the indication independent of color. Modifier editors use the same
+limit palette at their calculated maximum. Stale state remains a distinct
+safety condition, not a maximum indication.
+
+CONFIRMED in source: the mock previously moved its confirmation deadline on
+every knob event, allowing continuous scrolling to starve reports. Replacing
+a pending mock setting now retains its original 350 ms deadline. Real freshness
+and timeout policies were not relaxed. Repeated already-confirmed maximum
+requests no longer generate redundant writes.
+
+The user explicitly approved lowering base weight to fit an exact preset.
+Applying a preset replaces Magic, EO and dropset configuration. Base is lowered
+only when required by the recipe's envelope, using the existing integer-floor
+calculation. E.g. 70% IC + 20% EO on a 200-unit device caps base at 105. Presets
+still contain no stored base/load command; nothing loads on preset selection.
+Weight edits wait during preset confirmation so they cannot overwrite its
+pending modifier request. Unsupported/intrinsically invalid recipes still fail.
+Failures are now visible in the preset browser. Activation still requires readback.

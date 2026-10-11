@@ -122,7 +122,10 @@ TransportResult MockTransport::setTraining(const TrainingSettings& s) {
         (s.eccentric.enabled && (!r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
         envelopeHundredths(s) > r.maxWeight*100) return TransportResult::Failed;
     if (consumeIgnored()) return TransportResult::Accepted;
-    pendingSettings_ = s; dueMs_ = nowMs_ + confirmationDelayMs; return TransportResult::Accepted;
+    // New knob values replace the pending setting, not its delivery deadline.
+    // Otherwise a continuous turn can starve reports and look like a disconnect.
+    if (!pendingSettings_) dueMs_ = nowMs_ + confirmationDelayMs;
+    pendingSettings_ = s; return TransportResult::Accepted;
 }
 TransportResult MockTransport::setWeight(uint16_t pounds) {
     const auto r = trainingReport(); auto s = r.settings;

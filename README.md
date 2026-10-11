@@ -20,24 +20,29 @@ return to the picker. Drag the top rim to move the window; Escape closes it.
 The setup screen has one theme color, a device-scaled outer weight dial, and
 four controls: Magic, EO, Dropsets and Presets. Tap the weight to focus it;
 when already focused, tap to load/unload. Unload remains available immediately
-while loaded, pending or stale. Hold the weight for Auto Load.
+while loaded, pending or stale. Hold the weight for Auto Load. At the confirmed device maximum, the number and
+dial use a contrasting color paired with the selected theme, and show MAX.
 
 Magic, EO and Dropsets retain their earlier short-tap toggle / hold-to-edit
 behavior. The Magic picker is ordered IC / MTN / C; touch a mode then turn the
-knob to browse supported modes, or touch the amount to adjust it.
-Modifier editors now apply changes without an Apply button. Touch the amount,
+knob to browse supported modes, or touch the outer scale to adjust the amount. Tap the large amount to return
+to setup.
+Modifier editors now apply changes without an Apply button. Touch the outer scale,
 mode or unit picker to choose the knob's target. Supported devices offer % and
 LB/KG independently for Magic and EO; older profiles show only their supported
 absolute unit. Consecutive knob events settle for 150 ms before one request;
 reported values remain authoritative, with no confirmation-driven retries.
-The X disables the modifier, independently of the bottom Back chevron. Dropsets retain Apply.
+There are no X controls. Disable modifiers with their main-screen tiles;
+Back arrows navigate without disabling. Dropsets retain Apply.
 
 Tap Presets to browse P01–P99 with the knob. Tap an existing preset to request
 its modifiers; hold it to compare OLD / NEW before saving an override. The
 single NEW slot at the end saves the current modifier configuration. Presets
 exclude base weight, never load resistance, and become active only when the
-machine report matches. Unsupported units/features or out-of-range recipes
-are rejected instead of silently converted. Presets and remote preferences
+machine report matches. Unsupported units/features or intrinsically invalid recipes
+are rejected instead of silently converted. When the exact preset modifiers
+need more headroom, selecting it reduces base weight to the highest safe integer
+value (never increases it). The stored modifier values are not trimmed. Presets and remote preferences
 persist in `remote-settings.txt` beside the Windows executable (or in the Mac
 application support directory). Restoring saved data never applies a preset.
 
