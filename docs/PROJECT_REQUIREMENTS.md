@@ -60,35 +60,7 @@ They should NOT become directories inside my working repository and should not b
 
 If local clones are useful for investigation, clone them outside my working project.
 
-## 1. Ryan Markoff-Eaton VOLTRA DIY Remote
-
-https://github.com/RyanMarkoff-eaton/voltra-diy-remote
-
-This is an important starter project because it targets essentially the same use case and similar 2.1-inch ESP32-S3 rotary hardware.
-
-Use it as a starting firmware/hardware reference.
-
-It already contains work involving:
-
-* BLE scanning
-* VOLTRA connection
-* handshake
-* reconnect
-* reading settings
-* encoder interaction
-* display/touch support
-* base weight adjustment
-* eccentric
-* chains
-* inverse chains
-* load/unload
-* drop-set concepts
-
-However, do not blindly preserve its architecture or hard-coded protocol approach.
-
-Preserve a known-working baseline before major refactoring.
-
-## 2. Unofficial VOLTRA Node SDK
+## 1. Unofficial VOLTRA Node SDK
 
 https://github.com/HJewkes/voltra-node-sdk
 
@@ -111,11 +83,9 @@ It has a more mature abstraction of the VOLTRA including:
 * multiple devices
 * mock BLE/device support
 
-Ryan's project appears to have ported some protocol information from an earlier version of this SDK.
+Review its current implementation, tests, changelog and relevant history.
 
-Review its CURRENT implementation, tests, changelog and relevant history rather than assuming Ryan's snapshot is complete.
-
-## 3. Beyond Power Home Assistant integration
+## 2. Beyond Power Home Assistant integration
 
 https://github.com/dylanmaniatakes/Beyond-Power-HomeAssistant
 
@@ -1324,15 +1294,15 @@ Initially:
 
 3. Set up my working repository.
 
-4. Use voltra-diy-remote as starter/reference code where useful.
+4. Use audited protocol sources as research references where useful.
 
 5. Keep reference repositories outside my source tree.
 
 6. Install only the minimum necessary development environment.
 
-Prefer PlatformIO because the starter already uses it.
+Prefer PlatformIO for embedded targets.
 
-7. Confirm the starter firmware can compile.
+7. Confirm a board target can compile only after its hardware is validated.
 
 8. Run existing packet/protocol validation tests.
 

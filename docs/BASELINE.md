@@ -8,11 +8,6 @@ Validated on Windows 10 x64, 2026-09-06.
   is synthetic and does not connect to Bluetooth.
 - Packet inspector accepted the documented base-weight state frame and rejected
   corrupt CRC, truncated input and non-hex input.
-- Ryan starter reference compiled successfully for `elecrow21_ui` using
-  PlatformIO 6.1.19, Espressif32 6.12.0, Arduino framework, NimBLE 2.3.6 and
-  Arduino GFX 1.4.7. It used only the template dummy address in ignored
-  `LocalConfig.h`; no upload was performed.
-- Existing upstream checks passed: 203 packet vectors and the pinned SDK check.
 - Existing Node SDK protocol suite passed: 229 tests in 10 files. No radio was
   used.
 

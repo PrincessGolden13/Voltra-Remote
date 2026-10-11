@@ -13,7 +13,6 @@ are outside the application, under `%TEMP%/voltra-reference-audit/`.
 
 | Source | Reviewed commit | Key areas inspected |
 | --- | --- | --- |
-| [Ryan starter](https://github.com/RyanMarkoff-eaton/voltra-diy-remote/tree/f0dffbb5ba15eeaa64c8c713a1d7291dfeb75a1a) | f0dffbb5ba15eeaa64c8c713a1d7291dfeb75a1a | PlatformIO targets, README, VALIDATION, packet data, validators, four-commit history |
 | [Node SDK](https://github.com/HJewkes/voltra-node-sdk/tree/a53804e46c87a9064bc776d0e9ecedc2e66867fe) | a53804e46c87a9064bc776d0e9ecedc2e66867fe | Changelog through 0.12.3, protocol history, CRC/builder, BLE constants, tests, adapter isolation |
 | [Home Assistant](https://github.com/dylanmaniatakes/Beyond-Power-HomeAssistant/tree/93b0819745e665ab4d35f4cc501d48c6296c81f7) | 93b0819745e665ab4d35f4cc501d48c6296c81f7 | protocol.py framing, parameter table, compute_safety, models/client, recent history |
 | [Android](https://github.com/dylanmaniatakes/Beyond-Power-Voltra-Android/tree/da514d2db1a16ebb4ded3156bc8fd200bed1e6eb) | da514d2db1a16ebb4ded3156bc8fd200bed1e6eb | Protocol notes, static-analysis report, parameter CSV, SDK research notes, Overdrive parser/tests, relevant history |
@@ -25,8 +24,6 @@ mean this project's physical remote or VOLTRA has been validated.
 
 ## Important differences
 
-- CONFIRMED (source): Ryan already pins the current SDK commit above. The initial
-  suspicion of an older SDK snapshot does not apply to this checkout.
 - CONFIRMED (source): SDK history corrects a false battery interpretation,
   reclassifies SETUP, removes PREPARE's workout-state overwrite (a5e5829), and
   renames direct-load status fields to safety-check fields (0cbf83c). These are

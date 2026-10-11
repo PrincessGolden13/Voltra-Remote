@@ -50,25 +50,7 @@ an atomic replace. Only successful connections update the four-entry MRU.
 `tools/Setup-Development.ps1 -Python <real-python-executable>` creates the virtual
 environment and downloads the pinned LVGL archive, verifying SHA256 before use.
 It requires Python with pip and network access. Never commit `.venv` or `.tools`.
-LVGL is a normal build dependency; the four research repositories stay external.
-
-## Starter baseline
-
-External checkout: `%TEMP%/voltra-reference-audit/voltra-diy-remote`, exact revision
-in UPSTREAM_AUDIT.md. Its ignored LocalConfig.h uses the template's dummy address
-for compilation only. Do not upload this reference artifact to the unknown board.
-
-The normal absolute PlatformIO core path produced compiler commands of 32,674
-characters and a Windows CreateProcess error. A temporary drive alias shortened
-the toolchain path. To reproduce, reserve an unused drive letter (verify first),
-map it to the project, set PLATFORMIO_CORE_DIR to that drive's `.tools/platformio`,
-build `elecrow21_ui`, then remove only the alias. No source change is needed.
-
-Firmware dependencies: espressif32 6.12.0, Arduino framework
-3.20017.241212+sha.dcc1105b, Xtensa/RISC-V 8.4.0+2021r2-patch5,
-NimBLE-Arduino 2.3.6, Arduino GFX 1.4.7. All resolved packages are under ignored
-`.tools/platformio`. The unused PlatformIO MinGW 5.1 package was an unsuccessful
-native compiler candidate; Zig is the selected C++17 compiler.
+LVGL is a normal build dependency; the research repositories stay external.
 
 ## Git
 
