@@ -114,3 +114,11 @@ Unsupported recipes require an OK acknowledgement.
 For large-number layout previews, add `--modifier-value 125` to a `--render`
 command on screen 2 or 3. This initializes synthetic settings only and cannot
 be used in the interactive simulator.
+
+### Physical Guition K5 bring-up
+
+The connected JC3636K518 working target has a dedicated offline build sharing
+this UI and the six mock VOLTRAs. See [hardware bring-up](docs/GUITION_K5.md).
+`tools/Build-Guition.ps1` builds it; `tools/Flash-Guition.ps1` requires the verified
+local recovery image and checks the generated partition map before upload.
+This firmware does not connect to or control a physical VOLTRA.

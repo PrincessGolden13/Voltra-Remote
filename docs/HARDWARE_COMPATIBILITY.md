@@ -65,3 +65,15 @@ query succeeded and performed a normal hard reset to exit the inspection state.
 Do not describe the backup as successful or overwrite factory firmware yet.
 The prototype_21 build gate remains intact; no board pinout was adopted and no
 flashable application was created by these identification steps.
+
+## Working-target authorization and bring-up
+
+The user explicitly authorized proceeding with the JC3636K518 working target
+without a label photo or dismantling. A dedicated guition_k5_offline adapter now
+exists; see GUITION_K5.md for reference pin data, build and validation status.
+The original prototype_21 remains blocked. No physical BLE backend is included.
+
+A 2 MB factory recovery image (offsets 0 through 0x1fffff) has since been read and
+verified against flash: esptool verify_flash reported digest matched. All planned
+writable partitions are confined to that region, including crash dumps. The rest
+of the 16 MB flash is left untouched. This is a region backup, not a full backup.
