@@ -1,0 +1,55 @@
+#pragma once
+#include "VoltraController.h"
+#include "DeviceMemory.h"
+#include <map>
+namespace voltra {
+class TrainingApplication {
+public:
+    TrainingApplication(BleTransport&, VoltraController&, ControlSession&, DeviceMemory* = nullptr);
+    void tick(uint64_t now);
+    void scan();
+    bool select(const DeviceId&);
+    void leave();
+    bool connected() const { return controller_.confirmed().connected; }
+    const std::vector<DeviceEntry>& devices() const { return devices_; }
+    const std::string& name() const { return name_; }
+    TrainingReport report() const { return session_.trainingReport(); }
+    bool fresh() const;
+    bool pending() const { return pending_; }
+    const std::string& message() const { return message_; }
+    void adjustWeight(int delta);
+    void toggleWeight();
+    void autoLoad();
+    void toggleModifier(bool magic);
+    bool applyModifiers(TrainingSettings);
+    DropSettings drops() const;
+    void applyDrops(DropSettings);
+    void toggleDrops();
+    int dropsCompleted() const { return dropsCompleted_; }
+private:
+    BleTransport& transport_;
+    VoltraController& controller_;
+    ControlSession& session_;
+    DeviceMemory* memory_;
+    std::vector<DeviceEntry> recent_, devices_;
+    std::map<DeviceId, DropSettings> dropSettings_;
+    DeviceId selected_;
+    std::string name_, message_;
+    uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
+    bool scanned_ = false, pending_ = false, requestedLoad_ = false;
+    std::optional<int> weightIntent_, dropTarget_;
+    std::optional<TrainingSettings> requestedSettings_;
+    std::optional<bool> requestedLoaded_;
+    bool requestedAuto_ = false;
+    uint32_t lastRep_ = 0;
+    uint64_t telemetryRevision_ = 0, holdSince_ = 0;
+    bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;
+    bool dropsCancelled_ = false;
+    int dropsCompleted_ = 0;
+    void sent(TransportResult);
+    bool settingsAllowed() const;
+    bool sendSettings(TrainingSettings);
+    void resetDrops();
+    void runDrops(const TrainingReport&);
+};
+}

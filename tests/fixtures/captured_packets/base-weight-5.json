@@ -1,0 +1,11 @@
+{
+  "hex": "5513040310AA79022000100100863E05003FA2",
+  "origin": "https://github.com/dylanmaniatakes/Beyond-Power-Voltra-Android/blob/da514d2db1a16ebb4ded3156bc8fd200bed1e6eb/PROTOCOL_NOTES.md",
+  "source_context": "Reported official-app 2026-04-14 weight-training capture; matching BP_BASE_WEIGHT=5 async update",
+  "evidence_scope": "Public source-reported capture, not captured on this project's hardware",
+  "expected_command": "0x10",
+  "expected_parameter": "0x3E86",
+  "expected_value_lbs": 5,
+  "contains_device_identity": false,
+  "use": "Offline parsing only. This is an inbound state report, not a load command."
+}

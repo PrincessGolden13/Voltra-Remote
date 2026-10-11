@@ -1,0 +1,5 @@
+platformio==6.1.19
+cmake==3.31.6
+ninja==1.11.1.4
+ziglang==0.14.1
+pip==26.2.1
