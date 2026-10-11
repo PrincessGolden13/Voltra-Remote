@@ -41,12 +41,20 @@ void UiController::buildExtra() {
         auto* b=button(face_,name,width_*x/100,height_*y/100,width_*w/100,height_*h/100,id);
         glow(b,accent(),true); return b;
     };
+    if(page_ == Screen::PresetNotice) {
+        label(face_,"PRESET UNAVAILABLE",width_*76/100,height_*22/100,heading);
+        label(face_,presetNotice_,width_*72/100,height_*38/100,medium);
+        action("OK",33,64,34,12,CancelRecipe);
+        message_=label(face_,"",width_*74/100,height_*81/100); bind(message_,Unload);
+        return;
+    }
     if (page_ == Screen::Live) {
         title_ = label(face_,app_.name(),width_*70/100,height_*13/100,heading); bind(title_,BackDevices); lv_label_set_long_mode(title_,LV_LABEL_LONG_DOT);
         status_ = label(face_,"",width_*60/100,height_*22/100,medium);
         start_ = label(face_,"",width_*65/100,height_*31/100,heading);
         center_ = lv_obj_create(face_); lv_obj_remove_style_all(center_);
         lv_obj_set_size(center_,width_*76/100,height_*28/100); lv_obj_set_pos(center_,width_*12/100,height_*38/100); bind(center_,Weight);
+        lv_obj_add_flag(center_,LV_OBJ_FLAG_OVERFLOW_VISIBLE);
         weight_ = label(center_,"",width_*70/100,height_*5/100,&lv_font_montserrat_48);
         lv_obj_set_style_transform_pivot_x(weight_,width_*35/100,0);
         lv_obj_set_style_transform_pivot_y(weight_,24,0);
@@ -128,11 +136,11 @@ void UiController::updateExtra() {
     const auto r=app_.report();
     if(page_ == Screen::Live) {
         const auto d=app_.drops();
-        text(status_,r.twinKnown ? (r.twin ? "Twin" : "") : "Twin unknown");
+        text(status_,r.twinKnown ? (r.twin ? "Twin: "+r.twinPeerName : "") : "Twin unknown");
         const bool known=app_.fresh() && r.telemetryValid;
-        text(weight_,known ? (d.enabled ? std::to_string(r.settings.weight) : r.force ? std::to_string(*r.force) : "--") : "--");
+        largeValue(known ? (d.enabled ? std::to_string(r.settings.weight) : r.force ? std::to_string(*r.force) : "--") : "--");
         text(start_,d.enabled ? "START "+std::to_string(app_.startingWeight()) : "");
-        int next=std::max(1,d.mode == DropMode::Stairs ? r.settings.weight+d.step : r.settings.weight*(100-d.percent)/100);
+        int next=std::max(1,d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : r.settings.weight*(100-d.percent)/100);
         if(d.mode == DropMode::RestPause && app_.dropsCompleted() >= d.drops) next=r.settings.weight;
         text(nextWeight_,d.enabled ? "NEXT "+(known ? std::to_string(next) : "--") : unitName(r.unit));
         text(liveValues_[0],known && r.setNumber ? std::to_string(*r.setNumber) : "");
@@ -140,7 +148,7 @@ void UiController::updateExtra() {
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
         text(message_,known ? app_.message() : "State unknown / tap weight to unload");
     }
-    if(page_ == Screen::Presets || page_ == Screen::SavePreset || page_ == Screen::OverridePreset) {
+    if(page_ == Screen::PresetNotice || page_ == Screen::Presets || page_ == Screen::SavePreset || page_ == Screen::OverridePreset) {
         text(message_,r.loaded || r.autoLoadArmed || !app_.fresh() ? "Tap here to unload / cancel" : app_.message());
     }
     if(page_ == Screen::Settings) {

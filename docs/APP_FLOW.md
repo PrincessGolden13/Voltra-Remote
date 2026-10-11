@@ -1,3 +1,11 @@
+> Latest October 11 follow-up supersedes older interactions below: mode/unit
+> selection is touch-only, rotary always edits the main amount, and percent/absolute
+> toggles convert with nearest-integer rounding and remember unit-only roundtrips.
+> Main load stays on setup until confirmed rep-start telemetry. Presets are global,
+> convert absolute units, and require an OK notice for firmware incompatibility.
+> Stairs supports signed steps, zero at the top, no central circle, and keeps an
+> Apply button per the user's final clarification (center tap also applies).
+
 > Follow-up: tapping the large Magic/EO value returns to setup; its outer scale
 > selects amount editing. X controls are removed. Exact preset modifiers replace
 > current settings, lowering base only as needed (explicitly approved by user).

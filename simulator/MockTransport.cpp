@@ -4,18 +4,37 @@
 #include <cmath>
 namespace voltra {
 MockTransport::MockTransport() {
-    const char* names[] = {"VOLTRA Garage", "VOLTRA Studio", "VOLTRA Twin", "VOLTRA Travel", "VOLTRA Gym"};
-    for (int i = 0; i < 5; ++i) {
-        TrainingReport r; r.maxWeight = i == 1 ? 90 : i == 2 ? 400 : 200;
-        r.unit = i == 1 ? WeightUnit::Kilograms : WeightUnit::Pounds;
-        r.percentageSupported = i != 3; r.modifierUnitsSelectable = i != 3;
-        r.settings.magic.percent = r.settings.eccentric.percent = i != 1 && i != 3; r.settings.weight = i == 1 ? 25 : 50;
-        r.magicSupported = {true, true, i != 3}; r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
-        r.twinKnown = true; r.twin = i == 2; r.telemetryValid = true;
-        r.settings.magic.value = r.settings.magic.percent ? 50 : 10; r.settings.eccentric.value = r.settings.magic.percent ? 25 : 5;
-        devices_.push_back({i == 0 ? deviceId : std::string(deviceId) + '-' + std::to_string(i), names[i], true, r});
+    const char* names[] = {"Green 2.0", "Yellow TW 2.0", "Pink TW 2.0", "Red 2.0 KG", "Black 1.x", "White OFF"};
+    for (int i = 0; i < 6; ++i) {
+        TrainingReport r;
+        r.maxWeight = i == 3 ? 104 : i == 4 ? 200 : 230;
+        r.unit = i == 3 ? WeightUnit::Kilograms : WeightUnit::Pounds;
+        r.firmwareVersion = i == 4 ? "1.x" : "2.0";
+        r.percentageSupported = r.modifierUnitsSelectable = i != 4;
+        r.settings.magic.percent = r.settings.eccentric.percent = i != 4;
+        r.settings.weight = i == 3 ? 23 : 50;
+        r.magicSupported = {true,true,i != 4};
+        r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
+        r.twinKnown = true; r.twin = i == 1 || i == 2;
+        r.twinPeerName = i == 1 ? names[2] : i == 2 ? names[1] : "";
+        r.telemetryValid = true; r.repsStarted = false;
+        r.settings.magic.value = i == 4 ? 10 : 50;
+        r.settings.eccentric.value = i == 4 ? 5 : 25;
+        devices_.push_back({i == 0 ? deviceId : std::string(deviceId)+'-'+std::to_string(i),names[i],i != 5,r});
     }
 }
+void MockTransport::previewModifier(int value) {
+    auto& r=devices_[active_].state;
+    r.settings.magic.value=std::clamp(value,0,modifierMaximum(r,r.settings,true));
+    r.settings.eccentric.value=std::clamp(value,0,modifierMaximum(r,r.settings,false));
+    sent_=false;
+}
+std::vector<DeviceEntry> MockTransport::catalog() const {
+    std::vector<DeviceEntry> result;
+    for(const auto& d : devices_) result.push_back({d.id,d.name,false});
+    return result;
+}
+
 std::vector<Advertisement> MockTransport::scan() {
     std::vector<Advertisement> result;
     for (const auto& d : devices_) if (d.online) result.push_back({d.id, d.name, {VoltraGattProfile::service}});
@@ -53,7 +72,7 @@ void MockTransport::setProfile(SimulatorProfile profile) {
     auto& r = devices_[active_].state;
     r.loaded = profile == SimulatorProfile::Loaded; r.autoLoadArmed = false;
     r.twinKnown = profile != SimulatorProfile::TwinUnknown;
-    r.moving = r.held = false; r.rep = 0; restSince_ = 0;
+    r.moving = r.held = false; r.rep = 0; r.repsStarted = false; restSince_ = 0;
     r.force.reset(); r.setNumber.reset(); r.completedSets.reset(); r.lastSetReps.reset(); r.restSeconds.reset();
 }
 void MockTransport::poll(uint64_t now) {
@@ -65,14 +84,14 @@ void MockTransport::poll(uint64_t now) {
         if (pendingSettings_) { state.settings = *pendingSettings_; pendingSettings_.reset(); sent_ = false; }
         if (pendingLoaded_) {
             if (*pendingLoaded_ && !state.loaded) {
-                state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0;
+                state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
                 state.restSeconds.reset(); restSince_ = 0;
             } else if (!*pendingLoaded_ && state.loaded) {
                 state.completedSets = state.setNumber.value_or(1); state.lastSetReps = int(state.rep);
                 restSince_ = now; state.restSeconds = 0;
             }
             state.loaded = *pendingLoaded_; state.autoLoadArmed = false;
-            if (!state.loaded) state.moving = state.held = false;
+            if (!state.loaded) { state.moving = state.held = false; state.repsStarted = false; }
             pendingLoaded_.reset(); sent_ = false;
         }
         if (pendingAuto_) { state.autoLoadArmed = true; pendingAuto_ = false; sent_ = false; heldSince_ = 0; }
@@ -81,7 +100,7 @@ void MockTransport::poll(uint64_t now) {
             if (!heldSince_) heldSince_ = now;
             if (now-heldSince_ >= 3000) {
                 state.loaded = true; state.autoLoadArmed = false; sent_ = false;
-                state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0;
+                state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
                 state.restSeconds.reset(); restSince_ = 0;
             }
         } else heldSince_ = 0;
@@ -91,6 +110,13 @@ void MockTransport::poll(uint64_t now) {
     lastMs_ = now; sent_ = true;
     if (state.loaded) { state.force = state.settings.weight; if (!state.setNumber) state.setNumber = 1; }
     else { state.force.reset(); if (restSince_) state.restSeconds = int((now-restSince_)/1000); }
+    // Already-paired synthetic endpoints share a workout through one selected
+    // session. This is not a second BLE connection or a duplicate command.
+    if(active_ == 1 || active_ == 2) {
+        auto& peer = devices_[active_ == 1 ? 2 : 1].state;
+        const auto peerName = peer.twinPeerName;
+        peer = state; peer.twinPeerName = peerName;
+    }
     state.receivedAtMs = now; ++state.revision; reported_ = state;
     device_.weightLbs = uint16_t(std::lround(state.settings.weight * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     device_.loaded = state.loaded;
@@ -147,11 +173,11 @@ TransportResult MockTransport::triggerAutoLoad() {
     if (consumeIgnored()) return TransportResult::Accepted;
     pendingAuto_ = true; dueMs_ = nowMs_ + confirmationDelayMs; return TransportResult::Accepted;
 }
-void MockTransport::toggleAvailability() { devices_[1].online = !devices_[1].online; }
+void MockTransport::toggleAvailability() { devices_[5].online = !devices_[5].online; }
 void MockTransport::completeRep() {
     auto& r = devices_[active_].state;
     if (!connected_ || !r.loaded) return;
-    ++r.rep; r.moving = true; r.held = false; sent_ = false;
+    ++r.rep; r.repsStarted = true; r.moving = true; r.held = false; sent_ = false;
 }
 void MockTransport::setHeld(bool held) {
     auto& r = devices_[active_].state;

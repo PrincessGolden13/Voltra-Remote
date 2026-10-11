@@ -95,18 +95,19 @@ void UiController::buildScale() {
 
 }
 void UiController::updateScale(int selected, int maximum, const std::string& suffix, uint32_t accent, bool negative) {
-    const int progress = percentOf(selected, maximum);
+    const int progress = negative ? percentOf(selected+maximum,maximum*2) : percentOf(selected, maximum);
     for (int i=0; i<tickCount; ++i)
-        lv_obj_set_style_line_color(ticks_[i], lv_color_hex(progress > 0 && i*1000/(tickCount-1) <= progress ? accent : 0x46526b), 0);
+        lv_obj_set_style_line_color(ticks_[i], lv_color_hex((negative ? (i*1000/(tickCount-1) >= std::min(500,progress) && i*1000/(tickCount-1) <= std::max(500,progress)) : progress > 0 && i*1000/(tickCount-1) <= progress) ? accent : 0x46526b), 0);
     const int step = maximum <= 10 ? std::max(1,maximum/4) : maximum <= 100 ? 20 : maximum <= 300 ? 50 : 100;
     std::vector<int> landmarks{0};
     for (int n=step;n<maximum && landmarks.size()<6;n+=step) landmarks.push_back(n);
     if (maximum > 0) landmarks.push_back(maximum);
+    if(negative) landmarks = {-maximum,-maximum/2,0,maximum/2,maximum};
     for (size_t i=0;i<7;++i) {
         if(i >= landmarks.size()) { value(scaleLabels_[i], ""); continue; }
         const int n=landmarks[i];
-        const double a=(180.0+(maximum > 0 ? 180.0*n/maximum : 0))*3.141592653589793/180;
-        value(scaleLabels_[i],std::string(negative && n ? "-" : "")+std::to_string(n));
+        const double a=(180.0+(maximum > 0 ? (negative ? 90.0*(n+maximum)/maximum : 180.0*n/maximum) : 0))*3.141592653589793/180;
+        value(scaleLabels_[i],std::string(negative && n > 0 ? "+" : "")+std::to_string(n));
         lv_obj_set_align(scaleLabels_[i],LV_ALIGN_TOP_LEFT);
         lv_obj_set_pos(scaleLabels_[i],int(width_*.5+width_*.455*std::cos(a))-width_/14,
             int(height_*.54+width_*.455*std::sin(a))-7);
@@ -147,7 +148,7 @@ void UiController::readTouch() { lv_indev_read(touch_); }
 void UiController::navigate(Screen page) {
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
-    editorFocus_ = 0; editDirty_ = returnAfterEdit_ = false;
+    editDirty_ = returnAfterEdit_ = false;
     next_ = page; rebuild_ = true;
     const auto r = app_.report();
     if (page == Screen::Magic || page == Screen::Eccentric) {
@@ -171,7 +172,6 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == BackDevices && !held) { app_.leave(); navigate(Screen::Devices); return; }
     if (action == Weight) {
         if (held) app_.autoLoad();
-        else if (!weightFocused_ && !app_.report().loaded && app_.fresh() && !app_.pending()) weightFocused_ = true;
         else app_.toggleWeight();
         return;
     }
@@ -180,13 +180,14 @@ void UiController::act(int action, const std::string& id, bool held) {
         if (presetIndex_ == int(config_.presets.size())) { saveDraft_ = app_.currentPreset(); navigate(Screen::SavePreset); }
         else if (held) { saveDraft_ = app_.currentPreset(); navigate(Screen::OverridePreset); }
         else if (app_.applyPreset(config_.presets[presetIndex_])) { pendingPreset_ = presetIndex_; navigate(Screen::Main); }
+        else if (!app_.presetCompatibilityError().empty()) { presetNotice_ = app_.presetCompatibilityError(); navigate(Screen::PresetNotice); }
         return;
     }
     if (held) {
         if (action != Magic && action != EO && action != Drops) return;
     }
     if (action == PrevPreset || action == NextPreset) { rotate(action == PrevPreset ? -1 : 1); return; }
-    if (action == CancelRecipe) { navigate(page_ == Screen::Presets ? Screen::Main : Screen::Presets); return; }
+    if (action == CancelRecipe) { if(page_ == Screen::PresetNotice) { navigate(Screen::Presets); return; } navigate(page_ == Screen::Presets ? Screen::Main : Screen::Presets); return; }
     if (action == SaveRecipe) {
         auto previous = config_;
         if (presetIndex_ == int(config_.presets.size()) && config_.presets.size() < 99) config_.presets.push_back(saveDraft_);
@@ -205,19 +206,23 @@ void UiController::act(int action, const std::string& id, bool held) {
         if (store_ && !store_->save(config_)) { config_ = old; value(message_, "Reset could not be saved"); return; }
         activePreset_ = pendingPreset_ = -1; navigate(Screen::Settings); return;
     }
-    if (action == ModeFocus) { editorFocus_ = 1; return; }
-    if (action == AmountFocus) { editorFocus_ = 0; return; }
+    if (action == ModeFocus || action == AmountFocus) return;
     if (action == BackMain) {
         if(editDirty_) { returnAfterEdit_ = true; editedAt_ = 0; }
         else navigate(Screen::Main);
         return;
     }
-    if(action == UnitFocus) { editorFocus_ = 2; return; }
+    if(action == UnitFocus) return;
     if(action == UnitPercent || action == UnitAbsolute) {
-        editorFocus_ = 2;
         const bool percent=action == UnitPercent;
         if(app_.report().modifierUnitsSelectable && (!percent || app_.report().percentageSupported) && percent != draftPercent_) {
-            draftPercent_ = percent; draftValue_ = std::clamp(draftValue_,0,editMaximum()); edited();
+            auto& memory = unitSelection();
+            auto& target = percent ? memory.percent : memory.absolute;
+            const int base = app_.report().settings.weight;
+            if(percent && base <= 0) return;
+            const int converted = target.value_or(int(std::lround(percent ? draftValue_*100.0/base : draftValue_*base/100.0)));
+            draftPercent_ = percent; draftValue_ = std::clamp(converted,0,editMaximum());
+            target = draftValue_; edited();
         }
         return;
     }
@@ -239,7 +244,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         navigate(Screen::Main);
     } else if (action >= ModeIC && action <= ModeMTN) {
         auto mode = MagicMode(action-ModeIC);
-        if (app_.report().magicSupported[int(mode)]) { draftMode_ = mode; editorFocus_ = 1; edited(); }
+        if (app_.report().magicSupported[int(mode)]) { draftMode_ = mode; unitMemory_[app_.selectedDevice()][0] = {}; edited(); }
     } else if (action == Stairs || action == RP) {
         draftDrops_.mode = action == Stairs ? DropMode::Stairs : DropMode::RestPause;
         next_ = page_; rebuild_ = true;
@@ -288,7 +293,9 @@ void UiController::build() {
             lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, size*24/100);
             auto* name = label(tile, d.name, size*90/100, size*49/100, small);
             lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
-            lv_obj_set_height(name, small->line_height);
+            lv_obj_set_height(name, small->line_height*2);
+            lv_label_set_long_mode(name,LV_LABEL_LONG_WRAP);
+            lv_obj_set_y(name,size*40/100);
             color(name, d.online ? bright : muted);
             auto* badge = lv_obj_create(tile); lv_obj_remove_style_all(badge);
             lv_obj_set_size(badge, size*61/100, size*19/100); lv_obj_align(badge, LV_ALIGN_TOP_MID, 0, size*69/100);
@@ -332,6 +339,13 @@ void UiController::build() {
         }
         if (page_ == Screen::Main) bind(center_, Weight);
         else lv_obj_remove_flag(center_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_width(center_,width_*80/100);
+        lv_obj_set_x(center_,width_*10/100);
+        lv_obj_set_style_radius(center_,0,0);
+        lv_obj_set_style_bg_opa(center_,LV_OPA_TRANSP,0);
+        lv_obj_set_style_border_width(center_,0,0);
+        lv_obj_set_style_shadow_width(center_,0,0);
+        lv_obj_add_flag(center_,LV_OBJ_FLAG_OVERFLOW_VISIBLE);
         weight_ = label(center_, "--", size*96/100, size*20/100, &lv_font_montserrat_48);
         lv_obj_set_style_transform_pivot_x(weight_, size*96/200, 0);
         lv_obj_set_style_transform_pivot_y(weight_, lv_font_montserrat_48.line_height/2, 0);
@@ -340,6 +354,7 @@ void UiController::build() {
         unit_ = label(center_, "", size*90/100, size*64/100, small); color(unit_, soft);
         hint_ = label(center_, "", size*90/100, size*77/100, small); color(hint_, soft);
         if (page_ == Screen::Main) {
+            bind(weight_,Weight);
             lv_obj_align(unit_, LV_ALIGN_TOP_MID, 0, size*59/100);
             lv_obj_align(hint_, LV_ALIGN_TOP_MID, 0, size*70/100);
         }
@@ -387,6 +402,7 @@ void UiController::build() {
             lv_obj_set_x(choice_[index],width_*(1+i*21)/100); bind(choice_[index],ModeIC+index);
         }
     } else if (page_ == Screen::Drops) {
+        lv_obj_set_y(title_,height_*19/100); lv_obj_set_y(status_,height_*35/100);
         for (int i=0; i<2; ++i) {
             choice_[i] = button(face_, i == 0 ? "Stairs" : "RP", width_*(25+i*25)/100, height_*27/100,
                 width_*25/100, height_*7/100, i == 0 ? Stairs : RP);
@@ -405,13 +421,13 @@ void UiController::build() {
             }
             hint_ = label(face_, "", width_*55/100, height_*70/100, &lv_font_montserrat_18);
         } else {
-            lv_obj_set_y(center_, height_*36/100);
+            lv_obj_set_y(center_, height_*39/100); bind(center_,Apply); bind(weight_,Apply);
         }
     }
     if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
         bind(center_,BackMain);
         bind(weight_,BackMain);
-        // The outer scale selects amount editing after using mode/unit pickers.
+        // Mode and unit selectors are touch-only; rotation always edits amount.
         for(auto* tick : ticks_) { bind(tick,AmountFocus); lv_obj_set_ext_click_area(tick,width_/60); }
         for(auto* mark : scaleLabels_) { bind(mark,AmountFocus); lv_obj_set_ext_click_area(mark,width_/60); }
         const int y=page_ == Screen::Magic ? 78 : 68;
@@ -462,24 +478,14 @@ void UiController::rotate(int delta) {
     if (page_ == Screen::Live) { app_.adjustWeight(delta); return; }
     if (page_ == Screen::Devices || int(page_) >= int(Screen::Presets) || !app_.fresh()) return;
     if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta); return; }
-    if ((page_ == Screen::Magic || page_ == Screen::Eccentric) && editorFocus_ == 2) {
-        if(app_.report().modifierUnitsSelectable && app_.report().percentageSupported) {
-            const bool percent=delta < 0;
-            if(draftPercent_ != percent) { draftPercent_=percent; draftValue_=std::clamp(draftValue_,0,editMaximum()); edited(); }
-        }
-        return;
+    if (page_ != Screen::Drops) {
+        auto& memory = unitSelection();
+        draftValue_ = std::clamp(draftValue_+delta, 0, editMaximum());
+        memory.percent.reset(); memory.absolute.reset();
+        (draftPercent_ ? memory.percent : memory.absolute) = draftValue_;
+        edited(); return;
     }
-    if (page_ == Screen::Magic && editorFocus_ == 1) {
-        const MagicMode order[]={MagicMode::InverseChains,MagicMode::Mountain,MagicMode::Chains};
-        std::vector<MagicMode> supported;
-        for(auto mode:order) if(app_.report().magicSupported[int(mode)]) supported.push_back(mode);
-        auto it=std::find(supported.begin(),supported.end(),draftMode_);
-        if(!supported.empty()) { auto mode=supported[std::clamp(int(it-supported.begin())+delta,0,int(supported.size())-1)];
-            if(mode != draftMode_) { draftMode_=mode; edited(); } }
-        return;
-    }
-    if (page_ != Screen::Drops) { draftValue_ = std::clamp(draftValue_+delta, 0, editMaximum()); edited(); return; }
-    if (draftDrops_.mode == DropMode::Stairs) draftDrops_.step = std::clamp(draftDrops_.step+delta, -editMaximum(), 0);
+    if (draftDrops_.mode == DropMode::Stairs) draftDrops_.step = std::clamp(draftDrops_.step+delta, -editMaximum(), editMaximum());
     else if (dropField_ == 0) draftDrops_.drops = std::clamp(draftDrops_.drops+delta, 0, 9);
     else if (dropField_ == 1) draftDrops_.percent = std::clamp(draftDrops_.percent+delta, 0, 80);
     else draftDrops_.holdSeconds = std::clamp(draftDrops_.holdSeconds+delta, 1, 9);
@@ -501,25 +507,22 @@ void UiController::update() {
     const auto r = app_.report();
     if (int(page_) >= int(Screen::Presets)) { updateExtra(); return; }
     if (page_ == Screen::Main) {
-        value(weight_, r.revision ? std::to_string(r.settings.weight) : "--");
+        largeValue(r.revision ? std::to_string(r.settings.weight) : "--");
         const bool atMaximum = app_.fresh() && r.maxWeight > 0 && r.settings.weight >= r.maxWeight;
         const uint32_t maximumColor = limitAccent();
         // Retain a darker unloaded number, even when its hue indicates the limit.
         const uint32_t numberColor = r.loaded ? maximumColor : ((maximumColor & 0xfefefeu) >> 1);
-        color(weight_, !app_.fresh() ? amber : atMaximum ? numberColor : r.loaded ? bright : muted);
+        color(weight_, !app_.fresh() ? amber : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
         value(hint_, !app_.fresh() ? "State unknown\nTap to unload" : r.autoLoadArmed ? "Auto Load armed\nTap to cancel" :
             atMaximum ? "MAX" : "");
         color(hint_,atMaximum ? maximumColor : soft);
-        value(status_, r.twinKnown ? (r.twin ? "Twin" : "") : "Twin unknown");
+        value(status_, r.twinKnown ? (r.twin ? "Twin: "+r.twinPeerName : "") : "Twin unknown");
         color(status_, r.twinKnown ? accent() : amber);
-        if (r.twinKnown && r.twin) {
-            lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_align(status_, LV_ALIGN_TOP_MID, width_*4/100, height_*30/100);
-        } else {
-            lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
-        }
+        lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(status_,width_*76/100);
+        lv_obj_set_style_text_font(status_, &lv_font_montserrat_14,0);
+        lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
         updateScale(r.settings.weight, r.maxWeight, "", atMaximum ? maximumColor : accent());
         for (int i=0; i<2; ++i) {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
@@ -587,13 +590,13 @@ void UiController::update() {
             value(hint_, names[dropField_]); color(hint_, bright);
             updateScale(values[dropField_], maxima[dropField_], suffix[dropField_], accent());
         } else {
-            value(weight_, std::to_string(draftDrops_.step)); color(weight_, bright);
+            largeValue((draftDrops_.step > 0 ? "+" : "")+std::to_string(draftDrops_.step)); color(weight_, bright);
             value(unit_, unitName(r.unit)); value(hint_, "After each rep");
-            updateScale(std::abs(draftDrops_.step), r.maxWeight, "", accent(), true);
+            updateScale(draftDrops_.step, r.maxWeight, "", accent(), true);
         }
     } else {
         draftValue_ = std::clamp(draftValue_, 0, editMaximum());
-        value(weight_, std::to_string(draftValue_)+(draftPercent_ ? "%" : ""));
+        largeValue(std::to_string(draftValue_)+(draftPercent_ ? "%" : ""));
         const bool atMaximum = app_.fresh() && draftValue_ >= editMaximum();
         color(weight_, atMaximum ? limitAccent() : bright);
         value(unit_, "");
@@ -602,15 +605,37 @@ void UiController::update() {
         for(int i=0;i<2;++i) if(unitChoices_[i]) {
             const bool selected=(i==0) == draftPercent_;
             lv_obj_set_style_text_font(unitChoices_[i],selected ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
+            lv_obj_set_y(unitChoices_[i],(height_*12/100-(selected ? lv_font_montserrat_28.line_height : lv_font_montserrat_18.line_height))/2);
             color(unitChoices_[i],selected ? bright : muted);
         }
         if (page_ == Screen::Magic) for (int i=0;i<3;++i) {
             if(r.magicSupported[i]) lv_obj_remove_flag(choice_[i],LV_OBJ_FLAG_HIDDEN);
             else lv_obj_add_flag(choice_[i],LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_text_font(choice_[i],int(draftMode_) == i ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
+            lv_obj_set_y(choice_[i],(height_*13/100-(int(draftMode_) == i ? lv_font_montserrat_28.line_height : lv_font_montserrat_18.line_height))/2);
             color(choice_[i],int(draftMode_) == i ? bright : muted);
         }
     }
+}
+void UiController::largeValue(const std::string& text) {
+    if(!weight_) return;
+    lv_label_set_text(weight_,text.c_str());
+    lv_obj_set_width(weight_,LV_SIZE_CONTENT);
+    lv_obj_update_layout(weight_);
+    const int scale = std::min(width_*560/480, width_*64/100*256/std::max(1,int(lv_obj_get_width(weight_))));
+    lv_obj_set_style_transform_pivot_x(weight_,lv_obj_get_width(weight_)/2,0);
+    lv_obj_set_style_transform_pivot_y(weight_,lv_obj_get_height(weight_)/2,0);
+    lv_obj_set_style_transform_scale(weight_,scale,0);
+    lv_obj_align(weight_,LV_ALIGN_TOP_MID,0,width_*8/100);
+}
+UiController::UnitSelections& UiController::unitSelection() {
+    const auto r=app_.report();
+    auto& memory=unitMemory_[app_.selectedDevice()][page_ == Screen::Magic ? 0 : 1];
+    const auto current=draftPercent_ ? memory.percent : memory.absolute;
+    if(memory.base != r.settings.weight || memory.unit != r.unit || (current && *current != draftValue_)) memory={};
+    memory.base=r.settings.weight; memory.unit=r.unit;
+    (draftPercent_ ? memory.percent : memory.absolute)=draftValue_;
+    return memory;
 }
 void UiController::edited() {
     editedAt_ = hardware_.nowMs(); editDirty_ = true;
@@ -641,14 +666,12 @@ void UiController::tick() {
         }
     }
     if (pendingPreset_ >= 0 && !app_.pending()) {
-        if (app_.fresh() && samePreset(app_.currentPreset(),config_.presets[pendingPreset_])) activePreset_ = pendingPreset_;
+        if (app_.fresh() && samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[pendingPreset_]))) activePreset_ = pendingPreset_;
         pendingPreset_ = -1;
     }
-    if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),config_.presets[activePreset_]))) activePreset_ = -1;
-    if (app_.fresh() && r.loaded && !liveObserved_ && page_ == Screen::Main) navigate(Screen::Live);
+    if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_])))) activePreset_ = -1;
+    if (app_.fresh() && r.loaded && r.telemetryValid && r.repsStarted.value_or(false) && page_ == Screen::Main) navigate(Screen::Live);
     if (app_.fresh() && !r.loaded && page_ == Screen::Live) navigate(Screen::Main);
-    if (app_.fresh()) liveObserved_ = r.loaded;
-    if (!app_.connected()) liveObserved_ = false;
     if (!r.restSeconds || *r.restSeconds == 0) restAlerted_ = false;
     if (app_.fresh() && r.restSeconds && config_.restAlertSeconds > 0 && *r.restSeconds >= config_.restAlertSeconds && !restAlerted_) {
         hardware_.restAlert(2000); restAlerted_ = true; alertUntil_ = now+2000;
@@ -661,6 +684,7 @@ void UiController::tick() {
     if (delta && !wasSleeping) rotate(delta);
     if (pressed && !wasSleeping) {
         if (page_ == Screen::Presets) act(ChoosePreset,"",false);
+        else if (page_ == Screen::PresetNotice) act(Unload,"",false);
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
     }
     // Keep unload visible while loaded, pending, armed, or connected with unknown state.

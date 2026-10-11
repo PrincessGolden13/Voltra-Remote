@@ -5,8 +5,9 @@
 #include <memory>
 #include <vector>
 #include <array>
+#include <map>
 namespace voltra {
-enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About };
+enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice };
 class UiController {
 public:
     UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr);
@@ -44,12 +45,18 @@ private:
     uint64_t lastTickMs_ = 0;
     RemoteConfigurationStore* store_ = nullptr;
     RemoteConfiguration config_;
-    int presetIndex_ = 0, activePreset_ = -1, pendingPreset_ = -1, settingsField_ = 0, editorFocus_ = 0;
+    int presetIndex_ = 0, activePreset_ = -1, pendingPreset_ = -1, settingsField_ = 0;
     bool draftPercent_ = true, editDirty_ = false, returnAfterEdit_ = false;
     uint64_t editedAt_ = 0;
     lv_obj_t* unitChoices_[2]{};
     void edited();
-    bool weightFocused_ = true, liveObserved_ = false, restAlerted_ = false;
+    void largeValue(const std::string&);
+    struct UnitSelections { int base = -1; WeightUnit unit = WeightUnit::Pounds; std::optional<int> percent, absolute; };
+    std::map<DeviceId, std::array<UnitSelections, 2>> unitMemory_;
+    UnitSelections& unitSelection();
+    std::string presetNotice_;
+
+    bool weightFocused_ = true, restAlerted_ = false;
     uint64_t activityAt_ = 0;
     bool sleeping_ = false, dimmed_ = false;
     bool wakeTouch_ = false;

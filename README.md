@@ -66,7 +66,7 @@ Factory reset requires an explicit confirmation and preserves recent devices.
 | F1–F4 | Open Garage with unloaded, loaded, stale, or unknown Twin state |
 | F5 | Disconnect and return to Devices |
 | F6 | Scan now (normal background interval is 5 seconds) |
-| F7 | Turn the Studio device off/on; connect once first to see its remembered offline row |
+| F7 | Toggle White OFF availability (offline at startup) |
 | F8 | Complete one simulated rep while loaded |
 | F9 | Simulate holding the cable steady |
 | F10 | Simulate cable movement; rearms the next RP hold |
@@ -100,3 +100,17 @@ Build Windows with `tools/Build-Desktop.ps1`; build Mac with
 
 Next physical step: identify the exact remote PCB and revision, then implement
 and validate read-only BLE observations before enabling physical commands.
+
+### October 11 simulator profiles
+
+The two device pages contain Green 2.0 (230 LB, MTN and percentages), Yellow TW
+2.0 and Pink TW 2.0 (paired, reported 230 LB limit), Red 2.0 KG (104 KG integer
+ceiling), Black 1.x (200 LB, no MTN/percentages), and White OFF (unavailable).
+These are synthetic profiles, not claims of verified hardware compatibility.
+Loading stays on setup with a white number. F8 reports a rep and opens Live.
+Presets are shared across devices; absolute values convert to the device unit.
+Unsupported recipes require an OK acknowledgement.
+
+For large-number layout previews, add `--modifier-value 125` to a `--render`
+command on screen 2 or 3. This initializes synthetic settings only and cannot
+be used in the interactive simulator.

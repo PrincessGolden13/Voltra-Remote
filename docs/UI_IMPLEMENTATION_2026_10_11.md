@@ -53,8 +53,8 @@ Editing amount, mode or unit creates one explicit input intent. Rotary events
 settle for 150 ms before sending. An edit made while a request is pending waits
 for that request to finish; reports never create new intents or retries. The
 confirmed report replaces the editor draft afterward unless another explicit
-input is queued. X disables; the bottom chevron only navigates back. Unit
-switches retain the numeric value, clamped to the new permitted maximum. The
+input is queued. The bottom chevron navigates back; X controls have been removed. Unit
+switches now convert and remember roundtrips as described below. The
 store reads version-1 recipes and writes version 2 with both modifier units.
 
 ## Evidence and validation
@@ -105,3 +105,47 @@ still contain no stored base/load command; nothing loads on preset selection.
 Weight edits wait during preset confirmation so they cannot overwrite its
 pending modifier request. Unsupported/intrinsically invalid recipes still fail.
 Failures are now visible in the preset browser. Activation still requires readback.
+
+## Firmware profiles and editor follow-up
+
+CONFIRMED in source: six simulator entries now match the user's names and
+capabilities. Yellow/Pink share their synthetic workout state via the selected
+session and show the peer name. Their combined maximum is explicitly modeled as
+230 LB, never doubled. Red uses floor(230 * 0.45359237) = 104 KG. Black is labeled
+1.x because no specific older firmware version was supplied. White starts offline.
+Firmware/peer/rep-start fields are report data, not UI inference.
+
+Main weight taps always request load/unload; confirmed loaded numbers are white.
+Live opens only with fresh, valid loaded rep-start telemetry (F8 in the simulator).
+Large values use content-sized labels, fitted transforms and transparent parents.
+Mode/unit selectors align font centers and are touch-only. Rotary edits the value.
+Percent/absolute conversion uses nearest integer and caches both representations
+per device/editor/base unit/base weight. Amount or mode edits invalidate the
+alternate representation; unit-only toggles retain it. 25% on 10 LB becomes 3 LB
+and returns to 25%; a direct 3 LB edit becomes 30%. Unsupported conversions remain
+capability-gated. Caches are session presentation data, not persisted presets.
+
+Presets remain one global configuration vector. Applying a cross-unit recipe
+converts absolute Magic/EO and signed stairs values before envelope validation.
+Percentages remain unchanged. Unsupported firmware recipes show the requested
+version-specific acknowledgement screen; OK dismisses it. No request is sent on
+incompatibility. Readback still gates activation, using the converted recipe.
+
+Stairs spans negative-left to positive-right with zero at twelve o'clock. Positive
+steps preserve modifiers and cap at the safe base maximum; negative steps stop at
+one display unit. Both directions retain fresh telemetry, sequence and confirmation
+guards. Apply remains visible, and tapping the center also applies. The Dropset
+heading is separated from the Stairs/RP controls.
+
+Validation: Windows build and existing offscreen-render path. Native input capture
+remains unavailable as documented above; no new test code was introduced. Future
+regressions: unit roundtrip and cache invalidation; firmware modal dismissal;
+cross-unit preset acknowledgement; signed stairs near limits; load versus first
+rep navigation; Twin switching while loaded; three-digit values at 360/466/480.
+
+Final verification: native Windows rebuild passed. Existing render previews were
+produced for Magic/EO/RP at 360, 466 and 480 pixels; reviewed 125% values after
+widening the parent container, plus Twin, KG, legacy-firmware, loaded-setup and
+Live layouts. The first 125% render reproduced the crop; the corrected renders
+show the complete value. `git diff --check` passed. Interactive unit/preset/rep
+flows still require simulator input verification; no physical commands were used.

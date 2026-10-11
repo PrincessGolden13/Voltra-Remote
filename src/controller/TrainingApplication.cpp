@@ -2,14 +2,15 @@
 #include "protocol/VoltraGattProfile.h"
 #include <algorithm>
 namespace voltra {
-TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m)
-    : transport_(t), controller_(c), session_(s), memory_(m) {
+TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices)
+    : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)) {
     if (memory_) recent_ = memory_->load();
     if (recent_.size() > 4) recent_.resize(4);
     for (auto& d : recent_) d.online = false;
 }
 void TrainingApplication::scan() {
-    devices_ = recent_;
+    devices_ = knownDevices_;
+    for(const auto& d : recent_) if(std::none_of(devices_.begin(),devices_.end(),[&](const auto& known){return known.id == d.id;})) devices_.push_back(d);
     for (auto& d : devices_) d.online = false;
     for (const auto& a : transport_.scan()) {
         if (std::find(a.services.begin(), a.services.end(), VoltraGattProfile::service) == a.services.end()) continue;
@@ -114,13 +115,27 @@ Preset TrainingApplication::currentPreset() const {
     const auto r = report();
     return {r.settings.magicMode, r.settings.magic, r.settings.eccentric, r.unit, drops()};
 }
-bool TrainingApplication::applyPreset(const Preset& p) {
-    const auto r = report();
-    if (pending_ || r.loaded || p.unit != r.unit ||
-        (p.magic.enabled && !r.magicSupported[int(p.mode)]) ||
-        (p.eccentric.enabled && !r.eccentricSupported) ||
-        (p.drops.enabled && !r.liveWeightSupported) || p.drops.step < -r.maxWeight) {
-        message_ = "Preset unavailable for current state / units"; return false;
+Preset TrainingApplication::presetForCurrentDevice(Preset p) const {
+    const auto target = report().unit;
+    if(!p.magic.percent) p.magic.value = convertWeightUnits(p.magic.value,p.unit,target);
+    if(!p.eccentric.percent) p.eccentric.value = convertWeightUnits(p.eccentric.value,p.unit,target);
+    p.drops.step = convertWeightUnits(p.drops.step,p.unit,target);
+    p.unit = target;
+    return p;
+}
+bool TrainingApplication::applyPreset(const Preset& saved) {
+    const auto r = report(); presetError_.clear();
+    if(!fresh()) { message_ = "Device state unavailable"; return false; }
+    const auto p = presetForCurrentDevice(saved);
+    if (!r.magicSupported[int(p.mode)] ||
+        ((p.magic.percent || p.eccentric.percent) && !r.percentageSupported) ||
+        (p.eccentric.enabled && !r.eccentricSupported) || (p.drops.enabled && !r.liveWeightSupported)) {
+        presetError_ = "Preset values not available on Voltra firmware version "+
+            (r.firmwareVersion.empty() ? "unknown" : r.firmwareVersion);
+        message_ = presetError_; return false;
+    }
+    if (pending_ || r.loaded || std::abs(p.drops.step) > r.maxWeight) {
+        message_ = "Unload / wait before applying preset"; return false;
     }
     // A preset replaces all modifiers as one request. Preserve its exact values;
     // if needed, lower only the current base to the conservative integer ceiling.
@@ -146,7 +161,7 @@ DropSettings TrainingApplication::drops() const {
 }
 void TrainingApplication::applyDrops(DropSettings d) {
     if (!fresh() || !report().liveWeightSupported || selected_.empty()) return;
-    d.step = std::clamp(d.step, -report().maxWeight, 0);
+    d.step = std::clamp(d.step, -report().maxWeight, report().maxWeight);
     d.drops = std::clamp(d.drops, 0, 9); d.percent = std::clamp(d.percent, 0, 80);
     d.holdSeconds = std::clamp(d.holdSeconds, 1, 9);
     dropSettings_[selected_] = d; resetDrops(); message_.clear();
@@ -158,7 +173,7 @@ void TrainingApplication::resetDrops() {
     holdSince_ = telemetryRevision_ = 0; lastRep_ = 0; dropsCompleted_ = 0; dropTarget_.reset();
 }
 void TrainingApplication::runDrops(const TrainingReport& r) {
-    if (!drops().enabled || !fresh() || !r.telemetryValid || !r.twinKnown) {
+    if (!drops().enabled || !fresh() || !r.telemetryValid || !r.twinKnown || !r.liveWeightSupported) {
         if (running_) { dropSettings_[selected_].enabled = false; message_ = "Drops paused: state unavailable"; }
         running_ = false; holdSince_ = 0; return;
     }
@@ -180,7 +195,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     }
     const auto d = drops(); bool trigger = false;
     if (d.mode == DropMode::Stairs) {
-        trigger = r.rep == lastRep_ + 1 && d.step < 0;
+        trigger = r.rep == lastRep_ + 1 && d.step != 0;
         if (r.rep < lastRep_ || r.rep > lastRep_ + 1) {
             running_ = false; dropSettings_[selected_].enabled = false; message_ = "Rep sequence changed; drops stopped";
         }
@@ -193,10 +208,10 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
             if (trigger) { holdConsumed_ = true; movementSeen_ = false; }
         } else holdSince_ = 0;
     }
-    if (!trigger || !running_ || pending_ || r.settings.weight <= 1) return;
+    if (!trigger || !running_ || pending_) return;
     auto s = r.settings;
-    s.weight = std::max(1, d.mode == DropMode::Stairs ? s.weight + d.step : s.weight * (100-d.percent)/100);
-    if (s.weight >= r.settings.weight) return;
+    s.weight = d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : std::max(1,s.weight * (100-d.percent)/100);
+    if (s.weight == r.settings.weight) return;
     if (sendSettings(s)) dropTarget_ = s.weight;
     else { running_ = false; dropSettings_[selected_].enabled = false; }
 }

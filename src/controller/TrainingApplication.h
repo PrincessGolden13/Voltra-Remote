@@ -6,7 +6,7 @@
 namespace voltra {
 class TrainingApplication {
 public:
-    TrainingApplication(BleTransport&, VoltraController&, ControlSession&, DeviceMemory* = nullptr);
+    TrainingApplication(BleTransport&, VoltraController&, ControlSession&, DeviceMemory* = nullptr, std::vector<DeviceEntry> knownDevices = {});
     void tick(uint64_t now);
     void scan();
     bool select(const DeviceId&);
@@ -28,6 +28,9 @@ public:
     void toggleDrops();
     int dropsCompleted() const { return dropsCompleted_; }
     Preset currentPreset() const;
+    Preset presetForCurrentDevice(Preset) const;
+    const std::string& presetCompatibilityError() const { return presetError_; }
+    const DeviceId& selectedDevice() const { return selected_; }
     bool applyPreset(const Preset&);
     int startingWeight() const { return startingWeight_; }
 private:
@@ -35,10 +38,10 @@ private:
     VoltraController& controller_;
     ControlSession& session_;
     DeviceMemory* memory_;
-    std::vector<DeviceEntry> recent_, devices_;
+    std::vector<DeviceEntry> recent_, devices_, knownDevices_;
     std::map<DeviceId, DropSettings> dropSettings_;
     DeviceId selected_;
-    std::string name_, message_;
+    std::string name_, message_, presetError_;
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
     std::optional<int> weightIntent_, dropTarget_;

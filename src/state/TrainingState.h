@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <optional>
+#include <cmath>
 namespace voltra {
 enum class WeightUnit { Pounds, Kilograms };
 enum class MagicMode { InverseChains, Chains, Mountain };
@@ -16,6 +17,8 @@ struct TrainingSettings {
 struct TrainingReport {
     TrainingSettings settings;
     WeightUnit unit = WeightUnit::Pounds;
+    std::string firmwareVersion, twinPeerName;
+    std::optional<bool> repsStarted;
     bool percentageSupported = false, modifierUnitsSelectable = false;
     int maxWeight = 0;
     std::array<bool, 3> magicSupported{};
@@ -28,6 +31,13 @@ struct TrainingReport {
     std::optional<int> force, setNumber, completedSets, lastSetReps, restSeconds;
 };
 inline const char* unitName(WeightUnit unit) { return unit == WeightUnit::Pounds ? "LB" : "KG"; }
+// International avoirdupois pound: exactly 0.45359237 kilograms.
+// Settings round to the nearest display unit; envelope limits still round down.
+inline int convertWeightUnits(int value, WeightUnit from, WeightUnit to) {
+    if (from == to) return value;
+    constexpr double kilogramsPerPound = 0.45359237;
+    return int(std::lround(value * (to == WeightUnit::Kilograms ? kilogramsPerPound : 1.0/kilogramsPerPound)));
+}
 inline const char* magicName(MagicMode mode) {
     return mode == MagicMode::InverseChains ? "IC" : mode == MagicMode::Chains ? "C" : "MTN";
 }
@@ -50,6 +60,13 @@ inline int baseMaximum(const TrainingReport& r) {
         if(m.percent) percentage += m.value; else absolute += m.value;
     }
     return std::max(0,(r.maxWeight-absolute)*100/percentage);
+}
+inline int nextStairWeight(const TrainingReport& r,int step) {
+    const int ceiling = baseMaximum(r);
+    if (ceiling < 1) return r.settings.weight;
+    const int target = std::clamp(r.settings.weight + step,1,ceiling);
+    if ((step > 0 && target < r.settings.weight) || (step < 0 && target > r.settings.weight)) return r.settings.weight;
+    return target;
 }
 inline bool modifierUnitsAllowed(const TrainingReport& r, const TrainingSettings& s) {
     if ((s.magic.enabled && s.magic.percent && !r.percentageSupported) ||

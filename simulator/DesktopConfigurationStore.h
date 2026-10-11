@@ -21,7 +21,7 @@ public:
                 >> legacyPercent >> unit >> p.drops.enabled >> dropMode >> p.drops.step >> p.drops.drops
                 >> p.drops.percent >> p.drops.holdSeconds) || mode < 0 || mode > 2 || unit < 0 || unit > 1
                 || dropMode < 0 || dropMode > 1 || p.magic.value < 0 || p.magic.value > 10000
-                || p.eccentric.value < 0 || p.eccentric.value > 10000 || p.drops.step > 0 || p.drops.step < -10000
+                || p.eccentric.value < 0 || p.eccentric.value > 10000 || p.drops.step > 10000 || p.drops.step < -10000
                 || p.drops.drops < 0 || p.drops.drops > 9 || p.drops.percent < 0 || p.drops.percent > 80
                 || p.drops.holdSeconds < 1 || p.drops.holdSeconds > 9) return {};
             if (version == 2) { if (!(in >> p.magic.percent >> p.eccentric.percent)) return {}; }

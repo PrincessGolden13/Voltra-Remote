@@ -10,7 +10,7 @@
 // Shared offline runtime: native hosts only supply windows, input and storage paths.
 namespace voltra {
 struct SimulatorOptions {
-    int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0, liveDrops = 0;
+    int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0, liveDrops = 0, modifierValue = -1;
     std::string renderPath;
     static SimulatorOptions parse(int argc, char** argv) {
         SimulatorOptions o;
@@ -27,13 +27,16 @@ struct SimulatorOptions {
             else if (option == "--screen") o.screen = number;
             else if (option == "--device") o.device = number;
             else if (option == "--drop-mode") o.dropMode = number;
+            else if (option == "--modifier-value") o.modifierValue = number;
             else if (option == "--live-drops") o.liveDrops = number;
             else throw std::runtime_error("Unknown argument: " + option);
         }
         if ((o.size != 360 && o.size != 466 && o.size != 480) || o.profile < 0 || o.profile > 3)
             throw std::runtime_error("Supported sizes: 360, 466, 480. Profiles: 0-3.");
-        if (o.screen < 0 || o.screen > 13 || o.device < 0 || o.device > 4 || o.dropMode < 0 || o.dropMode > 1 || o.liveDrops < 0 || o.liveDrops > 1)
-            throw std::runtime_error("Screens 0-13; devices 0-4; drops 0 stairs, 1 rest-pause.");
+        if (o.screen < 0 || o.screen > 13 || o.device < 0 || o.device > 5 || o.dropMode < 0 || o.dropMode > 1 || o.liveDrops < 0 || o.liveDrops > 1)
+            throw std::runtime_error("Screens 0-13; devices 0-5; drops 0 stairs, 1 rest-pause.");
+        if(o.modifierValue < -1 || o.modifierValue > 300 || (o.modifierValue >= 0 && o.renderPath.empty()))
+            throw std::runtime_error("Modifier preview 0-300 requires --render");
         return o;
     }
 };
@@ -49,13 +52,14 @@ struct SimulatorApp {
     SimulatorApp(const SimulatorOptions& o, const std::filesystem::path& memoryPath)
         : hardware(uint16_t(o.size)), controller(transport, {}, &transport), memory(memoryPath),
           configuration(memoryPath.parent_path() / "remote-settings.txt"),
-          application(transport, controller, transport, o.renderPath.empty() ? &memory : nullptr),
+          application(transport, controller, transport, o.renderPath.empty() ? &memory : nullptr, transport.catalog()),
           ui(hardware, application, o.renderPath.empty() ? &configuration : nullptr) {
         ui.tick();
         if (o.screen != 0) {
             application.select(o.device == 0 ? MockTransport::deviceId :
                 std::string(MockTransport::deviceId) + '-' + std::to_string(o.device));
             transport.setProfile(static_cast<SimulatorProfile>(o.profile));
+            if(o.modifierValue >= 0) transport.previewModifier(o.modifierValue);
             application.tick(hardware.nowMs());
             if (o.dropMode == 1 || o.liveDrops == 1) {
                 auto drops = application.drops(); drops.mode = o.dropMode ? DropMode::RestPause : DropMode::Stairs;

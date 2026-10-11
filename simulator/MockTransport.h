@@ -2,6 +2,7 @@
 #include "ble/BleTransport.h"
 #include "MockVoltra.h"
 #include "controller/ControlSession.h"
+#include "controller/DeviceMemory.h"
 namespace voltra {
 class MockTransport final : public BleTransport, public ControlSession {
 public:
@@ -25,6 +26,8 @@ public:
     TransportResult setTraining(const TrainingSettings&) override;
     TransportResult triggerAutoLoad() override;
     void toggleAvailability();
+    std::vector<DeviceEntry> catalog() const;
+    void previewModifier(int value); // Render-only synthetic initial setting.
     void completeRep();
     void setHeld(bool held);
     void ignoreNextRequest() { ignoreNext_ = true; }
