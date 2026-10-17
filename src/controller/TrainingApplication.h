@@ -20,9 +20,10 @@ public:
     const std::string& message() const { return message_; }
     void adjustWeight(int delta);
     void toggleWeight();
+    void unload();
     void autoLoad();
     void toggleModifier(bool magic);
-    void applyModifier(bool magic, MagicMode mode, int value, bool percent);
+    bool applyModifier(bool magic, MagicMode mode, int value, bool percent);
     DropSettings drops() const;
     void applyDrops(DropSettings);
     void toggleDrops();
@@ -45,6 +46,7 @@ private:
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
     std::optional<int> weightIntent_, dropTarget_;
+    std::optional<TrainingSettings> settingsIntent_;
     uint32_t lastRep_ = 0;
     uint64_t telemetryRevision_ = 0, holdSince_ = 0;
     bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;

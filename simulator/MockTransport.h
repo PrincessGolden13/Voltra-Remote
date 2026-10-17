@@ -3,6 +3,7 @@
 #include "MockVoltra.h"
 #include "controller/ControlSession.h"
 #include "controller/DeviceMemory.h"
+#include "protocol/WeightLimits.h"
 namespace voltra {
 class MockTransport final : public BleTransport, public ControlSession {
 public:
@@ -28,11 +29,13 @@ public:
     void toggleAvailability();
     std::vector<DeviceEntry> catalog() const;
     void previewModifier(int value); // Render-only synthetic initial setting.
+    void previewUnit(WeightUnit); // Render-only unit-specific limit/layout preview.
+    void previewWeight(int ticks); // Render-only base/envelope layout preview.
     void completeRep();
     void setHeld(bool held);
     void ignoreNextRequest() { ignoreNext_ = true; }
 private:
-    struct SimDevice { DeviceId id; std::string name; bool online = true; TrainingReport state; };
+    struct SimDevice { DeviceId id; std::string name; bool online = true; TrainingReport state; WeightLimitEvidence limits; };
     std::vector<SimDevice> devices_;
     size_t active_ = 0;
     TrainingReport reported_;
@@ -50,7 +53,7 @@ private:
     uint64_t nowMs_ = 0, dueMs_ = 0;
     std::optional<uint16_t> pendingWeight_;
     std::optional<bool> pendingLoaded_;
-    static constexpr uint64_t confirmationDelayMs = 350;
-    static constexpr uint64_t notificationIntervalMs = 500;
+    static constexpr uint64_t confirmationDelayMs = 40;
+    static constexpr uint64_t notificationIntervalMs = 100;
 };
 }

@@ -11,10 +11,15 @@ struct Preset {
 };
 inline bool sameModifier(Modifier a, Modifier b) { return a.enabled == b.enabled && a.value == b.value && a.percent == b.percent; }
 inline bool samePreset(const Preset& a, const Preset& b) {
-    return a.mode == b.mode && sameModifier(a.magic,b.magic) && sameModifier(a.eccentric,b.eccentric)
+    // Compare effective recipes, not dormant values left in disabled controls.
+    const auto match = [](Modifier x, Modifier y) {
+        return x.enabled == y.enabled && (!x.enabled || sameModifier(x,y));
+    };
+    return (!a.magic.enabled || a.mode == b.mode) && match(a.magic,b.magic) && match(a.eccentric,b.eccentric)
         && a.unit == b.unit && a.drops.enabled == b.drops.enabled
-        && a.drops.mode == b.drops.mode && a.drops.step == b.drops.step && a.drops.drops == b.drops.drops
-        && a.drops.percent == b.drops.percent && a.drops.holdSeconds == b.drops.holdSeconds;
+        && (!a.drops.enabled || (a.drops.mode == b.drops.mode &&
+            (a.drops.mode == DropMode::Stairs ? a.drops.step == b.drops.step :
+             a.drops.drops == b.drops.drops && a.drops.percent == b.drops.percent && a.drops.holdSeconds == b.drops.holdSeconds)));
 }
 struct RemoteConfiguration {
     int theme = 7; // Teal; indices follow the settings picker.

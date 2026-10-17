@@ -29,8 +29,9 @@ automatically expand a limit based on one plausible number.
 
 CONFIRMED (Android reports): 0x77 responses contain multiple module/firmware
 strings. Record the complete module set, not just one app-visible version.
-No firmware fallback table has been established. A future fallback must cite a
-specific validated model/version combination and state what it cannot prove.
+The October 17 [limit resolver](WEIGHT_LIMITS.md) now supplies a scoped nominal
+firmware fallback for VOLTRA I 1.x/2.x, after applicable reports. It is used by
+the offline adapter; no physical report decoder/readiness support is established.
 
 ## Policy
 

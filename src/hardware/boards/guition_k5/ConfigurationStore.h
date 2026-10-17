@@ -4,14 +4,14 @@
 namespace voltra::guition {
 // A single remote-wide NVS blob. No machine identifiers, load state or base weight.
 class ConfigurationStore final : public RemoteConfigurationStore {
-    static constexpr int version=1, headerWords=6, recipeWords=14;
+    static constexpr int version=2, headerWords=6, recipeWords=14;
 public:
     RemoteConfiguration load() override {
         RemoteConfiguration c;Preferences nvs;if(!nvs.begin("voltra-ui",true)) return c;
         const size_t bytes=nvs.getBytesLength("config");
         if(bytes<headerWords*4 || bytes>(headerWords+99*recipeWords)*4 || bytes%4) {nvs.end();return c;}
         std::vector<int32_t> data(bytes/4);const bool read=nvs.getBytes("config",data.data(),bytes)==bytes;nvs.end();
-        if(!read || data[0]!=version || data[1]<0 || data[1]>8 || data[2]<0 || data[2]>3599 ||
+        if(!read || (data[0]!=1 && data[0]!=version) || data[1]<0 || data[1]>8 || data[2]<0 || data[2]>3599 ||
            data[3]<0 || data[3]>120 || data[4]<0 || data[4]>120 || data[5]<0 || data[5]>99 ||
            data.size()!=size_t(headerWords+data[5]*recipeWords)) return {};
         c.theme=data[1];c.restAlertSeconds=data[2];c.dimMinutes=data[3];c.sleepMinutes=data[4];
@@ -22,7 +22,15 @@ public:
                d[8]<0 || d[8]>1 || d[9]<0 || d[9]>1 || d[10]<-10000 || d[10]>10000 ||
                d[11]<0 || d[11]>9 || d[12]<0 || d[12]>80 || d[13]<1 || d[13]>9) return {};
             Preset p;p.mode=MagicMode(d[0]);p.magic={bool(d[1]),d[2],bool(d[3])};p.eccentric={bool(d[4]),d[5],bool(d[6])};
-            p.unit=WeightUnit(d[7]);p.drops={bool(d[8]),DropMode(d[9]),d[10],d[11],d[12],d[13]};c.presets.push_back(p);
+            p.unit=WeightUnit(d[7]);p.drops={bool(d[8]),DropMode(d[9]),d[10],d[11],d[12],d[13]};
+            if(data[0]==1 && p.unit==WeightUnit::Kilograms) {
+                if(!p.magic.percent) p.magic.value*=2;
+                if(!p.eccentric.percent) p.eccentric.value*=2;
+                p.drops.step*=2;
+            }
+            if(p.magic.value==0) p.magic.enabled=false;
+            if(p.eccentric.value==0) p.eccentric.enabled=false;
+            c.presets.push_back(p);
         }
         return c;
     }

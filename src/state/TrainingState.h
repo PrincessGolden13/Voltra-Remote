@@ -5,12 +5,12 @@
 #include <string>
 #include <optional>
 #include <cmath>
+#include "WeightUnits.h"
 namespace voltra {
-enum class WeightUnit { Pounds, Kilograms };
 enum class MagicMode { InverseChains, Chains, Mountain };
 struct Modifier { bool enabled = false; int value = 0; bool percent = true; };
 struct TrainingSettings {
-    int weight = 50; // Integer steps in the device-reported display unit.
+    int weight = 50; // Display ticks: 1 lb or 0.5 kg; never wire units.
     MagicMode magicMode = MagicMode::Chains;
     Modifier magic, eccentric;
 };
@@ -20,7 +20,7 @@ struct TrainingReport {
     std::string firmwareVersion, twinPeerName;
     std::optional<bool> repsStarted;
     bool percentageSupported = false, modifierUnitsSelectable = false;
-    int maxWeight = 0;
+    int maxWeight = 0; // Effective single/Twin ceiling in display ticks, resolved by profile.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
     bool twinKnown = false, twin = false, loaded = false, autoLoadArmed = false;
@@ -30,14 +30,6 @@ struct TrainingReport {
     // Optional device telemetry; absent fields are omitted by the UI.
     std::optional<int> force, setNumber, completedSets, lastSetReps, restSeconds;
 };
-inline const char* unitName(WeightUnit unit) { return unit == WeightUnit::Pounds ? "LB" : "KG"; }
-// International avoirdupois pound: exactly 0.45359237 kilograms.
-// Settings round to the nearest display unit; envelope limits still round down.
-inline int convertWeightUnits(int value, WeightUnit from, WeightUnit to) {
-    if (from == to) return value;
-    constexpr double kilogramsPerPound = 0.45359237;
-    return int(std::lround(value * (to == WeightUnit::Kilograms ? kilogramsPerPound : 1.0/kilogramsPerPound)));
-}
 inline const char* magicName(MagicMode mode) {
     return mode == MagicMode::InverseChains ? "IC" : mode == MagicMode::Chains ? "C" : "MTN";
 }

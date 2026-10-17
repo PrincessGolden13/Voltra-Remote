@@ -15,7 +15,7 @@ void TrainingApplication::scan() {
     for (const auto& a : transport_.scan()) {
         if (std::find(a.services.begin(), a.services.end(), VoltraGattProfile::service) == a.services.end()) continue;
         auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == a.id; });
-        if (it == devices_.end()) devices_.push_back({a.id, a.name, true});
+        if (it == devices_.end()) devices_.push_back({a.id, a.name, true, {}});
         else { it->name = a.name; it->online = true; }
     }
     scannedAt_ = now_; scanned_ = true;
@@ -38,7 +38,7 @@ void TrainingApplication::leave() {
     presetIntent_.reset(); observedLoaded_ = false;
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
-    pending_ = requestedLoad_ = false; weightIntent_.reset(); message_.clear(); resetDrops();
+    pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_.clear(); resetDrops();
 }
 bool TrainingApplication::fresh() const {
     const auto r = report();
@@ -51,15 +51,17 @@ bool TrainingApplication::settingsAllowed() const {
 void TrainingApplication::sent(TransportResult result) {
     if (result != TransportResult::Accepted) { message_ = "Request not accepted"; return; }
     pending_ = true; sentAt_ = now_; sentRevision_ = report().revision;
-    message_ = "Awaiting device";
+    message_.clear(); // Brief requests do not flash a warning on every input.
 }
 bool TrainingApplication::sendSettings(TrainingSettings s) {
     const auto r = report();
     if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < 0 || s.magic.value < 0 || s.eccentric.value < 0 ||
+        (s.magic.enabled && s.magic.value == 0) || (s.eccentric.enabled && s.eccentric.value == 0) ||
         (s.magic.enabled && s.magic.value > modifierMaximum(r, s, true)) ||
         (s.eccentric.enabled && s.eccentric.value > modifierMaximum(r, s, false)) ||
         envelopeHundredths(s) > r.maxWeight * 100) { message_ = "Outside device limits"; return false; }
     const auto result = session_.setTraining(s); sent(result);
+    if (result == TransportResult::Accepted) settingsIntent_ = s;
     return result == TransportResult::Accepted;
 }
 void TrainingApplication::adjustWeight(int delta) {
@@ -67,7 +69,7 @@ void TrainingApplication::adjustWeight(int delta) {
     if (!settingsAllowed()) { message_ = "Device state unavailable"; return; }
     auto r = report();
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
-    auto s = r.settings;
+    auto s = settingsIntent_.value_or(r.settings);
     s.weight = std::clamp(weightIntent_.value_or(s.weight) + delta, 0, r.maxWeight);
     if (r.loaded && s.weight == 0) { message_ = "Unload to select zero"; return; }
     // The original brief specifies reducing modifiers before capping the base.
@@ -77,6 +79,7 @@ void TrainingApplication::adjustWeight(int delta) {
         const int excess = envelopeHundredths(s) - r.maxWeight*100;
         if (excess > 0 && m->enabled && divisor > 0)
             m->value = std::max(0, m->value - (excess+divisor-1)/divisor);
+        if(m->enabled && m->value == 0) m->enabled=false;
     }
     if (!pending_ && s.weight == r.settings.weight && sameModifier(s.magic,r.settings.magic) &&
         sameModifier(s.eccentric,r.settings.eccentric)) return;
@@ -85,16 +88,21 @@ void TrainingApplication::adjustWeight(int delta) {
 void TrainingApplication::toggleWeight() {
     auto r = report();
     if (!fresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
-        // Unload and cancel are not gated by load readiness or pending settings.
-        presetIntent_.reset(); resetDrops(); dropsCancelled_ = true; requestedLoad_ = false; weightIntent_.reset();
-        sent(session_.setLoaded(false)); return;
+        unload(); return;
     }
     const auto e = session_.readiness();
     if (pending_ || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < 1) {
-        message_ = r.settings.weight == 0 ? "Set at least 1 to load" : "Device not ready"; return;
+        message_ = r.settings.weight == 0 ? "Set at least "+weightText(1,r.unit)+" "+unitName(r.unit) : "Device not ready"; return;
     }
     const auto result = session_.setLoaded(true);
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
+}
+void TrainingApplication::unload() {
+    // Always a cancel/unload, even before a pending load is reported. Never
+    // route an editor's unload target through a toggle that could load instead.
+    presetIntent_.reset(); settingsIntent_.reset(); resetDrops(); dropsCancelled_ = true;
+    requestedLoad_ = false; weightIntent_.reset();
+    sent(session_.setLoaded(false));
 }
 void TrainingApplication::autoLoad() {
     const auto r = report(); const auto e = session_.readiness();
@@ -106,9 +114,12 @@ void TrainingApplication::autoLoad() {
 }
 void TrainingApplication::toggleModifier(bool magic) {
     const auto r = report();
-    if (pending_ || r.loaded || !(magic ? r.magicSupported[int(r.settings.magicMode)] : r.eccentricSupported)) return;
-    auto s = r.settings; auto& m = magic ? s.magic : s.eccentric;
-    m.enabled = !m.enabled;
+    if (presetIntent_ || (pending_ && !settingsIntent_) || r.loaded ||
+        !(magic ? r.magicSupported[int(r.settings.magicMode)] : r.eccentricSupported)) {
+        message_ = r.loaded ? "Unload before changing mode" : "Awaiting device"; return;
+    }
+    auto s = settingsIntent_.value_or(r.settings); auto& m = magic ? s.magic : s.eccentric;
+    m.enabled = !(magic ? r.settings.magic.enabled : r.settings.eccentric.enabled);
     sendSettings(s);
 }
 Preset TrainingApplication::currentPreset() const {
@@ -127,8 +138,8 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
     const auto r = report(); presetError_.clear();
     if(!fresh()) { message_ = "Device state unavailable"; return false; }
     const auto p = presetForCurrentDevice(saved);
-    if (!r.magicSupported[int(p.mode)] ||
-        ((p.magic.percent || p.eccentric.percent) && !r.percentageSupported) ||
+    if ((p.magic.enabled && !r.magicSupported[int(p.mode)]) ||
+        (((p.magic.enabled && p.magic.percent) || (p.eccentric.enabled && p.eccentric.percent)) && !r.percentageSupported) ||
         (p.eccentric.enabled && !r.eccentricSupported) || (p.drops.enabled && !r.liveWeightSupported)) {
         presetError_ = "Preset values not available on Voltra firmware version "+
             (r.firmwareVersion.empty() ? "unknown" : r.firmwareVersion);
@@ -145,19 +156,21 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
     if (!sendSettings(s)) return false;
     presetIntent_ = p; return true;
 }
-void TrainingApplication::applyModifier(bool magic, MagicMode mode, int value, bool percent) {
+bool TrainingApplication::applyModifier(bool magic, MagicMode mode, int value, bool percent) {
     const auto r = report();
-    if (pending_ || r.loaded || !(magic ? r.magicSupported[int(mode)] : r.eccentricSupported)) {
-        message_ = "Unload before applying"; return;
+    if (presetIntent_ || (pending_ && !settingsIntent_) || r.loaded || !(magic ? r.magicSupported[int(mode)] : r.eccentricSupported)) {
+        message_ = r.loaded ? "Unload before applying" : "Awaiting device"; return false;
     }
-    auto s = r.settings; auto& m = magic ? s.magic : s.eccentric;
+    if (value < 1) { message_ = "No headroom for modifier"; return false; }
+    auto s = settingsIntent_.value_or(r.settings); auto& m = magic ? s.magic : s.eccentric;
     if (magic) s.magicMode = mode;
     m.enabled = true; m.value = value; m.percent = percent;
-    sendSettings(s);
+    return sendSettings(s);
 }
 DropSettings TrainingApplication::drops() const {
     const auto it = dropSettings_.find(selected_);
-    return it == dropSettings_.end() ? DropSettings{} : it->second;
+    if (it != dropSettings_.end()) return it->second;
+    auto d = DropSettings{}; d.step *= ticksPerUnit(report().unit); return d;
 }
 void TrainingApplication::applyDrops(DropSettings d) {
     if (!fresh() || !report().liveWeightSupported || selected_.empty()) return;
@@ -218,12 +231,12 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
     if (!scanned_ || now - scannedAt_ >= 5000) scan();
-    if (!connected()) { presetIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
+    if (!connected()) { presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
     const auto r = report();
     // No retries or reconciliation writes: every new report wins, even a mismatch.
     if (pending_ && (r.revision > sentRevision_ || now - sentAt_ >= 3000)) {
         message_ = r.revision > sentRevision_ ? "" : "No confirmation";
-        pending_ = requestedLoad_ = false; weightIntent_.reset();
+        pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {
             auto actual = currentPreset(); actual.drops = presetIntent_->drops;
             if (r.revision > sentRevision_ && fresh() && !r.loaded &&
@@ -232,6 +245,8 @@ void TrainingApplication::tick(uint64_t now) {
             presetIntent_.reset();
         }
     }
+    constexpr uint64_t pendingHintDelayMs = 250;
+    if (pending_ && now-sentAt_ >= pendingHintDelayMs && message_.empty()) message_ = "Awaiting device";
     if (fresh() && r.loaded && !observedLoaded_) startingWeight_ = r.settings.weight;
     if (fresh()) observedLoaded_ = r.loaded;
     runDrops(r);

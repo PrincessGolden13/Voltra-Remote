@@ -7,12 +7,11 @@ MockTransport::MockTransport() {
     const char* names[] = {"Green 2.0", "Yellow TW 2.0", "Pink TW 2.0", "Red 2.0 KG", "Black 1.x", "White OFF"};
     for (int i = 0; i < 6; ++i) {
         TrainingReport r;
-        r.maxWeight = i == 3 ? 104 : i == 4 ? 200 : 230;
         r.unit = i == 3 ? WeightUnit::Kilograms : WeightUnit::Pounds;
-        r.firmwareVersion = i == 4 ? "1.x" : "2.0";
+        r.firmwareVersion = i == 4 ? "1.8" : "2.0"; // Synthetic firmware identities.
         r.percentageSupported = r.modifierUnitsSelectable = i != 4;
         r.settings.magic.percent = r.settings.eccentric.percent = i != 4;
-        r.settings.weight = i == 3 ? 23 : 50;
+        r.settings.weight = i == 3 ? 46 : 50;
         r.magicSupported = {true,true,i != 4};
         r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
         r.twinKnown = true; r.twin = i == 1 || i == 2;
@@ -20,7 +19,17 @@ MockTransport::MockTransport() {
         r.telemetryValid = true; r.repsStarted = false;
         r.settings.magic.value = i == 4 ? 10 : 50;
         r.settings.eccentric.value = i == 4 ? 5 : 25;
-        devices_.push_back({i == 0 ? deviceId : std::string(deviceId)+'-'+std::to_string(i),names[i],i != 5,r});
+        WeightLimitEvidence limits;
+        limits.model = "VOLTRA I"; limits.firmware = r.firmwareVersion;
+        limits.twinKnown = true; limits.twin = r.twin;
+        limits.combinedSemanticsKnown = r.twin;
+        if (r.twin) {
+            limits.peerFirmware = r.firmwareVersion;
+            limits.combinedTwin = {460, 416}; // Synthetic effective report: 460 LB / 208 KG.
+        } else if (i == 0) limits.single = {230, 208};
+        // Red and Black deliberately omit a max report and use the shared fallback.
+        r.maxWeight = resolveWeightLimit(limits, r.unit).ticks;
+        devices_.push_back({i == 0 ? deviceId : std::string(deviceId)+'-'+std::to_string(i),names[i],i != 5,r,limits});
     }
 }
 void MockTransport::previewModifier(int value) {
@@ -29,9 +38,22 @@ void MockTransport::previewModifier(int value) {
     r.settings.eccentric.value=std::clamp(value,0,modifierMaximum(r,r.settings,false));
     sent_=false;
 }
+void MockTransport::previewUnit(WeightUnit unit) {
+    auto& device = devices_[active_]; auto& r = device.state;
+    r.settings.weight = convertWeightUnits(r.settings.weight, r.unit, unit);
+    for (auto* m : {&r.settings.magic, &r.settings.eccentric})
+        if (!m->percent) m->value = convertWeightUnits(m->value, r.unit, unit);
+    r.unit = unit; r.maxWeight = resolveWeightLimit(device.limits, unit).ticks;
+    sent_ = false;
+}
+void MockTransport::previewWeight(int ticks) {
+    auto& r = devices_[active_].state;
+    r.settings.weight = std::clamp(ticks,0,r.maxWeight);
+    sent_ = false;
+}
 std::vector<DeviceEntry> MockTransport::catalog() const {
     std::vector<DeviceEntry> result;
-    for(const auto& d : devices_) result.push_back({d.id,d.name,false});
+    for(const auto& d : devices_) result.push_back({d.id,d.name,false,d.state.twin ? d.state.twinPeerName : ""});
     return result;
 }
 
@@ -86,7 +108,7 @@ void MockTransport::poll(uint64_t now) {
             if (*pendingLoaded_ && !state.loaded) {
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
                 state.restSeconds.reset(); restSince_ = 0;
-            } else if (!*pendingLoaded_ && state.loaded) {
+            } else if (!*pendingLoaded_ && state.loaded && state.repsStarted.value_or(false)) {
                 state.completedSets = state.setNumber.value_or(1); state.lastSetReps = int(state.rep);
                 restSince_ = now; state.restSeconds = 0;
             }
@@ -118,7 +140,7 @@ void MockTransport::poll(uint64_t now) {
         peer = state; peer.twinPeerName = peerName;
     }
     state.receivedAtMs = now; ++state.revision; reported_ = state;
-    device_.weightLbs = uint16_t(std::lround(state.settings.weight * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
+    device_.weightLbs = uint16_t(std::lround(state.settings.weight / double(ticksPerUnit(state.unit)) * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     device_.loaded = state.loaded;
     const auto bytes = device_.notification(profile_);
     constexpr size_t fragmentBytes = 7;
@@ -134,7 +156,7 @@ SessionReadiness MockTransport::readiness() const {
     r.cableZero = r.ready; r.twinSafe = state.twinKnown;
     if (r.validated && r.twinSafe) {
         r.capabilities.weightTraining = Knowledge::Yes;
-        r.capabilities.effectiveMaxWeightLbs = uint16_t(std::lround(state.maxWeight * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
+        r.capabilities.effectiveMaxWeightLbs = uint16_t(resolveWeightLimit(devices_[active_].limits,WeightUnit::Pounds).ticks);
         r.minWeightLbs = 0;
     }
     return r;
@@ -144,8 +166,8 @@ TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     const auto r = trainingReport();
     if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
         s.weight < 0 || (r.loaded && s.weight == 0) || s.magic.value < 0 || s.eccentric.value < 0 ||
-        (s.magic.enabled && (!r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||
-        (s.eccentric.enabled && (!r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
+        (s.magic.enabled && (s.magic.value < 1 || !r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||
+        (s.eccentric.enabled && (s.eccentric.value < 1 || !r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
         envelopeHundredths(s) > r.maxWeight*100) return TransportResult::Failed;
     if (consumeIgnored()) return TransportResult::Accepted;
     // New knob values replace the pending setting, not its delivery deadline.
@@ -155,7 +177,7 @@ TransportResult MockTransport::setTraining(const TrainingSettings& s) {
 }
 TransportResult MockTransport::setWeight(uint16_t pounds) {
     const auto r = trainingReport(); auto s = r.settings;
-    s.weight = int(std::lround(pounds / (r.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
+    s.weight = int(std::lround(pounds * ticksPerUnit(r.unit) / (r.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     return setTraining(s);
 }
 TransportResult MockTransport::setLoaded(bool loaded) {

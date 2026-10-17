@@ -1,5 +1,11 @@
 # Existing Twin pairs
 
+October 17 correction: 2.x is 230 LB per unit / 460 LB combined, as confirmed
+by the user. The older 400 LB example is not universal. Effective combined
+reports take precedence over the unit-aware [firmware fallback](WEIGHT_LIMITS.md).
+The simulator uses 460 LB / nominal 208 KG and one selected synthetic session;
+this does not establish physical routing or command encoding.
+
 Pairing, unpairing, role changes, automatic reconnect configuration and peer
 configuration writes are excluded. Independent VOLTRA sessions are not Twin.
 
