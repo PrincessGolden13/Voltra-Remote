@@ -74,6 +74,21 @@ Physical checks still needed: image orientation/colors, readable fonts, touch
 alignment, clockwise direction, detents and press, persistence across reboot.
 No new automated test code is introduced for this milestone.
 
+## October 17 feedback upload
+
+CONFIRMED: the user reconnected the remote and the feedback build was uploaded
+on COM3. Built image hashes matched the saved October 17 manifest before upload;
+esptool verified every written image. The recovery image and partition checks
+passed. Firmware file size: 915,920 bytes. Local artifacts and startup capture
+are in ignored `build/guition/2026-10-17/`.
+
+A restart using esptool's Windows-compatible USB reset sequence reported display
+initialization, touch ACK, active encoder inputs and shared UI startup. No reset
+loop appeared during the 10-second capture. The previously documented old
+crash-dump partition warning remains; startup continued successfully. Physical
+touch/encoder feel still requires user observation. This is offline firmware;
+no real VOLTRA command was sent.
+
 ## October 11 first upload result
 
 CONFIRMED: the offline target compiled and was uploaded over COM3. esptool

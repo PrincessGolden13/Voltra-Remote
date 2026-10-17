@@ -11,8 +11,11 @@
   generated 5–230 range, 593 modifier packets). No new automated test code.
 - Prior executable preserved in ignored `build/native/voltra_simulator-before-oct17.exe`.
   Final firmware copies and SHA256 manifest: ignored `build/guition/2026-10-17/`.
-- USB enumeration found no serial port. No upload or physical input verification
-  was performed. Real BLE, wire capability discovery and Twin routing remain
+- After the user connected the remote, CONFIRMED: COM3 upload completed with
+  every written image hash verified. A captured restart initialized the display,
+  acknowledged touch, enabled encoder inputs and started the shared UI; no reset
+  loop appeared during the 10-second capture. Physical input feel remains
+  UNVERIFIED. Real BLE, wire capability discovery and Twin routing remain
   unimplemented/unverified; these are offline artifacts.
 - Implementation/evidence: UI_FIXES_2026_10_17.md and WEIGHT_LIMITS.md.
 
