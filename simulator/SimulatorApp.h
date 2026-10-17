@@ -10,7 +10,7 @@
 // Shared offline runtime: native hosts only supply windows, input and storage paths.
 namespace voltra {
 struct SimulatorOptions {
-    int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0, liveDrops = 0, modifierValue = -1;
+    int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0, liveDrops = 0, modifierValue = -1, weightUnit = -1, weightTicks = -1;
     std::string renderPath;
     static SimulatorOptions parse(int argc, char** argv) {
         SimulatorOptions o;
@@ -28,6 +28,8 @@ struct SimulatorOptions {
             else if (option == "--device") o.device = number;
             else if (option == "--drop-mode") o.dropMode = number;
             else if (option == "--modifier-value") o.modifierValue = number;
+            else if (option == "--weight-unit") o.weightUnit = number;
+            else if (option == "--weight-ticks") o.weightTicks = number;
             else if (option == "--live-drops") o.liveDrops = number;
             else throw std::runtime_error("Unknown argument: " + option);
         }
@@ -37,6 +39,10 @@ struct SimulatorOptions {
             throw std::runtime_error("Screens 0-13; devices 0-5; drops 0 stairs, 1 rest-pause.");
         if(o.modifierValue < -1 || o.modifierValue > 300 || (o.modifierValue >= 0 && o.renderPath.empty()))
             throw std::runtime_error("Modifier preview 0-300 requires --render");
+        if (o.weightUnit < -1 || o.weightUnit > 1 || (o.weightUnit >= 0 && o.renderPath.empty()))
+            throw std::runtime_error("Unit preview 0 LB / 1 KG requires --render");
+        if (o.weightTicks < -1 || o.weightTicks > 10000 || (o.weightTicks >= 0 && o.renderPath.empty()))
+            throw std::runtime_error("Weight preview 0-10000 ticks requires --render");
         return o;
     }
 };
@@ -59,6 +65,8 @@ struct SimulatorApp {
             application.select(o.device == 0 ? MockTransport::deviceId :
                 std::string(MockTransport::deviceId) + '-' + std::to_string(o.device));
             transport.setProfile(static_cast<SimulatorProfile>(o.profile));
+            if(o.weightUnit >= 0) transport.previewUnit(static_cast<WeightUnit>(o.weightUnit));
+            if(o.weightTicks >= 0) transport.previewWeight(o.weightTicks);
             if(o.modifierValue >= 0) transport.previewModifier(o.modifierValue);
             application.tick(hardware.nowMs());
             if (o.dropMode == 1 || o.liveDrops == 1) {

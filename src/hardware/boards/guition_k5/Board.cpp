@@ -94,7 +94,8 @@ void Board::poll() {
     const int x=((data[1]&15)<<8)|data[2],y=((data[3]&15)<<8)|data[4];
     const bool touched=(data[0]&15)>0 && x<resolution && y<resolution;
     if(touched && !touchPoint_.pressed) Serial.printf("Touch %d,%d\n",x,y);
-    touchPoint_={x/float(resolution-1),y/float(resolution-1),touched};
+    if(touched) touchPoint_={x/float(resolution-1),y/float(resolution-1),true};
+    else touchPoint_.pressed=false;
 }
 void Board::flush(int x,int y,int w,int h,const uint32_t* source) {
     if(!ready_ || x<0 || y<0 || w<=0 || h<=0 || x+w>resolution || y+h>resolution) return;

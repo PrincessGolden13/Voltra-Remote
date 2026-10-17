@@ -16,7 +16,7 @@ public:
     void readTouch();
     void navigate(Screen); // Also used by the offline render preview.
 private:
-    struct Binding { UiController* ui; int action; std::string id; };
+    struct Binding { UiController* ui; int action; std::string id; bool held = false; };
     HardwarePlatform& hardware_;
     TrainingApplication& app_;
     lv_display_t* display_ = nullptr;
@@ -42,7 +42,10 @@ private:
     MagicMode draftMode_ = MagicMode::Chains;
     DropSettings draftDrops_;
     std::string deviceSignature_;
-    uint64_t lastTickMs_ = 0;
+    uint64_t lastTickMs_ = 0, lastRotateMs_ = 0;
+    int lastRotateDirection_ = 0;
+    bool touchDown_ = false, touchMoved_ = false;
+    int touchStartX_ = 0, touchStartY_ = 0;
     RemoteConfigurationStore* store_ = nullptr;
     RemoteConfiguration config_;
     int presetIndex_ = 0, activePreset_ = -1, pendingPreset_ = -1, settingsField_ = 0;
@@ -77,6 +80,7 @@ private:
     lv_obj_t* arc(lv_obj_t*, int size, uint32_t color);
     lv_obj_t* disc(lv_obj_t*, int x, int y, int size, uint32_t accent, bool active);
     lv_obj_t* linkIcon(lv_obj_t*, int size, uint32_t color);
+    lv_obj_t* twinIcon(lv_obj_t*, int size, uint32_t color);
     void glow(lv_obj_t*, uint32_t accent, bool active);
     void buildScale();
     void updateScale(int selected, int maximum, const std::string& suffix, uint32_t accent, bool negative = false);

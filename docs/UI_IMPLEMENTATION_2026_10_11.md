@@ -22,7 +22,7 @@ prior explicit device/safety requirements. Screenshot numbers are illustrations.
   represent state only. Descending steps and pause/down glyphs identify dropsets.
 - Presets contain modifier enabled states, mode, values, reported units and
   dropset parameters, never base weight or a load request. The store is versioned,
-  validated and atomically replaced. P01–P99; one terminal NEW slot, no wrapping.
+  validated and atomically replaced. P01â€“P99; one terminal NEW slot, no wrapping.
 - Apply sends one guarded request. Dropset settings activate only after matching
   modifier readback. Pending, rejected, unsupported, incompatible-unit and
   out-of-envelope presets do not become active. Manual modifier changes clear
@@ -110,8 +110,10 @@ Failures are now visible in the preset browser. Activation still requires readba
 
 CONFIRMED in source: six simulator entries now match the user's names and
 capabilities. Yellow/Pink share their synthetic workout state via the selected
-session and show the peer name. Their combined maximum is explicitly modeled as
-230 LB, never doubled. Red uses floor(230 * 0.45359237) = 104 KG. Black is labeled
+session and show the peer name. The original 230 LB combined maximum was wrong:
+the October 17 correction is 460 LB / nominal 208 KG with report-first limit
+resolution (see WEIGHT_LIMITS.md). Red has a native 104 KG ceiling and now permits
+0.5 KG steps. Black is labeled
 1.x because no specific older firmware version was supplied. White starts offline.
 Firmware/peer/rep-start fields are report data, not UI inference.
 

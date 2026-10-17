@@ -17,16 +17,29 @@ lv_obj_t* UiController::label(lv_obj_t* parent, const std::string& text, int w, 
     lv_obj_set_style_text_color(obj, lv_color_hex(bright), 0);
     lv_obj_set_style_text_font(obj, font, 0); lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, y); lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     return obj;
 }
 void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
     bindings_.push_back(std::make_unique<Binding>(Binding{this, action, id}));
     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_PRESS_LOCK);
     lv_obj_add_event_cb(obj, [](lv_event_t* e) {
         auto* b = static_cast<Binding*>(lv_event_get_user_data(e));
         const auto code = lv_event_get_code(e);
-        if (code == LV_EVENT_SHORT_CLICKED || code == LV_EVENT_LONG_PRESSED)
-            b->ui->act(b->action, b->id, code == LV_EVENT_LONG_PRESSED);
+        if (code == LV_EVENT_PRESSED) b->held = false;
+        if (b->ui->touchMoved_) return;
+        const bool supportsHold = b->action == Weight || b->action == Magic || b->action == EO ||
+            b->action == Drops || b->action == ChoosePreset;
+        if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
+            b->held = true;
+            b->ui->act(b->action, b->id, true);
+        } else if (code == LV_EVENT_CLICKED && !b->held) {
+            // Ordinary buttons also accept a deliberate slow tap. A handled hold
+            // can never issue a second short action when the finger is released.
+            b->ui->act(b->action, b->id, false);
+        }
     }, LV_EVENT_ALL, bindings_.back().get());
 }
 lv_obj_t* UiController::button(lv_obj_t* parent, const std::string& text, int x, int y, int w, int h, int action) {
@@ -42,6 +55,7 @@ lv_obj_t* UiController::arc(lv_obj_t* parent, int size, uint32_t c) {
     auto* obj = lv_arc_create(parent); lv_obj_set_size(obj, size, size); lv_obj_center(obj);
     lv_arc_set_rotation(obj, 135); lv_arc_set_bg_angles(obj, 0, 270); lv_arc_set_range(obj, 0, 1000);
     lv_obj_remove_style(obj, nullptr, LV_PART_KNOB); lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_arc_width(obj, std::max(3, width_/80), LV_PART_MAIN);
     lv_obj_set_style_arc_width(obj, std::max(3, width_/80), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(obj, lv_color_hex(0x202a38), LV_PART_MAIN);
@@ -60,6 +74,7 @@ void UiController::glow(lv_obj_t* obj, uint32_t accent, bool active) {
 }
 lv_obj_t* UiController::disc(lv_obj_t* parent, int x, int y, int size, uint32_t accent, bool active) {
     auto* obj = lv_obj_create(parent);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(obj, size, size); lv_obj_set_pos(obj, x, y);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(obj, 0, 0); lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
@@ -77,6 +92,18 @@ lv_obj_t* UiController::linkIcon(lv_obj_t* parent, int size, uint32_t c) {
         lv_obj_set_style_border_color(link, lv_color_hex(c), 0);
         lv_obj_remove_flag(link, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(link, LV_OBJ_FLAG_SCROLLABLE);
+    }
+    return group;
+}
+lv_obj_t* UiController::twinIcon(lv_obj_t* parent, int size, uint32_t c) {
+    auto* group = lv_obj_create(parent); lv_obj_remove_style_all(group);
+    lv_obj_set_size(group, size, size*2/3);
+    lv_obj_remove_flag(group, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(group, LV_OBJ_FLAG_SCROLLABLE);
+    for (int side=0; side<2; ++side) {
+        auto* ring = disc(group, side*size/3, 0, size*2/3, c, true);
+        lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_shadow_width(ring, 0, 0);
     }
     return group;
 }
@@ -98,19 +125,40 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
     const int progress = negative ? percentOf(selected+maximum,maximum*2) : percentOf(selected, maximum);
     for (int i=0; i<tickCount; ++i)
         lv_obj_set_style_line_color(ticks_[i], lv_color_hex((negative ? (i*1000/(tickCount-1) >= std::min(500,progress) && i*1000/(tickCount-1) <= std::max(500,progress)) : progress > 0 && i*1000/(tickCount-1) <= progress) ? accent : 0x46526b), 0);
-    const int step = maximum <= 10 ? std::max(1,maximum/4) : maximum <= 100 ? 20 : maximum <= 300 ? 50 : 100;
+    const bool weightScale = page_ == Screen::Main || (page_ == Screen::Drops && draftDrops_.mode == DropMode::Stairs) ||
+        ((page_ == Screen::Magic || page_ == Screen::Eccentric) && !draftPercent_);
+    const int unitTicks = weightScale ? ticksPerUnit(app_.report().unit) : 1;
+    const int displayMax = maximum/unitTicks;
+    const int step = (displayMax <= 10 ? std::max(1,displayMax/4) : displayMax <= 100 ? 20 : displayMax <= 300 ? 50 : 100)*unitTicks;
     std::vector<int> landmarks{0};
     for (int n=step;n<maximum && landmarks.size()<6;n+=step) landmarks.push_back(n);
-    if (maximum > 0) landmarks.push_back(maximum);
+    if (maximum > 0) {
+        // Reserve enough arc distance for the endpoint label.
+        while (landmarks.size() > 1 && maximum-landmarks.back() < maximum*0.12) landmarks.pop_back();
+        landmarks.push_back(maximum);
+    }
     if(negative) landmarks = {-maximum,-maximum/2,0,maximum/2,maximum};
     for (size_t i=0;i<7;++i) {
         if(i >= landmarks.size()) { value(scaleLabels_[i], ""); continue; }
         const int n=landmarks[i];
         const double a=(180.0+(maximum > 0 ? (negative ? 90.0*(n+maximum)/maximum : 180.0*n/maximum) : 0))*3.141592653589793/180;
-        value(scaleLabels_[i],std::string(negative && n > 0 ? "+" : "")+std::to_string(n));
+        value(scaleLabels_[i],std::string(negative && n > 0 ? "+" : "")+(weightScale ? weightText(n,app_.report().unit) : std::to_string(n)));
         lv_obj_set_align(scaleLabels_[i],LV_ALIGN_TOP_LEFT);
-        lv_obj_set_pos(scaleLabels_[i],int(width_*.5+width_*.455*std::cos(a))-width_/14,
-            int(height_*.54+width_*.455*std::sin(a))-7);
+        lv_obj_set_pos(scaleLabels_[i],int(width_*.5+width_*.445*std::cos(a))-width_/14,
+            int(height_*.54+width_*.445*std::sin(a))-7);
+    }
+    // Use actual text extents as well as angular spacing. Fractional endpoints
+    // and small round screens need more room than an integer-only heuristic.
+    lv_obj_update_layout(face_);
+    if (landmarks.size() > 2 && !negative) {
+        auto* endpoint = scaleLabels_[landmarks.size()-1];
+        lv_area_t end; lv_obj_get_coords(endpoint, &end);
+        for (size_t i=1; i+1<landmarks.size(); ++i) {
+            lv_area_t mark; lv_obj_get_coords(scaleLabels_[i], &mark);
+            const int gap = std::max(3,width_/90);
+            if (mark.x1 < end.x2+gap && mark.x2+gap > end.x1 && mark.y1 < end.y2+gap && mark.y2+gap > end.y1)
+                value(scaleLabels_[i], "");
+        }
     }
     (void)suffix;
 
@@ -137,7 +185,20 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
             s->activityAt_ = s->hardware_.nowMs();
             if (s->sleeping_) { s->sleeping_ = false; s->wakeTouch_ = true; }
         }
-        data->point = {int32_t(p.x*(s->width_-1)), int32_t(p.y*(s->height_-1))};
+        const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
+        if(p.pressed && !s->touchDown_) { s->touchStartX_=x; s->touchStartY_=y; s->touchMoved_=false; }
+        // Include the release position: a fast swipe may have no intermediate
+        // sample on a busy embedded frame, but must still never apply a preset.
+        if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > s->width_/40 || std::abs(y-s->touchStartY_) > s->height_/40)) s->touchMoved_=true;
+        if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_) {
+            const int dx=x-s->touchStartX_, dy=y-s->touchStartY_;
+            if(std::abs(dx) > s->width_/8 && std::abs(dx) > std::abs(dy)) {
+                if(s->page_ == Screen::Devices) s->act(dx<0 ? NextDevices : PreviousDevices,"",false);
+                if(s->page_ == Screen::Presets) s->rotate(dx<0 ? 1 : -1);
+            }
+        }
+        s->touchDown_=p.pressed;
+        data->point = {x,y};
         data->state = p.pressed && !s->wakeTouch_ ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
         if (!p.pressed) s->wakeTouch_ = false;
     });
@@ -146,6 +207,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
 UiController::~UiController() { lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
 void UiController::readTouch() { lv_indev_read(touch_); }
 void UiController::navigate(Screen page) {
+    lastRotateMs_ = 0; lastRotateDirection_ = 0;
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
     editDirty_ = returnAfterEdit_ = false;
@@ -193,7 +255,9 @@ void UiController::act(int action, const std::string& id, bool held) {
         if (presetIndex_ == int(config_.presets.size()) && config_.presets.size() < 99) config_.presets.push_back(saveDraft_);
         else if (presetIndex_ < int(config_.presets.size())) config_.presets[presetIndex_] = saveDraft_;
         if (store_ && !store_->save(config_)) { config_ = previous; value(message_, "Could not save preset"); return; }
-        navigate(Screen::Presets); return;
+        if (samePreset(app_.currentPreset(),app_.presetForCurrentDevice(saveDraft_))) activePreset_ = presetIndex_;
+        else if (app_.applyPreset(saveDraft_)) pendingPreset_ = presetIndex_;
+        navigate(Screen::Main); return;
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
     if (action == CloseSettings) { saveConfiguration(); navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return; }
@@ -208,7 +272,9 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action == ModeFocus || action == AmountFocus) return;
     if (action == BackMain) {
+        if (editMaximum() == 0) { navigate(Screen::Main); return; }
         if(editDirty_) { returnAfterEdit_ = true; editedAt_ = 0; }
+        else if(!app_.report().loaded) { edited(); returnAfterEdit_=true; editedAt_=0; }
         else navigate(Screen::Main);
         return;
     }
@@ -221,19 +287,20 @@ void UiController::act(int action, const std::string& id, bool held) {
             const int base = app_.report().settings.weight;
             if(percent && base <= 0) return;
             const int converted = target.value_or(int(std::lround(percent ? draftValue_*100.0/base : draftValue_*base/100.0)));
-            draftPercent_ = percent; draftValue_ = std::clamp(converted,0,editMaximum());
+            draftPercent_ = percent; draftValue_ = std::clamp(converted,std::min(1,editMaximum()),editMaximum());
             target = draftValue_; edited();
         }
         return;
     }
-    if (action == Unload && !held) { if (app_.report().loaded || app_.report().autoLoadArmed || !app_.fresh()) app_.toggleWeight(); return; }
+    if (action == Unload && !held) { app_.unload(); return; }
     if (action == Magic || action == EO || action == Drops) {
         weightFocused_ = false; activePreset_ = pendingPreset_ = -1;
         const auto r = app_.report();
         if (action == Magic && std::none_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; })) return;
         if (action == EO && !r.eccentricSupported) return;
         if (action == Drops && !r.liveWeightSupported) return;
-        if (held) navigate(action == Magic ? Screen::Magic : action == EO ? Screen::Eccentric : Screen::Drops);
+        const bool enabled = action == Magic ? r.settings.magic.enabled : action == EO ? r.settings.eccentric.enabled : app_.drops().enabled;
+        if (held || !enabled) navigate(action == Magic ? Screen::Magic : action == EO ? Screen::Eccentric : Screen::Drops);
         else if (action == Drops) app_.toggleDrops(); else app_.toggleModifier(action == Magic);
         return;
     }
@@ -251,6 +318,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     } else if (action >= FieldDrops && action <= FieldHold) dropField_ = action-FieldDrops;
 }
 void UiController::build() {
+    if (touchDown_) lv_indev_wait_release(touch_);
     if (face_) lv_obj_delete(face_);
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
@@ -266,6 +334,7 @@ void UiController::build() {
     for (auto& item : scaleLabels_) item = nullptr;
     page_ = next_; rebuild_ = false;
     auto* screen = lv_display_get_screen_active(display_);
+    lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x030507), 0);
     face_ = lv_obj_create(screen); lv_obj_set_size(face_, width_, height_); lv_obj_center(face_);
     lv_obj_remove_flag(face_, LV_OBJ_FLAG_SCROLLABLE); lv_obj_set_style_pad_all(face_, 0, 0);
@@ -289,31 +358,24 @@ void UiController::build() {
             auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, accent(), d.online);
             if (d.online) bind(tile, Select, d.id);
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
-            auto* icon = linkIcon(tile, size*40/100, d.online ? bright : muted);
-            lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, size*24/100);
+            auto* icon = d.twinPeer.empty() ? linkIcon(tile, size*40/100, d.online ? bright : muted) :
+                twinIcon(tile, size*45/100, d.online ? accent() : muted);
+            lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, size*16/100);
             auto* name = label(tile, d.name, size*90/100, size*49/100, small);
             lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
             lv_obj_set_height(name, small->line_height*2);
             lv_label_set_long_mode(name,LV_LABEL_LONG_WRAP);
-            lv_obj_set_y(name,size*40/100);
+            lv_obj_set_y(name,size*49/100);
             color(name, d.online ? bright : muted);
-            auto* badge = lv_obj_create(tile); lv_obj_remove_style_all(badge);
-            lv_obj_set_size(badge, size*61/100, size*19/100); lv_obj_align(badge, LV_ALIGN_TOP_MID, 0, size*69/100);
-            lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0); lv_obj_set_style_border_width(badge, 1, 0);
-            lv_obj_set_style_border_color(badge, lv_color_hex(d.online ? accent() : muted), 0);
-            lv_obj_remove_flag(badge, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
-            auto* online = label(badge, d.online ? "Online" : "Offline", size*61/100, 0, small);
-            lv_obj_center(online); color(online, d.online ? accent() : muted);
             deviceRows_.push_back({tile, d.id});
         }
-        message_ = label(face_, devices.empty() ? "Searching for VOLTRAs..." : "Tap an available device", width_*74/100, height_*83/100, small);
+        message_ = label(face_, devices.empty() ? "Searching for VOLTRAs..." : "", width_*74/100, height_*83/100, small);
         color(message_, soft);
         if (pages > 1) {
-            auto* prev = button(face_, "<", width_*33/100, height_*87/100, width_*9/100, height_*6/100, PreviousDevices);
-            auto* next = button(face_, ">", width_*58/100, height_*87/100, width_*9/100, height_*6/100, NextDevices);
+            auto* prev = button(face_, "<", width_*33/100, height_*80/100, width_*12/100, height_*10/100, PreviousDevices);
+            auto* next = button(face_, ">", width_*58/100, height_*80/100, width_*12/100, height_*10/100, NextDevices);
             color(prev, devicePage_ ? accent() : muted); color(next, devicePage_+1 < pages ? accent() : muted);
-            label(face_, std::to_string(devicePage_+1)+" / "+std::to_string(pages), width_*16/100, height_*88/100, small);
+            label(face_, std::to_string(devicePage_+1)+" / "+std::to_string(pages), width_*16/100, height_*82/100, small);
         }
         return;
     }
@@ -322,12 +384,17 @@ void UiController::build() {
     title_ = label(face_, page_ == Screen::Main ? app_.name() : page_ == Screen::Magic ? "" :
         page_ == Screen::Eccentric ? "" : "Dropset", width_*65/100, height_*23/100, medium);
     lv_label_set_long_mode(title_, LV_LABEL_LONG_DOT);
-    if (page_ == Screen::Main) { bind(title_, BackDevices); lv_obj_set_ext_click_area(title_, height_/100); }
+    if (page_ == Screen::Main) {
+        // A separate, generous device header ends before the weight hit region.
+        lv_obj_set_y(title_,height_*21/100); lv_obj_set_height(title_,height_*10/100);
+        lv_obj_set_style_pad_top(title_,height_/50,0);
+        bind(title_, BackDevices); lv_obj_set_ext_click_area(title_, height_/100);
+    }
     status_ = label(face_, "", width_*62/100, height_*30/100, small);
     color(status_, soft);
     if (page_ == Screen::Main) {
-        twinIcon_ = linkIcon(face_, width_*7/100, accent());
-        lv_obj_set_pos(twinIcon_, width_*38/100, height_*30/100);
+        twinIcon_ = twinIcon(face_, width_*7/100, accent());
+        lv_obj_set_pos(twinIcon_, width_*17/100, height_*30/100);
     } else { bind(status_, Unload); lv_obj_set_ext_click_area(status_, height_/100); }
     if (!rp) {
         const uint32_t centerAccent = accent();
@@ -354,41 +421,49 @@ void UiController::build() {
         unit_ = label(center_, "", size*90/100, size*64/100, small); color(unit_, soft);
         hint_ = label(center_, "", size*90/100, size*77/100, small); color(hint_, soft);
         if (page_ == Screen::Main) {
-            bind(weight_,Weight);
+            lv_obj_remove_flag(weight_,LV_OBJ_FLAG_CLICKABLE);
             lv_obj_align(unit_, LV_ALIGN_TOP_MID, 0, size*59/100);
             lv_obj_align(hint_, LV_ALIGN_TOP_MID, 0, size*70/100);
         }
     }
     if (page_ == Screen::Main) {
+        lv_obj_set_y(center_,height_*35/100); lv_obj_set_height(center_,height_*23/100);
+        lv_obj_move_foreground(title_);
         for (int i=0; i<3; ++i) {
-            const int size = width_*20/100;
-            tiles_[i] = disc(face_, width_*(7+i*22)/100, height_*64/100, size, accent(), false);
+            const int size = width_*19/100;
+            tiles_[i] = disc(face_, width_*(9+i*21)/100, height_*61/100, size, accent(), false);
             bind(tiles_[i], i == 0 ? Magic : i == 1 ? EO : Drops);
             if (i < 2) miniArc_[i] = arc(tiles_[i], size*92/100, accent());
-            miniValue_[i] = label(tiles_[i], "", size*92/100, size*43/100, medium);
+            miniValue_[i] = label(tiles_[i], "", size*96/100, size*32/100, medium);
             if (i == 0) {
-                modeLabels_[0] = label(tiles_[i], "", size*85/100, size*24/100, medium);
+                modeLabels_[0] = label(face_, "", size, height_*55/100, medium); lv_obj_set_align(modeLabels_[0],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[0],width_*9/100);
+                bind(modeLabels_[0],Magic);
 
-            } else if (i == 1) modeLabels_[2] = label(tiles_[i], "EO", size*90/100, size*24/100, medium);
-            else {
-                dropTitle_ = label(tiles_[i], "", size*90/100, size*19/100, small);
+            } else if (i == 1) { modeLabels_[2] = label(face_, "EO", size, height_*55/100, medium); bind(modeLabels_[2],EO); }
+            if(i == 1) { lv_obj_set_align(modeLabels_[2],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[2],width_*30/100); }
+            if(i == 2) {
+                dropTitle_ = label(face_, "", size, height_*55/100, medium); bind(dropTitle_,Drops);
+                lv_obj_set_align(dropTitle_,LV_ALIGN_TOP_LEFT); lv_obj_set_x(dropTitle_,width_*51/100);
                 for (int step=0; step<3; ++step) {
-                    auto* bar = lv_obj_create(tiles_[i]); lv_obj_remove_style_all(bar);
+                    auto* bar = lv_obj_create(face_); lv_obj_remove_style_all(bar);
                     stairs_[step] = bar;
                     lv_obj_set_size(bar, size/9, (3-step)*size/16);
-                    lv_obj_set_pos(bar, size*34/100+step*size/9, size*45/100-(3-step)*size/16);
+                    lv_obj_set_pos(bar, width_*57/100+step*size/9, height_*59/100-(3-step)*size/16);
                     lv_obj_set_style_bg_color(bar, lv_color_hex(muted), 0); lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
                     lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
                 }
             }
         }
-        presetTile_ = disc(face_, width_*73/100, height_*64/100, width_*20/100, accent(), false);
+        presetTile_ = disc(face_, width_*72/100, height_*61/100, width_*19/100, accent(), false);
         bind(presetTile_, OpenPresets);
-        label(presetTile_, LV_SYMBOL_SAVE, width_*18/100, width_*4/100, medium);
-        presetValue_ = label(presetTile_, "P", width_*18/100, width_*10/100, &lv_font_montserrat_28);
-        separator(62,8); separator(87,20);
-        stats_ = label(face_, "", width_*72/100, height_*87/100, small);
-        message_ = label(face_, "", width_*76/100, height_*84/100, small); color(message_, soft);
+        auto* presetCaption=label(face_, LV_SYMBOL_SAVE, width_*19/100, height_*55/100, medium); bind(presetCaption,OpenPresets);
+        lv_obj_set_align(presetCaption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(presetCaption,width_*72/100);
+        presetValue_ = label(presetTile_, "P", width_*18/100, 0, &lv_font_montserrat_18);
+        lv_obj_center(presetValue_);
+        stats_ = label(face_, "", width_*64/100, height_*82/100, &lv_font_montserrat_18);
+        lv_obj_set_y(battery_,height_*94/100);
+        message_ = label(face_, "", width_*68/100, height_*88/100, small); color(message_, soft);
+        lv_obj_add_flag(hint_,LV_OBJ_FLAG_HIDDEN);
         return;
     }
     if (page_ == Screen::Magic) {
@@ -444,7 +519,7 @@ void UiController::build() {
             bind(unitChoices_[i],percent ? UnitPercent : UnitAbsolute);
         }
         // Returning never disables the modifier; toggling lives on the main tile.
-        button(face_,LV_SYMBOL_LEFT,width_*45/100,height_*91/100,width_*10/100,height_*7/100,BackMain);
+
         lv_obj_add_flag(battery_,LV_OBJ_FLAG_HIDDEN);
         return;
     }
@@ -464,6 +539,17 @@ int UiController::editMaximum() const {
     return modifierMaximum(r, s, page_ == Screen::Magic);
 }
 void UiController::rotate(int delta) {
+    if(page_ == Screen::Devices) { act(delta > 0 ? NextDevices : PreviousDevices,"",false); return; }
+    if(page_ == Screen::Main || page_ == Screen::Live || page_ == Screen::Magic || page_ == Screen::Eccentric || (page_ == Screen::Drops && draftDrops_.mode == DropMode::Stairs)) {
+        const auto now=hardware_.nowMs();
+        const int direction = delta > 0 ? 1 : -1;
+        const auto interval=lastRotateMs_ && direction == lastRotateDirection_ ? (now-lastRotateMs_)/std::max(1,std::abs(delta)) : 1000;
+        lastRotateMs_=now;
+        lastRotateDirection_=direction;
+        // Tunable UI policy, independent of the board's physical pulse mapping.
+        constexpr uint64_t fastTurnMs = 55, mediumTurnMs = 130;
+        delta *= interval < fastTurnMs ? 10 : interval < mediumTurnMs ? 5 : 1;
+    }
     if (page_ == Screen::Presets) {
         presetIndex_ = std::clamp(presetIndex_+delta,0,std::min(98,int(config_.presets.size())));
         next_ = page_; rebuild_ = true; return;
@@ -480,7 +566,7 @@ void UiController::rotate(int delta) {
     if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta); return; }
     if (page_ != Screen::Drops) {
         auto& memory = unitSelection();
-        draftValue_ = std::clamp(draftValue_+delta, 0, editMaximum());
+        draftValue_ = std::clamp(draftValue_+delta, std::min(1,editMaximum()), editMaximum());
         memory.percent.reset(); memory.absolute.reset();
         (draftPercent_ ? memory.percent : memory.absolute) = draftValue_;
         edited(); return;
@@ -507,19 +593,16 @@ void UiController::update() {
     const auto r = app_.report();
     if (int(page_) >= int(Screen::Presets)) { updateExtra(); return; }
     if (page_ == Screen::Main) {
-        largeValue(r.revision ? std::to_string(r.settings.weight) : "--");
+        largeValue(r.revision ? weightText(r.settings.weight,r.unit) : "--");
         const bool atMaximum = app_.fresh() && r.maxWeight > 0 && r.settings.weight >= r.maxWeight;
         const uint32_t maximumColor = limitAccent();
         // Retain a darker unloaded number, even when its hue indicates the limit.
         const uint32_t numberColor = r.loaded ? maximumColor : ((maximumColor & 0xfefefeu) >> 1);
         color(weight_, !app_.fresh() ? amber : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
-        value(hint_, !app_.fresh() ? "State unknown\nTap to unload" : r.autoLoadArmed ? "Auto Load armed\nTap to cancel" :
-            atMaximum ? "MAX" : "");
-        color(hint_,atMaximum ? maximumColor : soft);
         value(status_, r.twinKnown ? (r.twin ? "Twin: "+r.twinPeerName : "") : "Twin unknown");
         color(status_, r.twinKnown ? accent() : amber);
-        lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
+        if(r.twinKnown && r.twin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_width(status_,width_*76/100);
         lv_obj_set_style_text_font(status_, &lv_font_montserrat_14,0);
         lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
@@ -528,7 +611,8 @@ void UiController::update() {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
             const uint32_t c = accent();
             color(tiles_[i], m.enabled ? bright : muted);
-            value(miniValue_[i], std::to_string(m.value)+(m.percent ? "%" : unitName(r.unit)));
+            value(miniValue_[i], !m.enabled && m.value == 0 ? "OFF" :
+                (m.percent ? std::to_string(m.value) : weightText(m.value,r.unit))+(m.percent ? "%" : unitName(r.unit)));
             color(miniValue_[i], m.enabled ? bright : muted);
             lv_obj_set_style_arc_color(miniArc_[i], lv_color_hex(m.enabled ? c : 0x46536a), LV_PART_INDICATOR);
             lv_arc_set_value(miniArc_[i], percentOf(m.value, modifierMaximum(r, r.settings, i == 0)));
@@ -551,25 +635,34 @@ void UiController::update() {
             lv_obj_set_style_bg_color(step, lv_color_hex(d.enabled ? accent() : muted), 0);
         }
         value(dropTitle_, d.mode == DropMode::RestPause ? LV_SYMBOL_PAUSE " " LV_SYMBOL_DOWN : "");
-        value(miniValue_[2], d.mode == DropMode::Stairs ? std::to_string(d.step)+unitName(r.unit) :
+        value(miniValue_[2], d.mode == DropMode::Stairs ? weightText(d.step,r.unit)+unitName(r.unit) :
             std::to_string(d.drops)+"\n"+std::to_string(d.percent)+"%\n"+std::to_string(d.holdSeconds)+"s");
-        lv_obj_set_style_text_font(miniValue_[2], d.mode == DropMode::RestPause ?
-            (width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14) :
-            (width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18), 0);
+        lv_obj_set_style_text_font(miniValue_[2],width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18,0);
+        lv_obj_set_style_text_line_space(miniValue_[2],0,0);
+        lv_obj_center(miniValue_[2]);
         color(miniValue_[2], d.enabled ? bright : muted);
         glow(tiles_[2], accent(), d.enabled);
+        // Prefer the explicitly selected/saved slot when duplicate recipes exist.
+        if (!app_.fresh() || activePreset_ < 0 || activePreset_ >= int(config_.presets.size()) ||
+            !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_]))) {
+            activePreset_=-1;
+            if(app_.fresh()) for(size_t i=0;i<config_.presets.size();++i)
+                if(samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[i]))) { activePreset_=int(i); break; }
+        }
         glow(presetTile_, accent(), activePreset_ >= 0);
         value(presetValue_, activePreset_ >= 0 ? "P"+std::to_string(activePreset_+1) : "P");
         color(presetValue_,activePreset_ >= 0 ? bright : muted);
         std::string summary;
-        if (app_.fresh() && r.completedSets && r.lastSetReps) summary = std::to_string(*r.completedSets)+" | "+std::to_string(*r.lastSetReps);
-        if (app_.fresh() && r.restSeconds) summary += "       "+std::to_string(*r.restSeconds/60)+":"+(*r.restSeconds%60 < 10 ? "0" : "")+std::to_string(*r.restSeconds%60);
+        if (app_.fresh() && r.telemetryValid && r.completedSets && r.lastSetReps) summary = std::to_string(*r.completedSets)+" | "+std::to_string(*r.lastSetReps);
+        if (app_.fresh() && r.telemetryValid && r.restSeconds) summary += "    "+std::to_string(*r.restSeconds/60)+":"+(*r.restSeconds%60 < 10 ? "0" : "")+std::to_string(*r.restSeconds%60);
         value(stats_,summary);
-        value(message_, app_.message());
+        value(message_, !app_.fresh() ? "State unknown / tap weight to unload" :
+            r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() : atMaximum ? "MAX" : "");
+        color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
         return;
     }
     value(status_, !app_.fresh() ? "Unknown / tap to unload" :
-        r.loaded ? std::to_string(r.settings.weight)+" "+unitName(r.unit)+" / tap to unload" :
+        r.loaded ? weightText(r.settings.weight,r.unit)+" "+unitName(r.unit)+" / tap to unload" :
         r.autoLoadArmed ? "Auto Load / tap to cancel" : app_.message());
     if (page_ == Screen::Drops) {
         for (int i=0; i<2; ++i) {
@@ -590,17 +683,19 @@ void UiController::update() {
             value(hint_, names[dropField_]); color(hint_, bright);
             updateScale(values[dropField_], maxima[dropField_], suffix[dropField_], accent());
         } else {
-            largeValue((draftDrops_.step > 0 ? "+" : "")+std::to_string(draftDrops_.step)); color(weight_, bright);
+            largeValue((draftDrops_.step > 0 ? "+" : "")+weightText(draftDrops_.step,r.unit)); color(weight_, bright);
             value(unit_, unitName(r.unit)); value(hint_, "After each rep");
             updateScale(draftDrops_.step, r.maxWeight, "", accent(), true);
         }
     } else {
-        draftValue_ = std::clamp(draftValue_, 0, editMaximum());
-        largeValue(std::to_string(draftValue_)+(draftPercent_ ? "%" : ""));
+        draftValue_ = std::clamp(draftValue_, std::min(1,editMaximum()), editMaximum());
+        largeValue(editMaximum() == 0 ? "OFF" : (draftPercent_ ? std::to_string(draftValue_) : weightText(draftValue_,r.unit))+(draftPercent_ ? "%" : ""));
         const bool atMaximum = app_.fresh() && draftValue_ >= editMaximum();
         color(weight_, atMaximum ? limitAccent() : bright);
         value(unit_, "");
         value(hint_, "");
+        if (editMaximum() == 0 && app_.fresh() && !r.loaded && !r.autoLoadArmed && app_.message().empty())
+            value(status_,"No headroom");
         updateScale(draftValue_, editMaximum(), draftPercent_ ? "%" : "", atMaximum ? limitAccent() : accent());
         for(int i=0;i<2;++i) if(unitChoices_[i]) {
             const bool selected=(i==0) == draftPercent_;
@@ -627,7 +722,7 @@ void UiController::largeValue(const std::string& text) {
     lv_obj_set_style_transform_pivot_x(weight_,lv_obj_get_width(weight_)/2,0);
     lv_obj_set_style_transform_pivot_y(weight_,lv_obj_get_height(weight_)/2,0);
     lv_obj_set_style_transform_scale(weight_,scale,0);
-    lv_obj_align(weight_,LV_ALIGN_TOP_MID,0,width_*8/100);
+    lv_obj_align(weight_,LV_ALIGN_TOP_MID,0,width_*(page_ == Screen::Main ? 2 : 8)/100);
 }
 UiController::UnitSelections& UiController::unitSelection() {
     const auto r=app_.report();
@@ -648,7 +743,7 @@ void UiController::tick() {
     if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected()) { app_.leave(); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {
         std::string signature;
-        for (const auto& d : app_.devices()) signature += d.id+d.name+(d.online ? "1" : "0");
+        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+(d.online ? "1" : "0");
         if (signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
     }
     const auto r = app_.report();
@@ -657,10 +752,11 @@ void UiController::tick() {
         // an edit or retry; only a new input event can set editDirty_.
         constexpr uint64_t editSettleMs = 150;
         if(editDirty_ && !app_.pending() && now-editedAt_ >= editSettleMs) {
-            draftValue_ = std::clamp(draftValue_,0,editMaximum());
-            app_.applyModifier(page_ == Screen::Magic,draftMode_,draftValue_,draftPercent_);
+            draftValue_ = std::clamp(draftValue_,std::min(1,editMaximum()),editMaximum());
+            const bool accepted = app_.applyModifier(page_ == Screen::Magic,draftMode_,draftValue_,draftPercent_);
             editDirty_=false;
-            if(returnAfterEdit_) navigate(Screen::Main);
+            if(returnAfterEdit_ && accepted) navigate(Screen::Main);
+            returnAfterEdit_=false;
         } else if(!editDirty_ && !app_.pending()) {
             const auto m=page_ == Screen::Magic ? r.settings.magic : r.settings.eccentric;
             draftValue_=m.value; draftPercent_=m.percent; draftMode_=r.settings.magicMode;

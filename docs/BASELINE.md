@@ -1,5 +1,21 @@
 # Foundation baseline
 
+## October 17 feedback build
+
+- CONFIRMED: final Windows simulator/packet inspector and `guition_k5_offline`
+  builds pass. Embedded program usage 915,553 bytes; static RAM 21,760 bytes.
+- 39 final offscreen renders at 360/466/480 px include device/main/editor/preset
+  layouts, RP values, 460 LB Twin, fractional KG, the 81% endpoint, and no-headroom
+  OFF. Visual review corrected number/status overlap and endpoint margins.
+- Existing pinned Ryan packet and SDK-consistency validators pass (203 vectors,
+  generated 5–230 range, 593 modifier packets). No new automated test code.
+- Prior executable preserved in ignored `build/native/voltra_simulator-before-oct17.exe`.
+  Final firmware copies and SHA256 manifest: ignored `build/guition/2026-10-17/`.
+- USB enumeration found no serial port. No upload or physical input verification
+  was performed. Real BLE, wire capability discovery and Twin routing remain
+  unimplemented/unverified; these are offline artifacts.
+- Implementation/evidence: UI_FIXES_2026_10_17.md and WEIGHT_LIMITS.md.
+
 Validated on Windows 10 x64, 2026-09-06.
 
 - Offline native build: CMake 3.31.6 + Ninja 1.11.1 + Zig 0.14.1 completed

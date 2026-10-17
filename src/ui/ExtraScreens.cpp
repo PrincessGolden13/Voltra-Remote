@@ -27,9 +27,9 @@ void UiController::separator(int y,int inset) {
 }
 std::string UiController::presetSummary(const Preset& p,bool multiline) const {
     const std::string magicUnit = p.magic.percent ? "%" : unitName(p.unit), eoUnit = p.eccentric.percent ? "%" : unitName(p.unit), gap = multiline ? "\n\n" : " ";
-    std::string s = std::string(magicName(p.mode))+(p.magic.enabled ? " "+std::to_string(p.magic.value)+magicUnit : " OFF");
-    s += gap+"EO"+(p.eccentric.enabled ? " "+std::to_string(p.eccentric.value)+eoUnit : " OFF");
-    if (p.drops.enabled) s += gap+(p.drops.mode == DropMode::Stairs ? "Stairs "+std::to_string(p.drops.step)+unitName(p.unit) :
+    std::string s = std::string(magicName(p.mode))+(p.magic.enabled ? " "+(p.magic.percent ? std::to_string(p.magic.value) : weightText(p.magic.value,p.unit))+magicUnit : " OFF");
+    s += gap+"EO"+(p.eccentric.enabled ? " "+(p.eccentric.percent ? std::to_string(p.eccentric.value) : weightText(p.eccentric.value,p.unit))+eoUnit : " OFF");
+    if (p.drops.enabled) s += gap+(p.drops.mode == DropMode::Stairs ? "Stairs "+weightText(p.drops.step,p.unit)+unitName(p.unit) :
         "RP "+std::to_string(p.drops.drops)+" / "+std::to_string(p.drops.percent)+"% / "+std::to_string(p.drops.holdSeconds)+"s");
     else if (multiline) s += gap+"Drops OFF";
     return s;
@@ -138,11 +138,11 @@ void UiController::updateExtra() {
         const auto d=app_.drops();
         text(status_,r.twinKnown ? (r.twin ? "Twin: "+r.twinPeerName : "") : "Twin unknown");
         const bool known=app_.fresh() && r.telemetryValid;
-        largeValue(known ? (d.enabled ? std::to_string(r.settings.weight) : r.force ? std::to_string(*r.force) : "--") : "--");
-        text(start_,d.enabled ? "START "+std::to_string(app_.startingWeight()) : "");
+        largeValue(known ? (d.enabled ? weightText(r.settings.weight,r.unit) : r.force ? weightText(*r.force,r.unit) : "--") : "--");
+        text(start_,d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) : "");
         int next=std::max(1,d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : r.settings.weight*(100-d.percent)/100);
         if(d.mode == DropMode::RestPause && app_.dropsCompleted() >= d.drops) next=r.settings.weight;
-        text(nextWeight_,d.enabled ? "NEXT "+(known ? std::to_string(next) : "--") : unitName(r.unit));
+        text(nextWeight_,d.enabled ? "NEXT "+(known ? weightText(next,r.unit) : "--") : unitName(r.unit));
         text(liveValues_[0],known && r.setNumber ? std::to_string(*r.setNumber) : "");
         text(liveValues_[1],known ? std::to_string(r.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");

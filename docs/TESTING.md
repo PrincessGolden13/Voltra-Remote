@@ -1,5 +1,10 @@
 # Validation status and pending tests
 
+October 17: see [feedback changes and pending regression cases](UI_FIXES_2026_10_17.md).
+Existing pinned Ryan packet and SDK-consistency validators were rerun successfully.
+New UI/state tests remain deferred; builds and render checks are not interaction
+or physical-resistance validation.
+
 The explicit instruction under REQUIRED TEST CASES defers new test code for now.
 Existing upstream validators are run; no artificial coverage or passing CTest
 placeholder is supplied. This is not a tested production control implementation.

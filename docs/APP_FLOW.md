@@ -1,4 +1,12 @@
-> Latest October 11 follow-up supersedes older interactions below: mode/unit
+> October 17 feedback supersedes conflicting rules below: see
+> [all sixteen fixes](UI_FIXES_2026_10_17.md) and [unit/limit policy](WEIGHT_LIMITS.md).
+> Devices support arrows, swipe and rotary paging. Off modifier tiles open their
+> editors; active tiles disable on tap, hold edits. Save returns to Main.
+> Magic/EO amount taps apply/return without a Back button. Weight uses 1 LB or
+> 0.5 KG steps, with speed-dependent acceleration. 2.x Twin is 460 LB, with
+> reported effective limits preferred over firmware and native-unit fallbacks.
+>
+> October 11 follow-up supersedes older interactions below: mode/unit
 > selection is touch-only, rotary always edits the main amount, and percent/absolute
 > toggles convert with nearest-integer rounding and remember unit-only roundtrips.
 > Main load stays on setup until confirmed rep-start telemetry. Presets are global,

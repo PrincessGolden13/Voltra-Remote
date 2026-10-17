@@ -18,35 +18,40 @@ weight to load/unload; hold it for 650 ms to request Auto Load. Tap the name to
 return to the picker. Drag the top rim to move the window; Escape closes it.
 
 The setup screen has one theme color, a device-scaled outer weight dial, and
-four controls: Magic, EO, Dropsets and Presets. Tap the weight to focus it;
-when already focused, tap to load/unload. Unload remains available immediately
+four controls: Magic, EO, Dropsets and Presets. Tap the weight to load/unload.
+Unload remains available immediately
 while loaded, pending or stale. Hold the weight for Auto Load. At the confirmed device maximum, the number and
 dial use a contrasting color paired with the selected theme, and show MAX.
 
-Magic, EO and Dropsets retain their earlier short-tap toggle / hold-to-edit
-behavior. The Magic picker is ordered IC / MTN / C; touch a mode then turn the
-knob to browse supported modes, or touch the outer scale to adjust the amount. Tap the large amount to return
-to setup.
-Modifier editors now apply changes without an Apply button. Touch the outer scale,
-mode or unit picker to choose the knob's target. Supported devices offer % and
+Tap an off Magic, EO or Dropset tile to edit it; tap an active tile to disable it.
+Hold either state to edit. The Magic picker is ordered IC / MTN / C and is
+touch-only, as is the unit picker. Rotary always adjusts the amount. Tap the
+large amount to apply/return to setup. There is no Back button in Magic or EO.
+Modifier editors apply changes without an Apply button. Supported devices offer % and
 LB/KG independently for Magic and EO; older profiles show only their supported
 absolute unit. Consecutive knob events settle for 150 ms before one request;
 reported values remain authoritative, with no confirmation-driven retries.
 There are no X controls. Disable modifiers with their main-screen tiles;
-Back arrows navigate without disabling. Dropsets retain Apply.
+Dropsets retain Apply.
 
-Tap Presets to browse P01–P99 with the knob. Tap an existing preset to request
+Slow rotation changes 1 LB or 0.5 KG; faster rotation accelerates. Device paging
+supports arrows, horizontal swipes and rotary (positive rotation goes right).
+Twin pairs use overlapping circles. See [the October 17 fixes](docs/UI_FIXES_2026_10_17.md).
+
+Tap Presets to browse P01â€“P99 with the knob. Tap an existing preset to request
 its modifiers; hold it to compare OLD / NEW before saving an override. The
 single NEW slot at the end saves the current modifier configuration. Presets
 exclude base weight, never load resistance, and become active only when the
 machine report matches. Unsupported units/features or intrinsically invalid recipes
 are rejected instead of silently converted. When the exact preset modifiers
 need more headroom, selecting it reduces base weight to the highest safe integer
-value (never increases it). The stored modifier values are not trimmed. Presets and remote preferences
+display tick (never increases it). Save returns to Main and matching confirmed
+settings automatically light the preset indicator. The stored modifier values
+are not trimmed. Presets and remote preferences
 persist in `remote-settings.txt` beside the Windows executable (or in the Mac
 application support directory). Restoring saved data never applies a preset.
 
-Confirmed loading opens the simplified workout screen. F8/F9/F10 provide
+Confirmed rep-start telemetry opens the workout screen. F8/F9/F10 provide
 synthetic workout telemetry; unloading returns to setup with mock-device
 completed-set, rep and rest fields. Missing telemetry is omitted.
 
@@ -79,8 +84,7 @@ F9 for each set's pause. Defaults are two drops, 50%, one second.
 For Auto Load: hold the unloaded weight, then F9; the **mock device** loads
 after a three-second hold. Tap the weight to cancel.
 
-Five simulated VOLTRAs provide different scenarios. Studio reports KG and
-absolute modifiers; Twin reports its own combined limit; Travel omits MTN.
+Six simulated VOLTRAs provide different firmware, unit, availability and Twin scenarios.
 Recent connections are stored in `recent-voltras.txt` beside the Windows executable
 or in `~/Library/Application Support/VOLTRA Remote/` on Mac
 (maximum four, most recent first). No load intent is stored.
@@ -104,8 +108,10 @@ and validate read-only BLE observations before enabling physical commands.
 ### October 11 simulator profiles
 
 The two device pages contain Green 2.0 (230 LB, MTN and percentages), Yellow TW
-2.0 and Pink TW 2.0 (paired, reported 230 LB limit), Red 2.0 KG (104 KG integer
-ceiling), Black 1.x (200 LB, no MTN/percentages), and White OFF (unavailable).
+2.0 and Pink TW 2.0 (paired, reported 460 LB / nominal 208 KG limit), Red 2.0 KG
+(104 KG ceiling, 0.5 KG steps), Black 1.x (200 LB, no MTN/percentages), and White
+OFF (unavailable). Device reports take precedence over unit-specific firmware
+fallbacks; see [limit evidence](docs/WEIGHT_LIMITS.md).
 These are synthetic profiles, not claims of verified hardware compatibility.
 Loading stays on setup with a white number. F8 reports a rep and opens Live.
 Presets are shared across devices; absolute values convert to the device unit.
@@ -114,6 +120,11 @@ Unsupported recipes require an OK acknowledgement.
 For large-number layout previews, add `--modifier-value 125` to a `--render`
 command on screen 2 or 3. This initializes synthetic settings only and cannot
 be used in the interactive simulator.
+For unit-specific layout previews, `--weight-unit 0` selects LB or
+`--weight-unit 1` selects KG, also only with `--render`.
+`--weight-ticks N` previews a base amount (1 LB / 0.5 KG per tick), clamped to
+the profile ceiling. For example, screen 2 with 127 ticks on Green has an 81%
+modifier ceiling, useful for inspecting adjacent scale labels.
 
 ### Physical Guition K5 bring-up
 
