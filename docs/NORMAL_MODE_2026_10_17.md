@@ -77,6 +77,9 @@ read groups with 90 ms spacing. Reads include units, base/motor/workout state,
 modifiers, cable position/offset, raw Twin/lock/OTA status, max force and firmware.
 The parser rejects unknown widths, truncation and trailing bytes atomically.
 Disconnect/queue overflow invalidates the session. A BLE write is never confirmation.
+Unknown units/motor states and non-Weight-Training reports immediately invalidate
+the normalized report so the weight target remains an unload action. Valid report
+revisions remain monotonic within a connection after recovery from unknown state.
 
 The catalog gives 21268 (EP_MAX_ALLOWED_FORCE) as uint16 LB. It is a single-unit
 candidate, not proof of a combined Twin ceiling. Unit enum 0=LB/1=KG is INFERRED.

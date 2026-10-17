@@ -33,7 +33,7 @@ private:
     std::deque<std::pair<uint8_t,uint16_t>> seen_;
     TrainingReport report_;
     std::string status_,firmware_;
-    uint64_t now_=0,connectedAt_=0,lastWrite_=0,fragmentAt_=0;
+    uint64_t now_=0,connectedAt_=0,lastWrite_=0,fragmentAt_=0,reportRevision_=0;
     uint16_t sequence_=0;
     size_t bootstrap_=0,readGroup_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;

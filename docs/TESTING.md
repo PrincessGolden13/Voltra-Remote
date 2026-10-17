@@ -7,6 +7,8 @@ refresh during a hold, forget/persistence failure, retained offline devices,
 mode gesture versus page swipes, simulator-to-normal reboot selection, per-image
 link isolation, notification overflow/generation, truncated read groups and
 unknown Twin/readiness. Physical connection and training are not validated.
+Also cover immediate invalidation on unknown units/motor/workout mode, unload
+from that state, and monotonic report revisions after valid state returns.
 
 October 17: see [feedback changes and pending regression cases](UI_FIXES_2026_10_17.md).
 Existing pinned Ryan packet and SDK-consistency validators were rerun successfully.

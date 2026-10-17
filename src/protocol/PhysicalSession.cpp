@@ -28,7 +28,7 @@ PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_
     : transport_(transport),identity_(identity) {}
 void PhysicalSession::connectionChanged(bool connected) {
     connected_=connected;accepted_=activated_=false; bootstrap_=readGroup_=0;sequence_=0;
-    connectedAt_=now_;lastWrite_=0;parser_.reset();values_.clear();seen_.clear();report_={};firmware_.clear();
+    connectedAt_=now_;lastWrite_=reportRevision_=0;parser_.reset();values_.clear();seen_.clear();report_={};firmware_.clear();
     waitingWrite_.reset();
     if(connected) {connectionFailure_=false;status_="Connecting / approve on VOLTRA";}
     else if(!connectionFailure_) status_="Connection lost";
@@ -121,7 +121,15 @@ void PhysicalSession::apply(const Frame& f) {
 }
 void PhysicalSession::updateReport() {
     const auto w=fresh(base),m=fresh(motor),mode=fresh(workout),u=fresh(unit);
-    if(!w || !m || !mode || !u || (*u!=0 && *u!=1)) return;
+    if(!w || !m || !mode || !u || (*u!=0 && *u!=1)) {report_={};return;}
+    if(*mode!=1 || (*m!=4 && *m!=5 && *m!=38 && *m!=39)) {
+        // A newly unknown/non-training mode must invalidate the previous report
+        // immediately. The weight target then remains an unconditional unload,
+        // rather than treating an unrecognized motor state as confirmed unloaded.
+        report_={};
+        status_=*mode!=1 ? "Select Weight Training on VOLTRA" : "Unknown motor state / tap to unload";
+        return;
+    }
     report_.unit=*u==0 ? WeightUnit::Pounds : WeightUnit::Kilograms;
     report_.firmwareVersion=firmware_;
     report_.settings.weight=convertWeightUnits(int(*w),WeightUnit::Pounds,report_.unit);
@@ -140,7 +148,7 @@ void PhysicalSession::updateReport() {
     // The additional modes await verified selector/capability mappings.
     report_.magicSupported={false,c.has_value(),false};report_.eccentricSupported=e && *e>=0;
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
-    ++report_.revision;
+    report_.revision=++reportRevision_;
     if(!busy()) status_=*mode!=1 ? "Select Weight Training on VOLTRA" : !report_.twinKnown ? "Twin state needs validation" : "Connection diagnostic build";
 }
 TrainingReport PhysicalSession::trainingReport() const { return report_; }

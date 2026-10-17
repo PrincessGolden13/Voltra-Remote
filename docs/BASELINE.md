@@ -3,8 +3,8 @@
 ## October 17 Normal-mode build and upload
 
 - CONFIRMED: Windows simulator/packet inspector and both remote targets build.
-  Normal uses 1,181,001 program bytes / 31,692 static RAM bytes; simulator uses
-  927,001 / 21,236. Binary files are 1,181,360 and 927,360 bytes respectively.
+  Normal uses 1,181,369 program bytes / 31,692 static RAM bytes; simulator uses
+  927,001 / 21,236. Binary files are 1,181,728 and 927,360 bytes respectively.
 - ELF symbol inspection: no mock classes in Normal, no NimBLE/physical-session
   classes in Simulator; each expected backend is present in its own image.
 - Fifteen offscreen renders at 360/466/480 cover Devices, Main, Updates, About and
@@ -26,6 +26,9 @@
   physical device discovery/approval, remembered devices across board reset,
   and all resistance/real-telemetry behavior. Physical training implementation
   remains incomplete; see NORMAL_MODE_2026_10_17.md for the exact blockers.
+- Final review correction: invalid unit/motor/workout reports clear normalized
+  state immediately, preserving the unknown-state unload target. Report revisions
+  remain monotonic when valid state returns. Both images rebuilt and reflashed.
 
 ## October 17 feedback build
 

@@ -32,7 +32,8 @@ CONFIRMED (Android reports): 0x77 responses contain multiple module/firmware
 strings. Record the complete module set, not just one app-visible version.
 The October 17 [limit resolver](WEIGHT_LIMITS.md) now supplies a scoped nominal
 firmware fallback for VOLTRA I 1.x/2.x, after applicable reports. It is used by
-the offline adapter; no physical report decoder/readiness support is established.
+the offline adapter. Normal diagnostics decode limited physical reports, but
+unknown Twin/readiness leaves the physical effective limit unavailable.
 
 ## Policy
 
@@ -42,8 +43,8 @@ the offline adapter; no physical report decoder/readiness support is established
 - Weight Training is the product focus. Additional modes, device settings,
   cable adjustment, DTR, Overdrive activation and testing workflows are deferred.
 - Chains/eccentric/inverse-chains require a verified effective peak limit, not
-  just a base-weight clamp. The user-requested modifier-reduction behavior is
-  pending; it must not be claimed implemented by the draft-value scaffold.
+  just a base-weight clamp. Modifier reduction is implemented in the shared
+  controller and simulator; physical command support remains pending.
 - Unknown commands may have side effects. Do not probe by writing adjacent IDs,
   guessed selectors or beta flags. Catalog writable flags do not authorize use.
 - Unknown safety behavior across firmware remains a release blocker for loading.
