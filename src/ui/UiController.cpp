@@ -31,7 +31,7 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
         if (code == LV_EVENT_PRESSED) b->held = false;
         if (b->ui->touchMoved_) return;
         const bool supportsHold = b->action == Weight || b->action == Magic || b->action == EO ||
-            b->action == Drops || b->action == ChoosePreset;
+            b->action == Drops || b->action == ChoosePreset || b->action == Select;
         if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
             b->held = true;
             b->ui->act(b->action, b->id, true);
@@ -164,7 +164,7 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
 
 }
 
-UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store) : hardware_(h), app_(app), store_(store) {
+UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime) : hardware_(h), app_(app), runtime_(runtime), store_(store) {
     if (store_) config_ = store_->load();
     if (!h.capabilities().coreInputsValid()) throw std::runtime_error("Unsupported display/input target");
     lv_init(); width_ = h.display().width(); height_ = h.display().height();
@@ -186,7 +186,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
             if (s->sleeping_) { s->sleeping_ = false; s->wakeTouch_ = true; }
         }
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
-        if(p.pressed && !s->touchDown_) { s->touchStartX_=x; s->touchStartY_=y; s->touchMoved_=false; }
+        if(p.pressed && !s->touchDown_) { s->touchStartX_=x; s->touchStartY_=y; s->touchMoved_=false; s->modeGestureUntil_=0; }
         // Include the release position: a fast swipe may have no intermediate
         // sample on a busy embedded frame, but must still never apply a preset.
         if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > s->width_/40 || std::abs(y-s->touchStartY_) > s->height_/40)) s->touchMoved_=true;
@@ -207,6 +207,8 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
 UiController::~UiController() { lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
 void UiController::readTouch() { lv_indev_read(touch_); }
 void UiController::navigate(Screen page) {
+    modeGestureUntil_ = 0;
+    if (page == Screen::ForgetDevice && forgetId_.empty()) { forgetId_=app_.selectedDevice();forgetName_=app_.name(); }
     lastRotateMs_ = 0; lastRotateDirection_ = 0;
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
@@ -230,7 +232,20 @@ void UiController::act(int action, const std::string& id, bool held) {
         if (action == NextDevices && devicePage_+1 < count) ++devicePage_;
         next_ = Screen::Devices; rebuild_ = true; return;
     }
-    if (action == Select) { if (!held && app_.select(id)) navigate(Screen::Main); return; }
+    if (action == Select) {
+        if (held && app_.remembered(id)) {
+            forgetId_ = id;
+            for (const auto& d : app_.devices()) if (d.id == id) forgetName_ = d.name;
+            navigate(Screen::ForgetDevice);
+        } else if (!held && app_.select(id)) navigate(Screen::Main);
+        return;
+    }
+    if (action == CancelForget) { navigate(Screen::Devices); return; }
+    if (action == ConfirmForget) {
+        if (app_.forget(forgetId_)) navigate(Screen::Devices);
+        else value(message_,app_.message());
+        return;
+    }
     if (action == BackDevices && !held) { app_.leave(); navigate(Screen::Devices); return; }
     if (action == Weight) {
         if (held) app_.autoLoad();
@@ -356,7 +371,7 @@ void UiController::build() {
             const auto& d = devices[devicePage_*4+i];
             const int size = width_*32/100;
             auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, accent(), d.online);
-            if (d.online) bind(tile, Select, d.id);
+            if (d.online || app_.remembered(d.id)) bind(tile, Select, d.id);
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
             auto* icon = d.twinPeer.empty() ? linkIcon(tile, size*40/100, d.online ? bright : muted) :
                 twinIcon(tile, size*45/100, d.online ? accent() : muted);
@@ -371,6 +386,11 @@ void UiController::build() {
         }
         message_ = label(face_, devices.empty() ? "Searching for VOLTRAs..." : "", width_*74/100, height_*83/100, small);
         color(message_, soft);
+        if (!runtime_ || runtime_->simulated()) {
+            auto* mode = label(face_,"SIMULATOR",width_*50/100,height_*91/100,small);
+            color(mode,amber);
+            lv_obj_add_flag(battery_,LV_OBJ_FLAG_HIDDEN);
+        }
         if (pages > 1) {
             auto* prev = button(face_, "<", width_*33/100, height_*80/100, width_*12/100, height_*10/100, PreviousDevices);
             auto* next = button(face_, ">", width_*58/100, height_*80/100, width_*12/100, height_*10/100, NextDevices);
@@ -539,7 +559,21 @@ int UiController::editMaximum() const {
     return modifierMaximum(r, s, page_ == Screen::Magic);
 }
 void UiController::rotate(int delta) {
-    if(page_ == Screen::Devices) { act(delta > 0 ? NextDevices : PreviousDevices,"",false); return; }
+    if(page_ == Screen::Devices) {
+        if (runtime_ && modeGestureUntil_ && hardware_.nowMs() <= modeGestureUntil_) {
+            if (delta < 0) {
+                modeGestureClicks_ += -delta;
+                if (modeGestureClicks_ >= 3) {
+                    modeGestureUntil_ = 0;
+                    app_.leave();
+                    if (!runtime_->switchMode()) value(message_,"Could not switch mode");
+                }
+                return;
+            }
+            modeGestureUntil_ = 0;
+        }
+        act(delta > 0 ? NextDevices : PreviousDevices,"",false); return;
+    }
     if(page_ == Screen::Main || page_ == Screen::Live || page_ == Screen::Magic || page_ == Screen::Eccentric || (page_ == Screen::Drops && draftDrops_.mode == DropMode::Stairs)) {
         const auto now=hardware_.nowMs();
         const int direction = delta > 0 ? 1 : -1;
@@ -587,7 +621,7 @@ void UiController::update() {
 #endif
     value(battery_, batteryText);
     if (page_ == Screen::Devices) {
-        if (!app_.message().empty()) value(message_, app_.message());
+        value(message_, app_.message().empty() ? (app_.devices().empty() ? "Searching for VOLTRAs..." : "") : app_.message());
         return;
     }
     const auto r = app_.report();
@@ -656,7 +690,7 @@ void UiController::update() {
         if (app_.fresh() && r.telemetryValid && r.completedSets && r.lastSetReps) summary = std::to_string(*r.completedSets)+" | "+std::to_string(*r.lastSetReps);
         if (app_.fresh() && r.telemetryValid && r.restSeconds) summary += "    "+std::to_string(*r.restSeconds/60)+":"+(*r.restSeconds%60 < 10 ? "0" : "")+std::to_string(*r.restSeconds%60);
         value(stats_,summary);
-        value(message_, !app_.fresh() ? "State unknown / tap weight to unload" :
+        value(message_, !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
             r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() : atMaximum ? "MAX" : "");
         color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
         return;
@@ -740,11 +774,13 @@ void UiController::edited() {
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     app_.tick(now);
-    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected()) { app_.leave(); navigate(Screen::Devices); }
+    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected()) { app_.leave(true); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {
+        if (!touchDown_ && !modeGestureUntil_ && !rebuild_ && app_.tryAutomaticSelection()) navigate(Screen::Main);
         std::string signature;
-        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+(d.online ? "1" : "0");
-        if (signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
+        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+(d.online ? "1" : "0")+(app_.remembered(d.id) ? "S" : "D");
+        // Do not destroy a tile underneath a held finger when a scan completes.
+        if (!touchDown_ && signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
     }
     const auto r = app_.report();
     if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
@@ -778,6 +814,10 @@ void UiController::tick() {
     const bool pressed = hardware_.rotary().wasPressed();
     const bool wasSleeping = sleeping_;
     if (delta || pressed) { activityAt_ = now; sleeping_ = false; }
+    if (modeGestureUntil_ && now > modeGestureUntil_) modeGestureUntil_ = 0;
+    if (pressed && !wasSleeping && page_ == Screen::Devices && runtime_) {
+        modeGestureUntil_ = now+3000; modeGestureClicks_ = 0;
+    }
     if (delta && !wasSleeping) rotate(delta);
     if (pressed && !wasSleeping) {
         if (page_ == Screen::Presets) act(ChoosePreset,"",false);

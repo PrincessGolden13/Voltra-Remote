@@ -1,5 +1,13 @@
 # Validation status and pending tests
 
+October 17 Normal-mode work: [implementation and blockers](NORMAL_MODE_2026_10_17.md).
+New test code remains deferred. Queue future cases for zero/one/multiple completed
+scans, late power-on, accepted-only persistence, failed GATT/approval, stale scan
+refresh during a hold, forget/persistence failure, retained offline devices,
+mode gesture versus page swipes, simulator-to-normal reboot selection, per-image
+link isolation, notification overflow/generation, truncated read groups and
+unknown Twin/readiness. Physical connection and training are not validated.
+
 October 17: see [feedback changes and pending regression cases](UI_FIXES_2026_10_17.md).
 Existing pinned Ryan packet and SDK-consistency validators were rerun successfully.
 New UI/state tests remain deferred; builds and render checks are not interaction
@@ -40,7 +48,7 @@ supported (0x80004002)`. The custom LVGL surface exposes only a pane to UI
 Automation, so accessibility does not provide an alternative interaction oracle.
 New test code remains deferred under the original instruction.
 
-Manual checks still required: four-entry MRU across relaunch, five-second
+Manual checks still required: saved-device list across relaunch, five-second
 availability changes/offline no-op, short/long-press exclusivity, all screen
 navigation, mode value transfer, unit/envelope edge cases, zero selection,
 Auto Load cancellation and ignored responses, duplicate/gapped reps, RP hold

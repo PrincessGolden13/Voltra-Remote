@@ -1,9 +1,11 @@
 # Safety contract
 
-Foundation status: **no physical connection, handshake or resistance command
-implementation**. The production adapter is inert and the prototype build is
-blocked. The simulator links no physical BLE implementation. Its displayed
-loaded state comes only from synthetic reports, including responses to mock commands.
+Current status: Normal firmware implements BLE connection, protocol bootstrap and
+read-only observations. Explicit unload is the only enabled physical control;
+all other training writes return Unsupported pending a validated safety/profile
+mapping. Physical compatibility is unverified. See [current status](NORMAL_MODE_2026_10_17.md).
+The separately linked simulator has no physical BLE implementation. Its loaded
+state comes only from synthetic reports, including responses to mock commands.
 
 Mandatory invariants from PROJECT_REQUIREMENTS.md:
 
@@ -36,7 +38,9 @@ is not proof of device-side readiness or a substitute for BLE state checks.
 
 ## Foundation limitations
 
-Physical load/unload requests remain unavailable. Offline mock commands support
+Physical load/settings/Auto Load requests remain unavailable. Explicit unload
+uses the source-documented motor=4 write and requires a matching report; delivery
+and physical behavior remain unverified. Offline mock commands support
 delayed confirmation, timeout and priority unload cancellation of pending weight
 or load intent. Tapping the bright weight requests unload; only confirmation
 darkens it. Unknown state is explicitly amber. No separate STOP button is used.

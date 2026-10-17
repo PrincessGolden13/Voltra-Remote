@@ -1,5 +1,6 @@
 #pragma once
 #include "controller/TrainingApplication.h"
+#include "controller/RuntimeMode.h"
 #include "hardware/interfaces/HardwarePlatform.h"
 #include <lvgl.h>
 #include <memory>
@@ -7,10 +8,10 @@
 #include <array>
 #include <map>
 namespace voltra {
-enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice };
+enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice };
 class UiController {
 public:
-    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr);
+    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr);
     ~UiController();
     void tick();
     void readTouch();
@@ -19,6 +20,11 @@ private:
     struct Binding { UiController* ui; int action; std::string id; bool held = false; };
     HardwarePlatform& hardware_;
     TrainingApplication& app_;
+    RuntimeMode* runtime_ = nullptr;
+    uint64_t modeGestureUntil_ = 0;
+    int modeGestureClicks_ = 0;
+    DeviceId forgetId_;
+    std::string forgetName_;
     lv_display_t* display_ = nullptr;
     lv_indev_t* touch_ = nullptr;
     lv_obj_t *face_ = nullptr, *weight_ = nullptr, *title_ = nullptr, *status_ = nullptr,

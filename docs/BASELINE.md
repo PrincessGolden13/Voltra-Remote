@@ -1,5 +1,32 @@
 # Foundation baseline
 
+## October 17 Normal-mode build and upload
+
+- CONFIRMED: Windows simulator/packet inspector and both remote targets build.
+  Normal uses 1,181,001 program bytes / 31,692 static RAM bytes; simulator uses
+  927,001 / 21,236. Binary files are 1,181,360 and 927,360 bytes respectively.
+- ELF symbol inspection: no mock classes in Normal, no NimBLE/physical-session
+  classes in Simulator; each expected backend is present in its own image.
+- Fifteen offscreen renders at 360/466/480 cover Devices, Main, Updates, About and
+  ForgetDevice. Visual review of the 360 px screens confirms the new dialog and
+  labels fit. These checks do not prove physical touch/gesture behavior.
+- Existing pinned Ryan validators pass: 203 vectors, generated 5–230 LB range,
+  593 modifier packets and SDK consistency. They validate reference bytes,
+  not this project's new physical session. No new test code was created.
+- CONFIRMED: added OTA region recovery verified against COM3 before writing.
+  Both firmware images plus bootloader/partition/boot selection uploaded; all
+  written hashes verified. A 15-second restart capture reports Normal/physical
+  BLE, display initialized, touch ACK, encoder active and shared UI startup.
+  No reset loop appeared in that interval. Existing old-coredump warning and
+  first-use missing device-list NVS namespace did not prevent startup.
+- Build log: ignored build/normal-mode-build.log. Renders: build/normal-mode-renders.
+  Image copies, SHA256 manifest, upload log and startup capture:
+  build/guition/2026-10-17-normal. Prior baseline: build/mode-switch-baseline.
+- UNVERIFIED: mode-switch gesture on hardware, Simulator boot-return behavior,
+  physical device discovery/approval, remembered devices across board reset,
+  and all resistance/real-telemetry behavior. Physical training implementation
+  remains incomplete; see NORMAL_MODE_2026_10_17.md for the exact blockers.
+
 ## October 17 feedback build
 
 - CONFIRMED: final Windows simulator/packet inspector and `guition_k5_offline`

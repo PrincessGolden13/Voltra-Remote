@@ -13,6 +13,12 @@ struct SessionReadiness {
 class ControlSession {
 public:
     virtual ~ControlSession() = default;
+    virtual void connectionChanged(bool) {}
+    virtual void notification(const std::string&,const Bytes&) {}
+    virtual void tick(uint64_t) {}
+    virtual bool accepted() const { return true; }
+    virtual bool busy() const { return false; }
+    virtual const std::string& status() const { static const std::string empty; return empty; }
     virtual SessionReadiness readiness() const = 0;
     virtual TransportResult setWeight(uint16_t pounds) = 0;
     virtual TransportResult setLoaded(bool loaded) = 0;

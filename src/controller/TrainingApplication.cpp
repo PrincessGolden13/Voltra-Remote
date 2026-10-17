@@ -2,23 +2,52 @@
 #include "protocol/VoltraGattProfile.h"
 #include <algorithm>
 namespace voltra {
-TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices)
-    : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)) {
+TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
+    : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
     if (memory_) recent_ = memory_->load();
-    if (recent_.size() > 4) recent_.resize(4);
     for (auto& d : recent_) d.online = false;
 }
+bool TrainingApplication::remembered(const DeviceId& id) const {
+    return std::any_of(recent_.begin(), recent_.end(), [&](const auto& d) { return d.id == id; });
+}
+bool TrainingApplication::forget(const DeviceId& id) {
+    automaticSelection_ = false;
+    auto remaining = recent_;
+    remaining.erase(std::remove_if(remaining.begin(), remaining.end(), [&](const auto& d) { return d.id == id; }), remaining.end());
+    if (memory_ && !memory_->save(remaining)) { message_ = "Could not remove saved device"; return false; }
+    recent_ = std::move(remaining);
+    dropSettings_.erase(id);
+    if (selected_ == id) leave();
+    message_.clear();
+    scan();
+    return true;
+}
+bool TrainingApplication::tryAutomaticSelection() {
+    if (!automaticSelection_ || !scanned_ || scanPending_ || connected()) return false;
+    const auto count = std::count_if(devices_.begin(), devices_.end(), [](const auto& d) { return d.online; });
+    if (!count) return false; // Keep discovering when the remote starts first.
+    automaticSelection_ = false; // One startup attempt; never fight manual navigation.
+    if (count != 1) return false;
+    const auto it = std::find_if(devices_.begin(), devices_.end(), [](const auto& d) { return d.online; });
+    return select(it->id);
+}
 void TrainingApplication::scan() {
+    if (connected() || scanPending_) return;
+    const auto found=transport_.scan();
+    scanPending_=transport_.scanInProgress();
+    if (!scanPending_) refreshDiscovery(found);
+    scannedAt_ = now_; scanned_ = true;
+}
+void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& found) {
     devices_ = knownDevices_;
     for(const auto& d : recent_) if(std::none_of(devices_.begin(),devices_.end(),[&](const auto& known){return known.id == d.id;})) devices_.push_back(d);
     for (auto& d : devices_) d.online = false;
-    for (const auto& a : transport_.scan()) {
+    for (const auto& a : found) {
         if (std::find(a.services.begin(), a.services.end(), VoltraGattProfile::service) == a.services.end()) continue;
         auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == a.id; });
-        if (it == devices_.end()) devices_.push_back({a.id, a.name, true, {}});
-        else { it->name = a.name; it->online = true; }
+        if (it == devices_.end()) devices_.push_back({a.id, a.name.empty() ? "VOLTRA" : a.name, true, {}});
+        else { if(!a.name.empty()) it->name = a.name; it->online = true; }
     }
-    scannedAt_ = now_; scanned_ = true;
 }
 bool TrainingApplication::select(const DeviceId& id) {
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && d.online; });
@@ -27,18 +56,32 @@ bool TrainingApplication::select(const DeviceId& id) {
     leave();
     if (!controller_.connect(chosen.id)) { message_ = "Connection unavailable"; scan(); return false; }
     selected_ = chosen.id; name_ = chosen.name;
-    recent_.erase(std::remove_if(recent_.begin(), recent_.end(), [&](const auto& d) { return d.id == selected_; }), recent_.end());
-    recent_.insert(recent_.begin(), chosen);
-    if (recent_.size() > 4) recent_.resize(4);
-    if (memory_ && !memory_->save(recent_)) message_ = "Could not save recent devices";
-    scan();
+    connectingDevice_ = chosen;
+    if (session_.accepted()) rememberConnection();
     return true;
 }
-void TrainingApplication::leave() {
+void TrainingApplication::rememberConnection() {
+    if (!connectingDevice_) return;
+    const auto chosen = *connectingDevice_;
+    connectingDevice_.reset();
+    if (remembered(selected_) || recent_.size() < maximumRememberedDevices) {
+        auto saved = recent_;
+        saved.erase(std::remove_if(saved.begin(), saved.end(), [&](const auto& d) { return d.id == selected_; }), saved.end());
+        saved.insert(saved.begin(), chosen);
+        if (memory_ && !memory_->save(saved)) message_ = "Could not save device";
+        else recent_ = std::move(saved);
+    } else message_ = "Device memory full";
+    scan();
+}
+void TrainingApplication::leave(bool preserveFailure) {
+    const std::string failure = preserveFailure ? (session_.status().empty() ? "Connection lost" : session_.status()) : "";
+    automaticSelection_ = false;
+    scanned_ = scanPending_ = false;
+    connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
-    pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_.clear(); resetDrops();
+    pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_ = failure; resetDrops();
 }
 bool TrainingApplication::fresh() const {
     const auto r = report();
@@ -230,11 +273,13 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
+    if (scanPending_ && !transport_.scanInProgress()) { scanPending_=false; refreshDiscovery(transport_.discovered()); }
     if (!scanned_ || now - scannedAt_ >= 5000) scan();
-    if (!connected()) { presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
+    if (!connected()) { connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
+    if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();
     // No retries or reconciliation writes: every new report wins, even a mismatch.
-    if (pending_ && (r.revision > sentRevision_ || now - sentAt_ >= 3000)) {
+    if (pending_ && ((!session_.busy() && r.revision > sentRevision_) || now - sentAt_ >= 3000)) {
         message_ = r.revision > sentRevision_ ? "" : "No confirmation";
         pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {

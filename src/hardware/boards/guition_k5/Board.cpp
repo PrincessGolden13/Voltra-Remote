@@ -9,7 +9,9 @@ HardwareCapabilities Board::capabilities() const {
     HardwareCapabilities c;
     c.displayWidth=c.displayHeight=resolution;c.displayShape=DisplayShape::Round;
     c.touchAvailable=c.rotaryAvailable=c.rotaryPressAvailable=ready_;
-    // Radio deliberately absent from this offline validation build.
+#ifdef VOLTRA_PHYSICAL
+    c.bluetoothAvailable=true;
+#endif
     return c;
 }
 uint64_t Board::nowMs() const { return uint64_t(esp_timer_get_time())/1000; }
@@ -54,7 +56,7 @@ bool Board::begin() {
     encoderState_=(digitalRead(encoderA)<<1)|digitalRead(encoderB);
     attachInterruptArg(encoderA,encoderInterrupt,this,CHANGE);attachInterruptArg(encoderB,encoderInterrupt,this,CHANGE);
     ready_=true;ledcWrite(0,700);
-    Serial.println("Display initialized; touch ACK; encoder inputs active. OFFLINE ONLY");return true;
+    Serial.println("Display initialized; touch ACK; encoder inputs active.");return true;
 }
 void IRAM_ATTR Board::encoderInterrupt(void* context) {
     auto* b=static_cast<Board*>(context);

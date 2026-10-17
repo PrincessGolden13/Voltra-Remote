@@ -6,18 +6,21 @@
 namespace voltra {
 class TrainingApplication {
 public:
-    TrainingApplication(BleTransport&, VoltraController&, ControlSession&, DeviceMemory* = nullptr, std::vector<DeviceEntry> knownDevices = {});
+    TrainingApplication(BleTransport&, VoltraController&, ControlSession&, DeviceMemory* = nullptr, std::vector<DeviceEntry> knownDevices = {}, bool automaticSelection = false);
     void tick(uint64_t now);
     void scan();
     bool select(const DeviceId&);
-    void leave();
+    bool tryAutomaticSelection();
+    bool remembered(const DeviceId&) const;
+    bool forget(const DeviceId&);
+    void leave(bool preserveFailure = false);
     bool connected() const { return controller_.confirmed().connected; }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
     TrainingReport report() const { return session_.trainingReport(); }
     bool fresh() const;
-    bool pending() const { return pending_; }
-    const std::string& message() const { return message_; }
+    bool pending() const { return pending_ || session_.busy(); }
+    const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
     void adjustWeight(int delta);
     void toggleWeight();
     void unload();
@@ -45,6 +48,9 @@ private:
     std::string name_, message_, presetError_;
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
+    bool automaticSelection_ = false;
+    bool scanPending_ = false;
+    std::optional<DeviceEntry> connectingDevice_;
     std::optional<int> weightIntent_, dropTarget_;
     std::optional<TrainingSettings> settingsIntent_;
     uint32_t lastRep_ = 0;
@@ -60,5 +66,7 @@ private:
     bool sendSettings(TrainingSettings);
     void resetDrops();
     void runDrops(const TrainingReport&);
+    void refreshDiscovery(const std::vector<Advertisement>&);
+    void rememberConnection();
 };
 }

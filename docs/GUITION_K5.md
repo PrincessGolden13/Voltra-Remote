@@ -1,4 +1,16 @@
-# Guition K5 offline hardware validation
+# Guition K5 hardware validation
+
+October 17: [Normal/Simulator firmware](NORMAL_MODE_2026_10_17.md) supersedes the
+single-image offline build below. Build-Guition now builds both images; Flash-Guition
+uploads both and boots Normal. The second OTA region has its own verified factory
+recovery file. Real training remains unavailable pending a validated profile.
+The following original bring-up notes are historical.
+
+CONFIRMED October 17 Normal upload: recovery checks passed, all five uploaded
+images verified, and USB restart reported Normal/physical BLE and shared UI startup
+after display/touch/encoder initialization. No reset loop in the 15-second capture.
+Artifacts are in ignored build/guition/2026-10-17-normal. Physical mode-switch
+gesture and actual VOLTRA connection remain unverified. See BASELINE.md.
 
 User authorization: October 11, proceed with JC3636K518 as the working target
 without dismantling the unit. User subsequently confirmed the screen and touch

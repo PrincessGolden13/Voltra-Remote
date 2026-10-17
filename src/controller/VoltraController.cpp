@@ -6,12 +6,14 @@ namespace voltra {
 VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlSession* controls)
     : transport_(t), policy_(p), controls_(controls) {
     transport_.onConnection([this](bool connected) {
+        if (controls_) controls_->connectionChanged(connected);
         confirmed_ = {}; requested_ = {}; parser_.reset();
         confirmed_.connected = connected;
         pendingLoad_.reset();
         feedback_ = connected ? "Turn wheel to adjust weight" : "Disconnected - press F6 to reconnect";
     });
     transport_.onNotification([this](const std::string& characteristic, const Bytes& bytes) {
+        if (controls_) controls_->notification(characteristic,bytes);
         if (!confirmed_.connected || characteristic != VoltraGattProfile::notify) return;
         for (const auto& frame : parser_.feed(bytes)) {
             if (!applyAsyncParameters(frame, now_, confirmed_) || now_ <= sentAt_) continue;
@@ -42,10 +44,14 @@ bool VoltraController::connect(const DeviceId& id) {
     const auto found = std::find_if(chars.begin(), chars.end(), [](const Characteristic& c) {
         return c.uuid == VoltraGattProfile::notify && c.canNotify;
     });
-    if (found == chars.end() || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
+    const auto writable = std::find_if(chars.begin(), chars.end(), [](const Characteristic& c) {
+        return c.uuid == VoltraGattProfile::write && c.canWrite;
+    });
+    if (found == chars.end() || writable == chars.end() || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
         disconnect(); return false;
     }
-    // Subscription is not handshake success. No bootstrap replay in this milestone.
+    // Subscription is not handshake success. The protocol session owns bootstrap
+    // and application acceptance; neither step may replay a load/settings intent.
     return true;
 }
 void VoltraController::disconnect() {
@@ -55,6 +61,7 @@ void VoltraController::disconnect() {
 void VoltraController::tick(uint64_t now) {
     now_ = now;
     transport_.poll(now);
+    if (controls_) controls_->tick(now);
     if (controls_ && confirmed_.connected) {
         const auto evidence = controls_->readiness();
         confirmed_.capabilities = evidence.capabilities;

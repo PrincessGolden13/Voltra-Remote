@@ -1,6 +1,8 @@
 #pragma once
 #include "ble/BleTypes.h"
 namespace voltra {
+// Bounded local metadata storage; never silently evict previously added devices.
+inline constexpr size_t maximumRememberedDevices = 64;
 struct DeviceEntry { DeviceId id; std::string name; bool online = false; std::string twinPeer; };
 class DeviceMemory {
 public:

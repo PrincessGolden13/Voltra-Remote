@@ -82,7 +82,7 @@ std::vector<std::string> MockTransport::discoverServices() {
 }
 std::vector<Characteristic> MockTransport::discoverCharacteristics(const std::string& service) {
     if (!connected_ || service != VoltraGattProfile::service) return {};
-    return {{VoltraGattProfile::notify, true, false}};
+    return {{VoltraGattProfile::notify, true, false}, {VoltraGattProfile::write, false, true}};
 }
 TransportResult MockTransport::subscribe(const std::string& uuid) {
     if (!connected_) return TransportResult::Disconnected;

@@ -1,5 +1,9 @@
 # Upstream audit — 2026-09-06 (Mountain time)
 
+October 17 follow-up: [Normal-mode source review](NORMAL_MODE_2026_10_17.md)
+records newer SDK commit 79f6c55, unchanged Android/HA pins, live official behavior
+references, the implemented read-only subset and unresolved training mappings.
+
 Follow-up: [SDK 0.15.0 applicability review, September 20](SDK_REVIEW_2026_09_20.md)
 records the user-supplied 1adf43b commit, fixes already covered by our C++ subset,
 and remaining physical-protocol uncertainties. The original pins below remain

@@ -45,8 +45,8 @@ entitlements, routing or physical compatibility. Device reports take precedence.
 - INFERRED: Twin native-KG fallback ceilings of 180 and 208 from the native
   per-unit ceilings and combined-resistance requirement. Physical KG Twin
   readback/routing remains UNVERIFIED; a verified effective report overrides this.
-- UNVERIFIED: real effective-max decoding in this project. Android catalog
-  candidates 21268 and 21534 remain research evidence, not implemented discovery.
+- UNVERIFIED physically: Normal diagnostics now read catalog candidate 21268;
+  candidate 21534 remains research evidence, not a universal maximum.
   Neither is a combined limit without scope evidence. See VOLTRA_COMPATIBILITY.md.
 
 ## Implementation boundaries
@@ -56,10 +56,11 @@ reports. Red and Black omit a max report to exercise firmware fallback through
 the same resolver. Names are presentation only; limits use version/model
 metadata. Black's 1.8 identity is synthetic, not a device observation.
 
-Only the offline ControlSession adapter is implemented. A future physical
-adapter must supply fresh scoped capabilities and independently validate mode,
-readiness, routing and peer health before enabling commands. No physical write
-builder or resistance command was added by this revision.
+The physical ControlSession now performs connection/read-only diagnostics.
+Its unknown Twin mapping leaves effective limits and training writes disabled.
+It must supply fresh scoped capabilities and independently validate mode,
+readiness, routing and peer health before enabling training commands. See
+[physical implementation status](NORMAL_MODE_2026_10_17.md).
 
 Recipes convert absolute values/stair steps to the nearest tick; envelope
 ceilings and RP reductions round down. Integer-KG recipes migrate once to half-KG

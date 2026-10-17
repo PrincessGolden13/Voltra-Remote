@@ -3,9 +3,16 @@
 Standalone round touchscreen/rotary Weight Training remote, with a shared LVGL
 application and offline Windows and macOS simulators.
 
-**Physical BLE control is not enabled.** All current devices, capabilities,
-weight changes, Auto Load and telemetry are synthetic. The unidentified
-prototype board remains blocked.
+The Guition remote now has Normal Bluetooth firmware and a separate offline
+Simulator image. **Real training control is not ready:** connection/read-only
+diagnostics and explicit unload are implemented, but physical compatibility and
+the remaining control mappings await validation. Desktop devices are synthetic.
+See [current implementation and blockers](docs/NORMAL_MODE_2026_10_17.md).
+
+The remote boots Normal. On Devices, press the rotary button, then turn left
+three logical clicks within three seconds to enter/leave Simulator. Normal mode
+rescans every five seconds, attempts a sole available VOLTRA once, and keeps saved
+devices visible offline. Hold a saved device and confirm REMOVE to forget it.
 
 ## Run
 
@@ -87,7 +94,7 @@ after a three-second hold. Tap the weight to cancel.
 Six simulated VOLTRAs provide different firmware, unit, availability and Twin scenarios.
 Recent connections are stored in `recent-voltras.txt` beside the Windows executable
 or in `~/Library/Application Support/VOLTRA Remote/` on Mac
-(maximum four, most recent first). No load intent is stored.
+(maximum 64, most recent first; no automatic eviction). No load intent is stored.
 
 ## Build and documentation
 
@@ -102,8 +109,8 @@ Build Windows with `tools/Build-Desktop.ps1`; build Mac with
 [hardware](docs/HARDWARE_COMPATIBILITY.md),
 [safety](docs/SAFETY.md) and [Twin evidence](docs/TWIN_MODE.md).
 
-Next physical step: identify the exact remote PCB and revision, then implement
-and validate read-only BLE observations before enabling physical commands.
+Next physical step: validate connection/approval and read-only reports with an
+unloaded VOLTRA. The user has deferred that observation until later.
 
 ### October 11 simulator profiles
 

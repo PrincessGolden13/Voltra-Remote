@@ -1,4 +1,4 @@
-param([ValidateRange(1,8)][int]$Jobs = 2)
+param([ValidateRange(1,8)][int]$Jobs = 2, [ValidateSet('All','Normal','Simulator')][string]$Target='All')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 # Windows Xtensa commands exceed CreateProcess limits with the full project path.
@@ -10,8 +10,11 @@ try {
     $env:PLATFORMIO_CORE_DIR = 'V:\.tools\platformio'
     Push-Location V:\
     try {
-        & V:\.venv\Scripts\python.exe -m platformio run -e guition_k5_offline -j $Jobs
-        if ($LASTEXITCODE -ne 0) { throw 'Guition offline build failed' }
+        $targets = if ($Target -eq 'All') { @('guition_k5_normal','guition_k5_offline') } elseif ($Target -eq 'Normal') { @('guition_k5_normal') } else { @('guition_k5_offline') }
+        foreach ($targetName in $targets) {
+            & V:\.venv\Scripts\python.exe -m platformio run -e $targetName -j $Jobs
+            if ($LASTEXITCODE -ne 0) { throw "Guition build failed: $targetName" }
+        }
     } finally { Pop-Location }
 } finally {
     $env:PLATFORMIO_CORE_DIR = $previousCore

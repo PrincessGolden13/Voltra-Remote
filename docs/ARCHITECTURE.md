@@ -6,16 +6,18 @@ are not runtime requirements. Windows and macOS simulators are development hosts
 ```text
 UiController (Devices / Main / Magic / EO / Drops)
   -> TrainingApplication (selection, intent, limits, dropset engine)
-     -> DeviceMemory (four recent IDs/names; desktop file adapter)
+     -> DeviceMemory (up to 64 saved IDs/names; desktop file / board NVS)
      -> VoltraController (connection, GATT discovery, packet observations)
         -> BleTransport (generic scan/connect/subscribe/write)
      -> ControlSession (VOLTRA semantic operations and TrainingReport)
         -> MockTransport / per-device synthetic state
-        -> physical implementation: NOT PROVIDED
+        -> PhysicalSession (bootstrap/readback; training profile incomplete)
+           -> NimBleTransport (Normal firmware only)
 
 UiController -> HardwarePlatform -> Display / Touch / Rotary
                                   -> Windows / macOS adapters
-                                  -> unidentified prototype: BLOCKED
+                                  -> Guition K5 board / BootMode adapter
+                                  -> older unidentified prototype: BLOCKED
 ```
 
 LVGL 9.3.0 is shared application code. Relative geometry supports 360, 466 and
@@ -23,13 +25,15 @@ LVGL 9.3.0 is shared application code. Relative geometry supports 360, 466 and
 AppKit window with circular clipping. Each reserves
 only the top 10% rim for dragging, so the connected-name touch target works.
 
-TrainingApplication scans every five seconds, merges live discoveries with
-four recent successful connections, and leaves the picker touch-only.
+TrainingApplication scans every five seconds while disconnected, merges live
+discoveries with saved accepted connections, and supports arrows/swipe/rotary paging.
+Normal firmware waits for a complete scan before one startup auto-selection of a
+sole online VOLTRA. Async scans do not rebuild a tile underneath a held finger.
 Persistence is injected through DeviceMemory; shared UI/controller code does
 not know host paths or file formats. Windows stores beside its executable;
 Mac stores in the user's Application Support/VOLTRA Remote directory. File
 replacement uses MoveFileExW on Windows and filesystem rename on Mac.
-Hardware storage remains a future adapter.
+Board storage uses separate versioned NVS blobs for real and synthetic identities.
 
 SimulatorApp owns the shared application lifetime, scenario keys, argument
 validation and platform-independent BMP encoder. main.cpp supplies Win32
@@ -40,8 +44,9 @@ the Windows build remains an executable. Build directories are separate.
 
 TrainingReport is a full semantic observation: displayed weight/units, modifier
 representation and values, explicit capabilities/combined limit, Twin state,
-load/Auto Load state, and normalized rep/movement/hold telemetry. Only the
-offline mock implements this report currently. The existing strict protocol
+load/Auto Load state, and normalized rep/movement/hold telemetry. The offline
+mock implements the complete report. PhysicalSession supplies limited diagnostic
+readback; unknown Twin/readiness prevents training control. The existing strict protocol
 decoder still validates fragmented base-state packets independently. Mock
 semantic reports are not claimed to be captured packets or a physical decoder.
 

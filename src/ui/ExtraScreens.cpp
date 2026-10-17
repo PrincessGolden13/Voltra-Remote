@@ -41,6 +41,16 @@ void UiController::buildExtra() {
         auto* b=button(face_,name,width_*x/100,height_*y/100,width_*w/100,height_*h/100,id);
         glow(b,accent(),true); return b;
     };
+    if (page_ == Screen::ForgetDevice) {
+        label(face_,"REMOVE VOLTRA?",width_*76/100,height_*22/100,heading);
+        auto* name = label(face_,forgetName_,width_*72/100,height_*35/100,heading);
+        lv_label_set_long_mode(name,LV_LABEL_LONG_DOT);
+        label(face_,"Remove from remote memory?\nAn available VOLTRA can still\nbe discovered and added again.",width_*76/100,height_*47/100,medium);
+        action("CANCEL",17,69,31,11,CancelForget);
+        action("REMOVE",52,69,31,11,ConfirmForget);
+        message_=label(face_,"",width_*70/100,height_*84/100);
+        return;
+    }
     if(page_ == Screen::PresetNotice) {
         label(face_,"PRESET UNAVAILABLE",width_*76/100,height_*22/100,heading);
         label(face_,presetNotice_,width_*72/100,height_*38/100,medium);
@@ -125,9 +135,9 @@ void UiController::buildExtra() {
         action("CANCEL",26,62,48,12,CloseSettings);
         auto* erase=action("Erase remote settings",27,79,46,8,ConfirmReset); glow(erase,accent(),false);
     } else {
-        std::string body = page_ == Screen::Wifi ? "Phone setup\n\nTemporary access point\nand captive portal\n\nUnavailable on desktop" :
+        std::string body = page_ == Screen::Wifi ? "Phone setup\n\nWi-Fi setup is not available\non this target yet." :
             page_ == Screen::Updates ? "Check for updates\n\nNo firmware update service\nis configured for this target.\n\nNo update installed." :
-            "VOLTRA Remote 0.2.0\nOffline desktop simulator\n" __DATE__ "\n\n"+std::to_string(width_)+" x "+std::to_string(height_)+"\nShared LVGL application";
+            std::string("VOLTRA Remote 0.3.0\n")+(runtime_ && !runtime_->simulated() ? "Normal / Bluetooth" : "Simulator")+"\n" __DATE__ "\n\n"+std::to_string(width_)+" x "+std::to_string(height_)+"\nShared LVGL application";
         label(face_,body,width_*74/100,height_*33/100,medium);
     }
     message_=label(face_,"",width_*75/100,height_*88/100);

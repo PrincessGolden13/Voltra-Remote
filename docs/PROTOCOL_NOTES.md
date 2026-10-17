@@ -1,5 +1,10 @@
 # Protocol evidence and implementation limits
 
+October 17: [PhysicalSession and source review](NORMAL_MODE_2026_10_17.md) add a
+Normal-only frame builder, acceptance bootstrap and bounded read-only decoder.
+This does not establish physical safety, advanced modes or Twin routing. Explicit
+unload is the only physical control write enabled in that diagnostic profile.
+
 Source revisions are fixed in [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md).
 Physical validation in this project: **none**.
 

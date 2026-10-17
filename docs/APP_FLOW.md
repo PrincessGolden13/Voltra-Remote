@@ -1,3 +1,11 @@
+> October 17 Normal-mode request supersedes the earlier offline-only milestone:
+> boot Normal, hide Simulator behind rotary press + three left clicks, auto-connect
+> one discovered VOLTRA, retain remembered devices, hold/confirm to forget, and
+> continue discovery while disconnected. All real Weight Training functionality
+> is requested; its incomplete implementation and protocol blockers are recorded
+> in [Normal mode status](NORMAL_MODE_2026_10_17.md). Existing load-safety invariants
+> and the prohibition on autonomous physical motor testing still apply.
+>
 > October 17 feedback supersedes conflicting rules below: see
 > [all sixteen fixes](UI_FIXES_2026_10_17.md) and [unit/limit policy](WEIGHT_LIMITS.md).
 > Devices support arrows, swipe and rotary paging. Off modifier tiles open their

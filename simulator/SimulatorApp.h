@@ -35,8 +35,8 @@ struct SimulatorOptions {
         }
         if ((o.size != 360 && o.size != 466 && o.size != 480) || o.profile < 0 || o.profile > 3)
             throw std::runtime_error("Supported sizes: 360, 466, 480. Profiles: 0-3.");
-        if (o.screen < 0 || o.screen > 13 || o.device < 0 || o.device > 5 || o.dropMode < 0 || o.dropMode > 1 || o.liveDrops < 0 || o.liveDrops > 1)
-            throw std::runtime_error("Screens 0-13; devices 0-5; drops 0 stairs, 1 rest-pause.");
+        if (o.screen < 0 || o.screen > 15 || o.device < 0 || o.device > 5 || o.dropMode < 0 || o.dropMode > 1 || o.liveDrops < 0 || o.liveDrops > 1)
+            throw std::runtime_error("Screens 0-15; devices 0-5; drops 0 stairs, 1 rest-pause.");
         if(o.modifierValue < -1 || o.modifierValue > 300 || (o.modifierValue >= 0 && o.renderPath.empty()))
             throw std::runtime_error("Modifier preview 0-300 requires --render");
         if (o.weightUnit < -1 || o.weightUnit > 1 || (o.weightUnit >= 0 && o.renderPath.empty()))

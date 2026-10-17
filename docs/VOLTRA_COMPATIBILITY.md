@@ -1,7 +1,8 @@
 # VOLTRA compatibility
 
 No physical firmware version is supported/validated yet. Unknown capabilities
-are unavailable; all control writes are disabled in the foundation.
+are unavailable. Normal firmware implements connection/read-only diagnostics and
+explicit unload only; see [current status](NORMAL_MODE_2026_10_17.md).
 
 CONFIRMED (source): the reference implementations share the 0x55 framing/GATT
 family. Extended packet lengths and additional parameters are variations within

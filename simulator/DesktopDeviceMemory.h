@@ -14,7 +14,7 @@ public:
     std::vector<DeviceEntry> load() override {
         std::ifstream input(path_); std::vector<DeviceEntry> result;
         std::string id, name;
-        while (result.size() < 4 && input >> std::quoted(id) >> std::quoted(name)) {
+        while (result.size() < maximumRememberedDevices && input >> std::quoted(id) >> std::quoted(name)) {
             if (id.empty() || id.size() > 128 || name.size() > 128) continue;
             if (std::none_of(result.begin(), result.end(), [&](const auto& d) { return d.id == id; }))
                 result.push_back({id, name, false});
@@ -22,9 +22,10 @@ public:
         return result;
     }
     bool save(const std::vector<DeviceEntry>& recent) override {
+        if (recent.size() > maximumRememberedDevices) return false;
         auto temp = path_; temp += ".tmp";
         { std::ofstream out(temp, std::ios::trunc);
-          for (size_t i = 0; i < std::min(size_t(4), recent.size()); ++i)
+          for (size_t i = 0; i < recent.size(); ++i)
               out << std::quoted(recent[i].id) << ' ' << std::quoted(recent[i].name) << '\n';
           out.close(); if (!out) return false; }
 #ifdef _WIN32
