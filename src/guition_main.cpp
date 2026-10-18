@@ -45,6 +45,7 @@ void setup() {
     if(!board.begin()) { Serial.println("Hardware init failed; no radio or machine commands");return; }
     if(!bootMode.begin()) { Serial.println("Normal boot target unavailable; mode switching cannot be validated"); }
 #ifndef VOLTRA_SIMULATOR
+    transport.onDiagnostic([](const std::string& message){Serial.println(message.c_str());});
     if(!transport.begin()) {Serial.println("BLE init failed");return;}
     physicalSession=new voltra::PhysicalSession(transport,clientIdentity());
     auto& session=*physicalSession;
@@ -77,5 +78,19 @@ void loop() {
 #endif
         if(c=='d') {application->leave();ui->navigate(voltra::Screen::Devices);}
     }
-    ui->tick();delay(5);
+    ui->tick();
+#ifndef VOLTRA_SIMULATOR
+    static uint64_t diagnosticsAt=0;
+    static std::string previousDiagnostics;
+    const auto now=board.nowMs();
+    if(now-diagnosticsAt>=1000) {
+        diagnosticsAt=now;
+        size_t online=0;for(const auto& d:application->devices()) if(d.online) ++online;
+        const auto summary=std::string("VOLTRA session: online=")+std::to_string(online)+
+            " connected="+std::to_string(application->connected())+" accepted="+std::to_string(physicalSession->accepted())+
+            " status="+application->message();
+        if(summary!=previousDiagnostics) {Serial.println(summary.c_str());previousDiagnostics=summary;}
+    }
+#endif
+    delay(5);
 }

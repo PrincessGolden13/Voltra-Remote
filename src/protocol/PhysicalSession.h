@@ -36,6 +36,7 @@ private:
     uint64_t now_=0,connectedAt_=0,lastWrite_=0,fragmentAt_=0,reportRevision_=0;
     uint16_t sequence_=0;
     size_t bootstrap_=0,readGroup_=0;
+    unsigned diagnosticFrames_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;

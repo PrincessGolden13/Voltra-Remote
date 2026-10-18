@@ -1,5 +1,9 @@
 # Normal mode and physical connection work — October 17, 2026
 
+October 18 follow-up: [first physical discovery attempt](LIVE_CONNECTION_2026_10_18.md).
+The user now has a 2.x VOLTRA ready; the remote scans successfully but no VOLTRA
+service has matched yet. Exact tile/connection observations remain pending.
+
 ## User request and remaining work
 
 The user authorized real discovery, connections and all Weight Training functions,

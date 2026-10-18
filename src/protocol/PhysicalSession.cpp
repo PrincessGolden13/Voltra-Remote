@@ -28,6 +28,7 @@ PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_
     : transport_(transport),identity_(identity) {}
 void PhysicalSession::connectionChanged(bool connected) {
     connected_=connected;accepted_=activated_=false; bootstrap_=readGroup_=0;sequence_=0;
+    diagnosticFrames_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;parser_.reset();values_.clear();seen_.clear();report_={};firmware_.clear();
     waitingWrite_.reset();
     if(connected) {connectionFailure_=false;status_="Connecting / approve on VOLTRA";}
@@ -40,6 +41,7 @@ std::optional<int64_t> PhysicalSession::fresh(uint16_t id) const {
 }
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
     if(!connected_) return false;
+    if(!accepted_) Serial.printf("VOLTRA bootstrap command %02x\n",unsigned(command));
     lastWrite_=now_;
     if(transport_.write(VoltraGattProfile::write,buildFrame(command,payload,sequence_++,sender,receiver,type))!=TransportResult::Accepted) {
         status_="Bluetooth write failed";connectionFailure_=true;
@@ -61,6 +63,8 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
     if(now_-fragmentAt_>1000) parser_.reset();
     fragmentAt_=now_;
     for(const auto& f:parser_.feed(bytes)) {
+        // Bounded headers only: no identity, activation key or raw payload logging.
+        if(diagnosticFrames_++<24) Serial.printf("VOLTRA frame cmd=%02x sender=%02x receiver=%02x bytes=%u\n",unsigned(f.command),unsigned(f.sender),unsigned(f.receiver),unsigned(f.payload.size()));
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa) continue;
         const auto key=std::make_pair(f.command,f.sequence);
         if(std::find(seen_.begin(),seen_.end(),key)!=seen_.end()) continue;

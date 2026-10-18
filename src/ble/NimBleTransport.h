@@ -11,6 +11,7 @@ public:
     NimBleTransport();
     ~NimBleTransport() override;
     bool begin();
+    void onDiagnostic(std::function<void(const std::string&)>);
     std::vector<Advertisement> scan() override;
     bool scanInProgress() const override;
     std::vector<Advertisement> discovered() const override;

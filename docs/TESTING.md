@@ -1,5 +1,10 @@
 # Validation status and pending tests
 
+October 18: see [physical discovery observations](LIVE_CONNECTION_2026_10_18.md).
+The scan-response retention fix builds and is flashed. Real radio scans work;
+VOLTRA discovery, acceptance and training are not yet established. Queue the
+scan aggregation/concurrency cases listed there; no new test code was added.
+
 October 17 Normal-mode work: [implementation and blockers](NORMAL_MODE_2026_10_17.md).
 New test code remains deferred. Queue future cases for zero/one/multiple completed
 scans, late power-on, accepted-only persistence, failed GATT/approval, stale scan
