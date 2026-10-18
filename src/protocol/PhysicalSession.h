@@ -17,7 +17,8 @@ public:
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
-    bool busy() const override { return waitingWrite_.has_value(); }
+    bool busy() const override { return waitingWrite_.has_value() || !writes_.empty() || target_.has_value(); }
+    bool commandFailed() const override { return commandFailed_; }
     const std::string& status() const override { return status_; }
     SessionReadiness readiness() const override;
     TrainingReport trainingReport() const override;
@@ -38,15 +39,31 @@ private:
     std::string status_,firmware_;
     uint64_t now_=0,connectedAt_=0,lastWrite_=0,reportRevision_=0;
     uint16_t sequence_=0;
-    size_t bootstrap_=0,readGroup_=0,backgroundRead_=0,infoRead_=0;
+    size_t bootstrap_=0,backgroundRead_=0,infoRead_=0;
+    std::array<uint64_t,5> pollAt_{};
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
     bool bootstrapWriteJustCompleted_=false;
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;
+    struct Write { uint16_t id; int value; int bytes; };
+    std::deque<Write> writes_;
+    std::optional<TrainingSettings> target_;
+    uint64_t targetAt_=0, telemetryAt_=0;
+    std::optional<int> deviceSet_, deviceRep_, completedSets_, completedReps_;
+    std::optional<WeightUnit> intentUnit_;
+    std::optional<int64_t> intentInterpretation_, intentMaximum_;
+    bool telemetrySubscribed_=false, commandFailed_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     bool standalone() const;
+    bool settingsReady() const;
+    bool modifiersKnown() const;
+    uint16_t percentParameter(bool magic) const;
+    void prepareWrites(const TrainingSettings&);
+    void cancelWrites(const char*);
+    void pollState(size_t);
+    void applyTelemetry(const Frame&);
     bool send(uint8_t,const Bytes&,uint8_t sender=0xaa,uint8_t receiver=0x10,uint8_t type=0x04);
     bool read(std::initializer_list<uint16_t>);
     bool writeParameter(uint16_t,int,int);

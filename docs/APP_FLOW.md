@@ -1,3 +1,9 @@
+> October 18 testing priority: finish the single available VOLTRA first. The user
+> has other units but explicitly deferred real Twin work until later. Keep unknown
+> or active physical Twin states blocked; this does not change simulator limits.
+> Base selection now stops at one display tick (1 LB / 0.5 KG), superseding the
+> older zero-selection text below. Loading has its own device readiness minimum.
+>
 > October 18 clarification: Auto Load **enabled in settings** is distinct from
 > Auto Load **armed by the explicit long press**. Enabling that preference must
 > not block ordinary unloaded weight adjustment. Leave its configuration alone;

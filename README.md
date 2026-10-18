@@ -5,9 +5,13 @@ application and offline Windows and macOS simulators.
 
 The Guition remote now has Normal Bluetooth firmware and a separate offline
 Simulator image. **Full real training control is not ready:** connection and
-unloaded LB dial changes are physically confirmed with the local diagnostic profile;
-explicit unload is implemented. Loading, modifier/KG/Twin control and connection
-robustness remain incomplete. Desktop devices are synthetic.
+unloaded LB dial changes and Black's 20% Inverse Chains / 20% EO reports are
+physically confirmed with the local diagnostic profile. Unloaded percentage
+modifier transactions, KG conversion and explicit unload are implemented for
+manual verification. Loading, Auto Load, Mountain, mixed modifier units and
+automatic dropsets remain unavailable. Real Twin verification is deferred at the
+user's request; connection robustness still needs longer testing. Desktop devices
+are synthetic.
 See [current implementation and blockers](docs/NORMAL_MODE_2026_10_17.md).
 
 The remote boots Normal. On Devices, press the rotary button, then turn left

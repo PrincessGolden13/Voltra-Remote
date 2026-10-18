@@ -10,6 +10,7 @@ namespace {
 // Radio-link policy only: never retry a protocol or resistance command.
 constexpr uint32_t connectionTimeoutMs=10000, connectionRetryDelayMs=500, mtuWaitMs=1000;
 constexpr unsigned connectionAttempts=3;
+constexpr int transmitPowerDbm=9;
 constexpr int establishmentFailure=BLE_HS_HCI_ERR(BLE_ERR_CONN_ESTABLISHMENT);
 }
 struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
@@ -62,6 +63,9 @@ NimBleTransport::NimBleTransport() : impl_(std::make_unique<Impl>()) {}
 NimBleTransport::~NimBleTransport() { disconnect(); if(impl_->client) NimBLEDevice::deleteClient(impl_->client); }
 bool NimBleTransport::begin() {
     if(!NimBLEDevice::init("VOLTRA Remote")) return false;
+    // ESP32-S3 radio range policy: request +9 dBm.
+    // This improves the remote's link budget, not the peripheral's RSSI.
+    if(!NimBLEDevice::setPower(transmitPowerDbm)) impl_->log("BLE transmit power request unavailable");
     NimBLEDevice::setMTU(247); // Same requested MTU as the pinned ESP32 reference.
     impl_->scanner=NimBLEDevice::getScan();
     impl_->scanner->setScanCallbacks(impl_.get());
@@ -71,6 +75,9 @@ bool NimBleTransport::begin() {
     impl_->client=NimBLEDevice::createClient();
     if(impl_->client) {
         impl_->client->setConnectTimeout(connectionTimeoutMs);
+        // 15–30 ms connection interval, zero latency, 4 s supervision timeout.
+        // Generic BLE timing; VOLTRA may negotiate a different interval.
+        impl_->client->setConnectionParams(12,24,0,400);
         impl_->client->setClientCallbacks(impl_.get(),false);
     }
     return impl_->client!=nullptr;

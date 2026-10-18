@@ -149,3 +149,24 @@ remain explicit future milestones.
   freshness and intermittent startup link failures remain tracked limitations.
 - No autonomous weight or load action was issued; no new test code was created.
 - Final images/manifests are retained in build/guition/2026-10-18-unloaded-weight.
+
+## October 18 single-device controls build
+
+- Normal: 1,204,833 program bytes / 31,768 static RAM; isolated Simulator:
+  932,033 program bytes / 21,236 static RAM. Both final builds pass. Native
+  Windows build passes after the shared style/alignment and intent changes.
+- Existing Main renders pass at 360/466/480, plus KG Magic at 360. The final
+  Main/KG 360 BMPs are byte-identical to the visually inspected preceding renders.
+  This verifies appearance, not interaction or safety behavior.
+- Final bounded flash passed recovery/partition checks and esptool hash checks.
+  Images and SHA256 manifest: build/guition/2026-10-18-single-controls.
+- Final capture: repeated discovery found Black, connection attempt one succeeded,
+  and remembered application acceptance completed. Modern percentage fields
+  returned 2000/2000; background information and activation reads now progress.
+  Black reported Weight Training inactive (20400 = 0), so the application correctly
+  withheld normalized training controls. A physical settings test still needs
+  the user to reopen Weight Training. No motor/resistance command was automated.
+- Existing reference validators passed; no new test code was added. UI interaction,
+  modifier/KG/preset changes and long-duration connectivity are not marked passed.
+  Loading, Auto Load, Mountain, mixed modifier units and dropsets remain blocked;
+  real Twin verification is explicitly deferred by the user.

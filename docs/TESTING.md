@@ -120,3 +120,19 @@ with pending edits; no X controls; exact preset replacement at high base,
 70% IC + 20% EO / max 200 -> base 105; mixed absolute/percentage recipes;
 unsupported recipe rejection; knob input during preset confirmation; mismatch
 must not activate dropsets or the preset indicator. No new automated pass claimed.
+
+## October 18 single-device follow-up
+
+No new test code was created. Existing Ryan packet and pinned SDK validators
+passed again (203 SDK packets / 593 modifier packets); this is reference-data
+validation, not proof of new transaction behavior or physical readiness.
+
+Future regression cases: modern percentage values overriding misleading legacy
+zeros; uint8 inverse selector and sport-mode field 21007; settings ACK mismatch;
+ten-second transaction vs three-second per-write timeout; continued critical polls
+during rapid explicit input; units/interpretation/maximum/Twin/motor changes during
+a batch; unload cancels all queued steps; expired intent is never replayed;
+unrelated reports cannot erase a failure; half-KG round trips and wire envelopes;
+disabled modifiers write zero while enabled values stay positive; no redundant
+style/alignment invalidation or hidden scale-label rewrite on idle frames;
+sparse rep events are not motion freshness; no synthetic physical rest timer.

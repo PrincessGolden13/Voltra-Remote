@@ -13,22 +13,29 @@ training functionality is **not complete**. Discovery, GATT connection, protocol
 bootstrap and read-only observations are implemented. A physical VOLTRA became
 available on October 18; validation is in progress as recorded above.
 
-Normal firmware permits explicit unload and now implements explicit unloaded LB
-weight edits for the observed standalone profile. The user confirmed both screens
-changed; logs record returned weights 29, 32, 33, 37, 43 and 45 while unloaded.
-Loading, Magic/EO changes, Auto Load triggering
-and dropsets remain disabled. Current public
-sources do not establish this project's required Twin role/peer-health semantics,
-all safety predicates, Mountain/IC selectors, percentage/absolute selectors,
-fractional-KG command encoding, or RP hold telemetry. Do not describe a successful
-build or connection as a working training release. The session deliberately
-returns Unsupported for those operations until a supported physical profile exists.
+Normal firmware permits explicit unload and unloaded settings transactions for
+the observed standalone profile. The user physically verified earlier LB dial
+edits. Black's modern percentage registers and IC selector now match the user's
+20% IC / 20% EO observation. Unloaded Chains/IC/EO percentage edits, modifier
+trimming, presets using supported fields and KG-to-pound conversion are implemented
+but need manual device verification. The raw absolute-interpretation selector is
+not yet verified; unit switching and unrecognized interpretations stay blocked.
 
-The LB write path requires accepted connection, fresh unloaded motor state, Weight
-Training, pounds, current standalone reports, limit, modifiers, child-lock off and
-OTA inactive. It writes only base parameter 16006, preserves modifiers and Auto
-Load preferences, and waits for base-weight readback. No replay on reconnect or
-load command is added. KG encoding and automatic modifier trimming remain blocked.
+Loading and the one-shot Auto Load trigger have source-documented command paths
+behind a closed readiness gate. Lock reports do not yet have verified enum/bit
+semantics. Mountain, loaded weight changes and automatic dropsets remain unavailable.
+Rep/summary decoding and the captured telemetry subscription are implemented;
+stationary-cable/motion decoding and a device rest timer are not established.
+The user explicitly deferred real Twin work to concentrate on Black first.
+Do not describe this as a complete training release.
+
+Settings require accepted connection, fresh unloaded motor state, Weight Training,
+known units, current standalone reports, device maximum, known modifiers,
+child-lock off and OTA inactive. Every step waits for parameter readback. Changes
+in units, interpretation, maximum, mode or standalone status cancel remaining
+steps. Critical reads take priority, each write has a three-second deadline, and
+the whole transaction is bounded to ten seconds. No retries, rollback writes or
+replay on reconnect. Auto Load preferences remain untouched.
 
 ## Remote behavior
 

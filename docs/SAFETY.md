@@ -43,13 +43,13 @@ is not proof of device-side readiness or a substitute for BLE state checks.
 
 ## Foundation limitations
 
-Physical load/modifier/Auto Load requests remain unavailable. Explicit unload
+Physical load/Auto Load requests remain unavailable. Explicit unload
 uses the source-documented motor=4 write and requires a matching report; delivery
 and physical behavior remain unverified. Offline mock commands support
 delayed confirmation, timeout and priority unload cancellation of pending weight
 or load intent. Tapping the bright weight requests unload; only confirmation
 darkens it. Unknown state is explicitly amber. No separate STOP button is used.
-Unloaded LB base edits require fresh standalone/current mode/motor/unit/limit/
+Unloaded settings edits require fresh standalone/current mode/motor/unit/limit/
 modifier/lock/OTA evidence and an explicit input. They send no motor command and
 must be confirmed by a subsequent base-weight report. Full physical safety
 predicates, command ordering and reconnect race handling
@@ -60,4 +60,16 @@ The five-screen controller additionally implements local Stairs/RP reductions.
 These require fresh normalized telemetry and an explicit live-weight capability,
 never load a device, never go below one, and stop rather than retry unconfirmed
 reductions. Cancellation prevents a failed unload from restarting reductions.
-Selectable base weight may be zero; explicit loading rejects zero.
+Selectable base weight now starts at one display tick (1 LB / 0.5 KG); explicit
+loading also requires the device's separately verified loading minimum.
+
+October 18: unloaded percentage modifier changes use sequential readback-confirmed
+steps. Lower existing modifiers before raising base or changing curve direction,
+then apply the requested supported values. A timeout stops the remainder and
+leaves the actual device reports visible; no automatic rollback or retry.
+Unit/interpretation/maximum changes invalidate queued intent. Unload cancels the
+whole queue immediately. A pending transaction cannot expire only in the UI while
+its protocol writes continue. Failure messages survive unrelated reports.
+Modern percentage fields are required on the current physical profile: legacy
+fields returning zero must not be treated as evidence that modifiers are off.
+Sparse rep/summary events never authorize motion-dependent drops or live writes.

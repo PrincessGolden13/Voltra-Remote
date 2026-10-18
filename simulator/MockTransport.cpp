@@ -165,7 +165,7 @@ bool MockTransport::consumeIgnored() { const bool ignored = ignoreNext_; ignoreN
 TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     const auto r = trainingReport();
     if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
-        s.weight < 0 || (r.loaded && s.weight == 0) || s.magic.value < 0 || s.eccentric.value < 0 ||
+        s.weight < 1 || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && (s.magic.value < 1 || !r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||
         (s.eccentric.enabled && (s.eccentric.value < 1 || !r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
         envelopeHundredths(s) > r.maxWeight*100) return TransportResult::Failed;

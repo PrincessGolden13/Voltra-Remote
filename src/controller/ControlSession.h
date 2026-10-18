@@ -4,11 +4,11 @@
 #include "state/TrainingState.h"
 namespace voltra {
 // A VOLTRA-level command boundary, separate from generic GATT transport.
-// Only the simulator implements this in the foundation. No physical wire writes.
 struct SessionReadiness {
     bool validated = false, ready = false, cableZero = false, twinSafe = false;
     VoltraCapabilities capabilities;
     uint16_t minWeightLbs = 0;
+    std::string reason;
 };
 class ControlSession {
 public:
@@ -18,6 +18,7 @@ public:
     virtual void tick(uint64_t) {}
     virtual bool accepted() const { return true; }
     virtual bool busy() const { return false; }
+    virtual bool commandFailed() const { return false; }
     virtual const std::string& status() const { static const std::string empty; return empty; }
     virtual SessionReadiness readiness() const = 0;
     virtual TransportResult setWeight(uint16_t pounds) = 0;

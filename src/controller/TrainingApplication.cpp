@@ -109,13 +109,13 @@ bool TrainingApplication::settingsAllowed() const {
     return fresh() && r.twinKnown && session_.readiness().validated && r.maxWeight > 0 && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
-    if (result != TransportResult::Accepted) { message_ = "Request not accepted"; return; }
+    if (result != TransportResult::Accepted) { message_ = session_.status().empty() ? "Request not accepted" : session_.status(); return; }
     pending_ = true; sentAt_ = now_; sentRevision_ = report().revision;
     message_.clear(); // Brief requests do not flash a warning on every input.
 }
 bool TrainingApplication::sendSettings(TrainingSettings s) {
     const auto r = report();
-    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < 0 || s.magic.value < 0 || s.eccentric.value < 0 ||
+    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < 1 || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && s.magic.value == 0) || (s.eccentric.enabled && s.eccentric.value == 0) ||
         (s.magic.enabled && s.magic.value > modifierMaximum(r, s, true)) ||
         (s.eccentric.enabled && s.eccentric.value > modifierMaximum(r, s, false)) ||
@@ -130,8 +130,7 @@ void TrainingApplication::adjustWeight(int delta) {
     auto r = report();
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
     auto s = settingsIntent_.value_or(r.settings);
-    s.weight = std::clamp(weightIntent_.value_or(s.weight) + delta, 0, r.maxWeight);
-    if (r.loaded && s.weight == 0) { message_ = "Unload to select zero"; return; }
+    s.weight = std::clamp(weightIntent_.value_or(s.weight) + delta, 1, r.maxWeight);
     // The original brief specifies reducing modifiers before capping the base.
     // Trim EO first, then magic; this is part of this explicit knob request.
     for (auto* m : {&s.eccentric, &s.magic}) {
@@ -152,7 +151,8 @@ void TrainingApplication::toggleWeight() {
     }
     const auto e = session_.readiness();
     if (pending_ || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < 1) {
-        message_ = r.settings.weight == 0 ? "Set at least "+weightText(1,r.unit)+" "+unitName(r.unit) : "Device not ready"; return;
+        message_ = r.settings.weight == 0 ? "Set at least "+weightText(1,r.unit)+" "+unitName(r.unit) :
+            !e.reason.empty() ? e.reason : "Device not ready"; return;
     }
     const auto result = session_.setLoaded(true);
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
@@ -167,7 +167,7 @@ void TrainingApplication::unload() {
 void TrainingApplication::autoLoad() {
     const auto r = report(); const auto e = session_.readiness();
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < 1) {
-        message_ = "Auto Load unavailable"; return;
+        message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; return;
     }
     const auto result = session_.triggerAutoLoad();
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
@@ -301,13 +301,14 @@ void TrainingApplication::tick(uint64_t now) {
     if (!connected()) { connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
     if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();
-    // No retries or reconciliation writes: every new report wins, even a mismatch.
-    if (pending_ && ((!session_.busy() && r.revision > sentRevision_) || now - sentAt_ >= 3000)) {
-        message_ = r.revision > sentRevision_ ? "" : "No confirmation";
+    // Sessions own their bounded transaction deadlines. Do not clear intent
+    // mid-transaction, and do not turn an unrelated report into a successful ACK.
+    if (pending_ && !session_.busy() && (session_.commandFailed() || r.revision > sentRevision_ || now - sentAt_ >= 3000)) {
+        message_ = session_.commandFailed() ? session_.status() : r.revision > sentRevision_ ? "" : "No confirmation";
         pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {
             auto actual = currentPreset(); actual.drops = presetIntent_->drops;
-            if (r.revision > sentRevision_ && fresh() && !r.loaded &&
+            if (!session_.commandFailed() && r.revision > sentRevision_ && fresh() && !r.loaded &&
                 envelopeHundredths(r.settings) <= r.maxWeight*100 && samePreset(actual, *presetIntent_)) applyDrops(presetIntent_->drops);
             else message_ = "Preset not confirmed";
             presetIntent_.reset();

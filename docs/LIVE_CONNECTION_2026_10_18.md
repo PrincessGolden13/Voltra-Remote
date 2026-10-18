@@ -161,3 +161,82 @@ reports recovered. Freshness checks were not relaxed. Poll scheduling/input
 coalescing needs further work for continuous fast rotation. Unsolicited state
 packets containing uncatalogued 21007 are rejected atomically; explicit small
 read groups still provide weight confirmation. Do not claim perfect responsiveness.
+
+## Single-device controls and responsiveness follow-up
+
+The user has several units but explicitly deferred real Twin testing and asked
+to concentrate on Black. The user confirmed Black is on a mount; that observation
+does not establish the mounting-lock enumeration or all load interlocks.
+
+CONFIRMED on Black while unloaded at 24 LB: inverse selector 21424 = 1,
+extra-mode 21446 = 0, modern Chains-percent 21722 = 2000 and EO-percent 21456 =
+2000. The user independently confirmed **20% Inverse Chains and 20% EO**. Legacy
+percentage registers 20873/20874 both returned zero, so they must not substitute
+for missing modern reports. Absolute amounts 16007/16008 = 5 are consistent with
+rounded 20% of 24; they are not evidence that the UI is using absolute units.
+The inverse selector is uint8, not the prior uint16 catalogue entry. Field 21007
+is also a catalogued uint8, allowing those otherwise-valid async packets to parse.
+
+Other observations: Auto Load enabled 21272 = 1, its safety checks enabled 21389 =
+1, idle status 21447 = 0, lock position 20642 = 2 and void-lock 21224 = 6.
+Quick-release field 20566 was not returned. These raw lock values are UNVERIFIED
+readiness semantics; neither is whitelisted as safe. OTA package 21028 returned
+33554488 (0x02000038), but app-version encoding is UNVERIFIED and is not used as a
+firmware fallback. Reported max-force remains 230 LB. Percent-limit fields
+21273/21716 returned 128; their encoding is not assumed to be a literal ceiling.
+
+Implemented, pending manual verification:
+
+- Modern percentage read/write paths for Chains, IC and positive EO, plus
+  supported-field presets and explicit base adjustments with modifier trimming.
+  Enabled modifiers are positive; zero disables a modifier. Unknown modifier
+  interpretation and mixed-unit switching remain unavailable. Mountain's selector
+  and capability bits are not established by the available BLE sources.
+- KG input uses 0.5 KG display ticks, converted to integral wire pounds. Both
+  display and wire-unit envelopes are checked. This follows the official
+  [Cortex input convention](https://cortex.beyond-power.com/docs/skills/voltra-device-training)
+  and the catalogued uint16 pound parameter, but physical KG behavior needs checking.
+- Unloaded transactions lower modifiers before changing base/curve, then set
+  final values, with readback confirmation per step. A new explicit knob intent
+  can replace unsent work. Unload, disconnect, timeout, changed units/interpretation/
+  maximum or lost safe context cancels queued work. No retries or rollback writes.
+- Three-second per-write and ten-second whole-transaction deadlines. The UI waits
+  for the session's bounded completion instead of clearing intent after three
+  seconds while later writes continue. Failure reasons survive unrelated reports.
+- Critical read groups are requested at most 1.3 seconds apart when the link can
+  sustain them; individual field freshness remains two seconds. Extra reads and
+  confirmations cannot replace required state. Missing optional replies cannot
+  monopolize polling. Slow links still block safely rather than relaxing freshness.
+- Android's captured fitness notification mask 0x00657BF5 is subscribed once per
+  accepted connection. This selects notifications, not motor power or resistance.
+  SDK AA per-rep and strength-summary subtypes populate only device-provided counts.
+  Sparse rep events are not stationary-cable evidence. Rest-timer semantics and
+  motion/live-write capability remain unknown, so physical dropsets stay disabled.
+
+CONFIRMED in LVGL 9.3 source: setting an unchanged local style still invalidates
+the object. Alignment helpers do this too. The update loop now compares local
+style values, including alignment, and only rebuilds scale-label geometry when
+its inputs change. Hidden overlapping marks are not repeatedly filled and erased.
+Existing native Main/KG renders are byte-identical after these changes. Radio
+policy requests +9 dBm and a 15–30 ms connection interval with four-second
+supervision; longer-range reliability is not established by those settings alone.
+
+The first intermediate controls image connected on attempt one at reported RSSI
+-86 and accepted without another approval. Its 55-second capture exposed polling
+starvation from remaining alignment invalidations; the final correction addresses
+that defect. During the capture Black reported leaving Weight Training (20400 =
+0); the app correctly invalidated training state and requested mode selection.
+
+Loading and Auto Load commands remain behind a closed readiness gate. Mounting
+and lock mapping, full read-only safety state, Mountain, mixed modifier units,
+loaded weight changes, rest/motion telemetry and drop execution still prevent a
+claim of full single-device readiness. Source comparison is not physical proof.
+No autonomous resistance or motor command was issued during these checks.
+
+Final installed-image capture: Black was found after several discovery windows,
+then connected on attempt one and accepted the remembered remote. Modern 2000/2000
+percentage reports, capability pages, activation and version queries all arrived;
+the information-read starvation is no longer present in that capture. Black
+remained outside Weight Training (20400 = 0), so normalized training controls were
+correctly unavailable. User confirmation of the new settings interactions is still
+pending. Image hashes and build sizes are recorded in BASELINE.md.
