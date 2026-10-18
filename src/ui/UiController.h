@@ -47,7 +47,7 @@ private:
     int width_ = 0, height_ = 0, draftValue_ = 0, dropField_ = 0;
     MagicMode draftMode_ = MagicMode::Chains;
     DropSettings draftDrops_;
-    std::string deviceSignature_;
+    std::string deviceSignature_, scaleSignature_;
     uint64_t lastTickMs_ = 0, lastRotateMs_ = 0;
     int lastRotateDirection_ = 0;
     bool touchDown_ = false, touchMoved_ = false;

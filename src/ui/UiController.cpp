@@ -1,3 +1,4 @@
+#include "StyleUpdates.h"
 #include "UiController.h"
 #include "UiActions.h"
 #include <algorithm>
@@ -8,15 +9,15 @@ namespace {
 constexpr uint32_t bg = 0x04080b, bright = 0xf5f8ff, muted = 0x59677d;
 constexpr uint32_t soft = 0x96a7bd, amber = 0xffc374;
 
-void color(lv_obj_t* obj, uint32_t c) { lv_obj_set_style_text_color(obj, lv_color_hex(c), 0); }
+void color(lv_obj_t* obj, uint32_t c) { style::set_text_color(obj, lv_color_hex(c), 0); }
 void value(lv_obj_t* obj, const std::string& text) { if (obj && text != lv_label_get_text(obj)) lv_label_set_text(obj, text.c_str()); }
 int percentOf(int n, int max) { return max > 0 ? std::clamp(n*1000/max, 0, 1000) : 0; }
 }
 lv_obj_t* UiController::label(lv_obj_t* parent, const std::string& text, int w, int y, const lv_font_t* font) {
     auto* obj = lv_label_create(parent); value(obj, text); lv_obj_set_width(obj, w);
-    lv_obj_set_style_text_color(obj, lv_color_hex(bright), 0);
-    lv_obj_set_style_text_font(obj, font, 0); lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(obj, LV_ALIGN_TOP_MID, 0, y); lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    style::set_text_color(obj, lv_color_hex(bright), 0);
+    style::set_text_font(obj, font, 0); style::set_text_align(obj, LV_TEXT_ALIGN_CENTER, 0);
+    style::align(obj, LV_ALIGN_TOP_MID, 0, y); lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
     return obj;
 }
@@ -44,33 +45,33 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
 }
 lv_obj_t* UiController::button(lv_obj_t* parent, const std::string& text, int x, int y, int w, int h, int action) {
     auto* obj = lv_button_create(parent); lv_obj_set_size(obj, w, h); lv_obj_set_pos(obj, x, y);
-    lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0); lv_obj_set_style_bg_color(obj, lv_color_hex(0x17202d), 0);
-    lv_obj_set_style_shadow_width(obj, 0, 0); lv_obj_set_style_pad_all(obj, 0, 0);
+    lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0); style::set_bg_color(obj, lv_color_hex(0x17202d), 0);
+    style::set_shadow_width(obj, 0, 0); lv_obj_set_style_pad_all(obj, 0, 0);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    auto* textObj = label(obj, text, w, 0); lv_obj_center(textObj); bind(obj, action);
+    auto* textObj = label(obj, text, w, 0); style::center(textObj); bind(obj, action);
     lv_label_set_long_mode(textObj, LV_LABEL_LONG_DOT);
     return obj;
 }
 lv_obj_t* UiController::arc(lv_obj_t* parent, int size, uint32_t c) {
-    auto* obj = lv_arc_create(parent); lv_obj_set_size(obj, size, size); lv_obj_center(obj);
+    auto* obj = lv_arc_create(parent); lv_obj_set_size(obj, size, size); style::center(obj);
     lv_arc_set_rotation(obj, 135); lv_arc_set_bg_angles(obj, 0, 270); lv_arc_set_range(obj, 0, 1000);
     lv_obj_remove_style(obj, nullptr, LV_PART_KNOB); lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_arc_width(obj, std::max(3, width_/80), LV_PART_MAIN);
-    lv_obj_set_style_arc_width(obj, std::max(3, width_/80), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(obj, lv_color_hex(0x202a38), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(obj, lv_color_hex(c), LV_PART_INDICATOR);
+    style::set_arc_width(obj, std::max(3, width_/80), LV_PART_MAIN);
+    style::set_arc_width(obj, std::max(3, width_/80), LV_PART_INDICATOR);
+    style::set_arc_color(obj, lv_color_hex(0x202a38), LV_PART_MAIN);
+    style::set_arc_color(obj, lv_color_hex(c), LV_PART_INDICATOR);
     return obj;
 }
 void UiController::glow(lv_obj_t* obj, uint32_t accent, bool active) {
-    lv_obj_set_style_border_width(obj, active ? std::max(2, width_/160) : 1, 0);
-    lv_obj_set_style_border_color(obj, lv_color_hex(active ? accent : 0x39475b), 0);
-    lv_obj_set_style_bg_color(obj, lv_color_hex(bg), 0);
-    lv_obj_set_style_bg_grad_color(obj, lv_color_hex(bg), 0);
-    lv_obj_set_style_bg_grad_dir(obj, LV_GRAD_DIR_VER, 0);
-    lv_obj_set_style_shadow_color(obj, lv_color_hex(accent), 0);
-    lv_obj_set_style_shadow_width(obj, active ? width_/28 : 0, 0);
-    lv_obj_set_style_shadow_opa(obj, 65, 0);
+    style::set_border_width(obj, active ? std::max(2, width_/160) : 1, 0);
+    style::set_border_color(obj, lv_color_hex(active ? accent : 0x39475b), 0);
+    style::set_bg_color(obj, lv_color_hex(bg), 0);
+    style::set_bg_grad_color(obj, lv_color_hex(bg), 0);
+    style::set_bg_grad_dir(obj, LV_GRAD_DIR_VER, 0);
+    style::set_shadow_color(obj, lv_color_hex(accent), 0);
+    style::set_shadow_width(obj, active ? width_/28 : 0, 0);
+    style::set_shadow_opa(obj, 65, 0);
 }
 lv_obj_t* UiController::disc(lv_obj_t* parent, int x, int y, int size, uint32_t accent, bool active) {
     auto* obj = lv_obj_create(parent);
@@ -88,8 +89,8 @@ lv_obj_t* UiController::linkIcon(lv_obj_t* parent, int size, uint32_t c) {
         auto* link = lv_obj_create(group); lv_obj_remove_style_all(link);
         lv_obj_set_size(link, size*58/100, size*38/100); lv_obj_set_pos(link, i*size*40/100, size*5/100);
         lv_obj_set_style_radius(link, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(link, std::max(2, size/12), 0);
-        lv_obj_set_style_border_color(link, lv_color_hex(c), 0);
+        style::set_border_width(link, std::max(2, size/12), 0);
+        style::set_border_color(link, lv_color_hex(c), 0);
         lv_obj_remove_flag(link, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(link, LV_OBJ_FLAG_SCROLLABLE);
     }
@@ -102,8 +103,8 @@ lv_obj_t* UiController::twinIcon(lv_obj_t* parent, int size, uint32_t c) {
     lv_obj_remove_flag(group, LV_OBJ_FLAG_SCROLLABLE);
     for (int side=0; side<2; ++side) {
         auto* ring = disc(group, side*size/3, 0, size*2/3, c, true);
-        lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_shadow_width(ring, 0, 0);
+        style::set_bg_opa(ring, LV_OPA_TRANSP, 0);
+        style::set_shadow_width(ring, 0, 0);
     }
     return group;
 }
@@ -114,7 +115,7 @@ void UiController::buildScale() {
         p[0] = {lv_value_precise_t(width_*.5 + width_*.39*std::cos(a)), lv_value_precise_t(height_*.54 + width_*.39*std::sin(a))};
         p[1] = {lv_value_precise_t(width_*.5 + width_*.36*std::cos(a)), lv_value_precise_t(height_*.54 + width_*.36*std::sin(a))};
         ticks_[i] = lv_line_create(face_); lv_line_set_points(ticks_[i], p.data(), 2);
-        lv_obj_set_style_line_width(ticks_[i], std::max(2, width_/125), 0);
+        style::set_line_width(ticks_[i], std::max(2, width_/125), 0);
         lv_obj_remove_flag(ticks_[i], LV_OBJ_FLAG_CLICKABLE);
     }
     const auto* font = width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14;
@@ -124,10 +125,16 @@ void UiController::buildScale() {
 void UiController::updateScale(int selected, int maximum, const std::string& suffix, uint32_t accent, bool negative) {
     const int progress = negative ? percentOf(selected+maximum,maximum*2) : percentOf(selected, maximum);
     for (int i=0; i<tickCount; ++i)
-        lv_obj_set_style_line_color(ticks_[i], lv_color_hex((negative ? (i*1000/(tickCount-1) >= std::min(500,progress) && i*1000/(tickCount-1) <= std::max(500,progress)) : progress > 0 && i*1000/(tickCount-1) <= progress) ? accent : 0x46526b), 0);
+        style::set_line_color(ticks_[i], lv_color_hex((negative ? (i*1000/(tickCount-1) >= std::min(500,progress) && i*1000/(tickCount-1) <= std::max(500,progress)) : progress > 0 && i*1000/(tickCount-1) <= progress) ? accent : 0x46526b), 0);
     const bool weightScale = page_ == Screen::Main || (page_ == Screen::Drops && draftDrops_.mode == DropMode::Stairs) ||
         ((page_ == Screen::Magic || page_ == Screen::Eccentric) && !draftPercent_);
     const int unitTicks = weightScale ? ticksPerUnit(app_.report().unit) : 1;
+    const auto signature=std::to_string(maximum)+":"+std::to_string(negative)+":"+
+        std::to_string(weightScale)+":"+std::to_string(unitTicks);
+    // An overlapping landmark is intentionally blank. Recreating then hiding
+    // its text every loop invalidates the whole panel even when nothing changed.
+    if(signature==scaleSignature_) return;
+    scaleSignature_=signature;
     const int displayMax = maximum/unitTicks;
     const int step = (displayMax <= 10 ? std::max(1,displayMax/4) : displayMax <= 100 ? 20 : displayMax <= 300 ? 50 : 100)*unitTicks;
     std::vector<int> landmarks{0};
@@ -143,7 +150,7 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
         const int n=landmarks[i];
         const double a=(180.0+(maximum > 0 ? (negative ? 90.0*(n+maximum)/maximum : 180.0*n/maximum) : 0))*3.141592653589793/180;
         value(scaleLabels_[i],std::string(negative && n > 0 ? "+" : "")+(weightScale ? weightText(n,app_.report().unit) : std::to_string(n)));
-        lv_obj_set_align(scaleLabels_[i],LV_ALIGN_TOP_LEFT);
+        style::set_align(scaleLabels_[i],LV_ALIGN_TOP_LEFT);
         lv_obj_set_pos(scaleLabels_[i],int(width_*.5+width_*.445*std::cos(a))-width_/14,
             int(height_*.54+width_*.445*std::sin(a))-7);
     }
@@ -333,6 +340,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     } else if (action >= FieldDrops && action <= FieldHold) dropField_ = action-FieldDrops;
 }
 void UiController::build() {
+    scaleSignature_.clear();
     if (touchDown_) lv_indev_wait_release(touch_);
     if (face_) lv_obj_delete(face_);
     bindings_.clear(); deviceRows_.clear();
@@ -350,13 +358,13 @@ void UiController::build() {
     page_ = next_; rebuild_ = false;
     auto* screen = lv_display_get_screen_active(display_);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x030507), 0);
-    face_ = lv_obj_create(screen); lv_obj_set_size(face_, width_, height_); lv_obj_center(face_);
+    style::set_bg_color(screen, lv_color_hex(0x030507), 0);
+    face_ = lv_obj_create(screen); lv_obj_set_size(face_, width_, height_); style::center(face_);
     lv_obj_remove_flag(face_, LV_OBJ_FLAG_SCROLLABLE); lv_obj_set_style_pad_all(face_, 0, 0);
-    lv_obj_set_style_radius(face_, LV_RADIUS_CIRCLE, 0); lv_obj_set_style_bg_color(face_, lv_color_hex(bg), 0);
-    lv_obj_set_style_text_color(face_, lv_color_hex(bright), 0);
-    lv_obj_set_style_border_width(face_, std::max(2, width_/160), 0);
-    lv_obj_set_style_border_color(face_, lv_color_hex(0x2c3440), 0);
+    lv_obj_set_style_radius(face_, LV_RADIUS_CIRCLE, 0); style::set_bg_color(face_, lv_color_hex(bg), 0);
+    style::set_text_color(face_, lv_color_hex(bright), 0);
+    style::set_border_width(face_, std::max(2, width_/160), 0);
+    style::set_border_color(face_, lv_color_hex(0x2c3440), 0);
     const auto* small = width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14;
     const auto* medium = width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18;
     battery_ = label(face_, "", width_*45/100, height_*91/100, small); color(battery_, soft);
@@ -375,7 +383,7 @@ void UiController::build() {
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
             auto* icon = d.twinPeer.empty() ? linkIcon(tile, size*40/100, d.online ? bright : muted) :
                 twinIcon(tile, size*45/100, d.online ? accent() : muted);
-            lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, size*16/100);
+            style::align(icon, LV_ALIGN_TOP_MID, 0, size*16/100);
             auto* name = label(tile, d.name, size*90/100, size*49/100, small);
             lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
             lv_obj_set_height(name, small->line_height*2);
@@ -421,17 +429,17 @@ void UiController::build() {
         const int size = width_*42/100;
         center_ = disc(face_, width_*29/100, height_*32/100, size, centerAccent, true);
         if (page_ != Screen::Drops) {
-            lv_obj_set_style_border_width(center_, 0, 0); lv_obj_set_style_shadow_width(center_, 0, 0);
-            lv_obj_set_style_bg_opa(center_, LV_OPA_TRANSP, 0);
+            style::set_border_width(center_, 0, 0); style::set_shadow_width(center_, 0, 0);
+            style::set_bg_opa(center_, LV_OPA_TRANSP, 0);
         }
         if (page_ == Screen::Main) bind(center_, Weight);
         else lv_obj_remove_flag(center_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_width(center_,width_*80/100);
         lv_obj_set_x(center_,width_*10/100);
         lv_obj_set_style_radius(center_,0,0);
-        lv_obj_set_style_bg_opa(center_,LV_OPA_TRANSP,0);
-        lv_obj_set_style_border_width(center_,0,0);
-        lv_obj_set_style_shadow_width(center_,0,0);
+        style::set_bg_opa(center_,LV_OPA_TRANSP,0);
+        style::set_border_width(center_,0,0);
+        style::set_shadow_width(center_,0,0);
         lv_obj_add_flag(center_,LV_OBJ_FLAG_OVERFLOW_VISIBLE);
         weight_ = label(center_, "--", size*96/100, size*20/100, &lv_font_montserrat_48);
         lv_obj_set_style_transform_pivot_x(weight_, size*96/200, 0);
@@ -442,8 +450,8 @@ void UiController::build() {
         hint_ = label(center_, "", size*90/100, size*77/100, small); color(hint_, soft);
         if (page_ == Screen::Main) {
             lv_obj_remove_flag(weight_,LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_align(unit_, LV_ALIGN_TOP_MID, 0, size*59/100);
-            lv_obj_align(hint_, LV_ALIGN_TOP_MID, 0, size*70/100);
+            style::align(unit_, LV_ALIGN_TOP_MID, 0, size*59/100);
+            style::align(hint_, LV_ALIGN_TOP_MID, 0, size*70/100);
         }
     }
     if (page_ == Screen::Main) {
@@ -456,20 +464,20 @@ void UiController::build() {
             if (i < 2) miniArc_[i] = arc(tiles_[i], size*92/100, accent());
             miniValue_[i] = label(tiles_[i], "", size*96/100, size*32/100, medium);
             if (i == 0) {
-                modeLabels_[0] = label(face_, "", size, height_*55/100, medium); lv_obj_set_align(modeLabels_[0],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[0],width_*9/100);
+                modeLabels_[0] = label(face_, "", size, height_*55/100, medium); style::set_align(modeLabels_[0],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[0],width_*9/100);
                 bind(modeLabels_[0],Magic);
 
             } else if (i == 1) { modeLabels_[2] = label(face_, "EO", size, height_*55/100, medium); bind(modeLabels_[2],EO); }
-            if(i == 1) { lv_obj_set_align(modeLabels_[2],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[2],width_*30/100); }
+            if(i == 1) { style::set_align(modeLabels_[2],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[2],width_*30/100); }
             if(i == 2) {
                 dropTitle_ = label(face_, "", size, height_*55/100, medium); bind(dropTitle_,Drops);
-                lv_obj_set_align(dropTitle_,LV_ALIGN_TOP_LEFT); lv_obj_set_x(dropTitle_,width_*51/100);
+                style::set_align(dropTitle_,LV_ALIGN_TOP_LEFT); lv_obj_set_x(dropTitle_,width_*51/100);
                 for (int step=0; step<3; ++step) {
                     auto* bar = lv_obj_create(face_); lv_obj_remove_style_all(bar);
                     stairs_[step] = bar;
                     lv_obj_set_size(bar, size/9, (3-step)*size/16);
                     lv_obj_set_pos(bar, width_*57/100+step*size/9, height_*59/100-(3-step)*size/16);
-                    lv_obj_set_style_bg_color(bar, lv_color_hex(muted), 0); lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+                    style::set_bg_color(bar, lv_color_hex(muted), 0); style::set_bg_opa(bar, LV_OPA_COVER, 0);
                     lv_obj_remove_flag(bar, LV_OBJ_FLAG_CLICKABLE);
                 }
             }
@@ -477,9 +485,9 @@ void UiController::build() {
         presetTile_ = disc(face_, width_*72/100, height_*61/100, width_*19/100, accent(), false);
         bind(presetTile_, OpenPresets);
         auto* presetCaption=label(face_, LV_SYMBOL_SAVE, width_*19/100, height_*55/100, medium); bind(presetCaption,OpenPresets);
-        lv_obj_set_align(presetCaption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(presetCaption,width_*72/100);
+        style::set_align(presetCaption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(presetCaption,width_*72/100);
         presetValue_ = label(presetTile_, "P", width_*18/100, 0, &lv_font_montserrat_18);
-        lv_obj_center(presetValue_);
+        style::center(presetValue_);
         stats_ = label(face_, "", width_*64/100, height_*82/100, &lv_font_montserrat_18);
         lv_obj_set_y(battery_,height_*94/100);
         message_ = label(face_, "", width_*68/100, height_*88/100, small); color(message_, soft);
@@ -493,7 +501,7 @@ void UiController::build() {
         for (int i=0;i<3;++i) {
             const int index=int(order[i]);
             choice_[index]=label(picker,magicName(order[i]),width_*20/100,height_*3/100,medium);
-            lv_obj_set_align(choice_[index],LV_ALIGN_TOP_LEFT);
+            style::set_align(choice_[index],LV_ALIGN_TOP_LEFT);
             lv_obj_set_x(choice_[index],width_*(1+i*21)/100); bind(choice_[index],ModeIC+index);
         }
     } else if (page_ == Screen::Drops) {
@@ -534,7 +542,7 @@ void UiController::build() {
             const bool percent=i == 0;
             if(!both && percent != draftPercent_) continue;
             unitChoices_[i]=label(units,percent ? "%" : unitName(r.unit),width_*(both ? 28 : 58)/100,height_*2/100,medium);
-            lv_obj_set_align(unitChoices_[i],LV_ALIGN_TOP_LEFT);
+            style::set_align(unitChoices_[i],LV_ALIGN_TOP_LEFT);
             lv_obj_set_x(unitChoices_[i],width_*(both ? 1+i*30 : 1)/100);
             bind(unitChoices_[i],percent ? UnitPercent : UnitAbsolute);
         }
@@ -547,7 +555,7 @@ void UiController::build() {
     const int applyH = page_ == Screen::Magic ? 7 : 10;
     auto* apply = button(face_, "Apply", width_*30/100, height_*applyY/100, width_*40/100, height_*applyH/100, Apply);
     glow(apply, accent(), true);
-    lv_obj_set_style_text_font(lv_obj_get_child(apply, 0), medium, 0);
+    style::set_text_font(lv_obj_get_child(apply, 0), medium, 0);
     for (auto* legend : scaleLabels_) lv_obj_move_foreground(legend);
 }
 int UiController::editMaximum() const {
@@ -638,8 +646,8 @@ void UiController::update() {
         color(status_, r.twinKnown ? accent() : amber);
         if(r.twinKnown && r.twin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_width(status_,width_*76/100);
-        lv_obj_set_style_text_font(status_, &lv_font_montserrat_14,0);
-        lv_obj_align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
+        style::set_text_font(status_, &lv_font_montserrat_14,0);
+        style::align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
         updateScale(r.settings.weight, r.maxWeight, "", atMaximum ? maximumColor : accent());
         for (int i=0; i<2; ++i) {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
@@ -648,9 +656,9 @@ void UiController::update() {
             value(miniValue_[i], !m.enabled && m.value == 0 ? "OFF" :
                 (m.percent ? std::to_string(m.value) : weightText(m.value,r.unit))+(m.percent ? "%" : unitName(r.unit)));
             color(miniValue_[i], m.enabled ? bright : muted);
-            lv_obj_set_style_arc_color(miniArc_[i], lv_color_hex(m.enabled ? c : 0x46536a), LV_PART_INDICATOR);
+            style::set_arc_color(miniArc_[i], lv_color_hex(m.enabled ? c : 0x46536a), LV_PART_INDICATOR);
             lv_arc_set_value(miniArc_[i], percentOf(m.value, modifierMaximum(r, r.settings, i == 0)));
-            lv_obj_set_style_border_color(tiles_[i], lv_color_hex(m.enabled ? c : 0x39475b), 0);
+            style::set_border_color(tiles_[i], lv_color_hex(m.enabled ? c : 0x39475b), 0);
         }
         value(modeLabels_[0], magicName(r.settings.magicMode));
         color(modeLabels_[0], r.settings.magic.enabled ? bright : muted);
@@ -666,14 +674,14 @@ void UiController::update() {
         for (auto* step : stairs_) {
             if (d.mode == DropMode::RestPause) lv_obj_add_flag(step, LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(step, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_bg_color(step, lv_color_hex(d.enabled ? accent() : muted), 0);
+            style::set_bg_color(step, lv_color_hex(d.enabled ? accent() : muted), 0);
         }
         value(dropTitle_, d.mode == DropMode::RestPause ? LV_SYMBOL_PAUSE " " LV_SYMBOL_DOWN : "");
         value(miniValue_[2], d.mode == DropMode::Stairs ? weightText(d.step,r.unit)+unitName(r.unit) :
             std::to_string(d.drops)+"\n"+std::to_string(d.percent)+"%\n"+std::to_string(d.holdSeconds)+"s");
-        lv_obj_set_style_text_font(miniValue_[2],width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18,0);
-        lv_obj_set_style_text_line_space(miniValue_[2],0,0);
-        lv_obj_center(miniValue_[2]);
+        style::set_text_font(miniValue_[2],width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18,0);
+        style::set_text_line_space(miniValue_[2],0,0);
+        style::center(miniValue_[2]);
         color(miniValue_[2], d.enabled ? bright : muted);
         glow(tiles_[2], accent(), d.enabled);
         // Prefer the explicitly selected/saved slot when duplicate recipes exist.
@@ -733,14 +741,14 @@ void UiController::update() {
         updateScale(draftValue_, editMaximum(), draftPercent_ ? "%" : "", atMaximum ? limitAccent() : accent());
         for(int i=0;i<2;++i) if(unitChoices_[i]) {
             const bool selected=(i==0) == draftPercent_;
-            lv_obj_set_style_text_font(unitChoices_[i],selected ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
+            style::set_text_font(unitChoices_[i],selected ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
             lv_obj_set_y(unitChoices_[i],(height_*12/100-(selected ? lv_font_montserrat_28.line_height : lv_font_montserrat_18.line_height))/2);
             color(unitChoices_[i],selected ? bright : muted);
         }
         if (page_ == Screen::Magic) for (int i=0;i<3;++i) {
             if(r.magicSupported[i]) lv_obj_remove_flag(choice_[i],LV_OBJ_FLAG_HIDDEN);
             else lv_obj_add_flag(choice_[i],LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_text_font(choice_[i],int(draftMode_) == i ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
+            style::set_text_font(choice_[i],int(draftMode_) == i ? &lv_font_montserrat_28 : &lv_font_montserrat_18,0);
             lv_obj_set_y(choice_[i],(height_*13/100-(int(draftMode_) == i ? lv_font_montserrat_28.line_height : lv_font_montserrat_18.line_height))/2);
             color(choice_[i],int(draftMode_) == i ? bright : muted);
         }
@@ -756,7 +764,7 @@ void UiController::largeValue(const std::string& text) {
     lv_obj_set_style_transform_pivot_x(weight_,lv_obj_get_width(weight_)/2,0);
     lv_obj_set_style_transform_pivot_y(weight_,lv_obj_get_height(weight_)/2,0);
     lv_obj_set_style_transform_scale(weight_,scale,0);
-    lv_obj_align(weight_,LV_ALIGN_TOP_MID,0,width_*(page_ == Screen::Main ? 2 : 8)/100);
+    style::align(weight_,LV_ALIGN_TOP_MID,0,width_*(page_ == Screen::Main ? 2 : 8)/100);
 }
 UiController::UnitSelections& UiController::unitSelection() {
     const auto r=app_.report();
@@ -830,7 +838,7 @@ void UiController::tick() {
     sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && now-activityAt_ >= uint64_t(config_.sleepMinutes)*60000;
     dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && now-activityAt_ >= uint64_t(config_.dimMinutes)*60000;
     hardware_.setDisplayPower(sleeping_,dimmed_);
-    lv_obj_set_style_opa(face_,sleeping_ ? 0 : dimmed_ ? 65 : 255,0);
+    style::set_opa(face_,sleeping_ ? 0 : dimmed_ ? 65 : 255,0);
     update();
     if (now < alertUntil_ && page_ == Screen::Main) value(message_,"Rest alert");
     lv_timer_handler();

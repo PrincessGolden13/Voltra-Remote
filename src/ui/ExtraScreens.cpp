@@ -1,3 +1,4 @@
+#include "StyleUpdates.h"
 #include "UiController.h"
 #include "UiActions.h"
 #include <cstdio>
@@ -23,7 +24,7 @@ void UiController::saveConfiguration() {
 void UiController::separator(int y,int inset) {
     auto* line = lv_obj_create(face_); lv_obj_remove_style_all(line);
     lv_obj_set_size(line,width_*(100-2*inset)/100,1); lv_obj_set_pos(line,width_*inset/100,height_*y/100);
-    lv_obj_set_style_bg_color(line,lv_color_hex(accent()),0); lv_obj_set_style_bg_opa(line,90,0);
+    style::set_bg_color(line,lv_color_hex(accent()),0); style::set_bg_opa(line,90,0);
 }
 std::string UiController::presetSummary(const Preset& p,bool multiline) const {
     const std::string magicUnit = p.magic.percent ? "%" : unitName(p.unit), eoUnit = p.eccentric.percent ? "%" : unitName(p.unit), gap = multiline ? "\n\n" : " ";
@@ -76,9 +77,9 @@ void UiController::buildExtra() {
         for(int i=0;i<count;++i) {
             const int x=width_*(16+i*68/count)/100, w=width_*68/(100*count);
             auto* caption=label(face_,i==0 && !r.setNumber ? "" : captions[i],w,height_*72/100,medium);
-            lv_obj_set_align(caption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(caption,x);
+            style::set_align(caption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(caption,x);
             liveValues_[i]=label(face_,"",w,height_*77/100,width_ < 400 ? &lv_font_montserrat_28 : &lv_font_montserrat_36);
-            lv_obj_set_align(liveValues_[i],LV_ALIGN_TOP_LEFT); lv_obj_set_x(liveValues_[i],x);
+            style::set_align(liveValues_[i],LV_ALIGN_TOP_LEFT); lv_obj_set_x(liveValues_[i],x);
         }
         separator(69,13); separator(87,22);
         message_ = label(face_,"",width_*76/100,height_*26/100);
@@ -112,9 +113,9 @@ void UiController::buildExtra() {
             separator(28,17);
             label(face_,"OLD                 NEW",width_*70/100,height_*31/100,heading);
             auto* old=label(face_,presetSummary(config_.presets[presetIndex_],true),width_*32/100,height_*41/100,medium);
-            lv_obj_set_align(old,LV_ALIGN_TOP_LEFT); lv_obj_set_x(old,width_*15/100);
+            style::set_align(old,LV_ALIGN_TOP_LEFT); lv_obj_set_x(old,width_*15/100);
             auto* fresh=label(face_,presetSummary(saveDraft_,true),width_*32/100,height_*41/100,medium);
-            lv_obj_set_align(fresh,LV_ALIGN_TOP_LEFT); lv_obj_set_x(fresh,width_*54/100);
+            style::set_align(fresh,LV_ALIGN_TOP_LEFT); lv_obj_set_x(fresh,width_*54/100);
             action("SAVE",18,77,29,10,SaveRecipe); action("CANCEL",51,77,32,10,CancelRecipe);
         }
         message_=label(face_,"",width_*75/100,height_*87/100); bind(message_,Unload); lv_obj_set_ext_click_area(message_,height_/50);
@@ -167,7 +168,7 @@ void UiController::updateExtra() {
         text(settingsValues_[1],"Rest alert    "+(config_.restAlertSeconds ? std::to_string(config_.restAlertSeconds/60)+":"+
             (config_.restAlertSeconds%60 < 10 ? "0" : "")+std::to_string(config_.restAlertSeconds%60) : "Off"));
         text(settingsValues_[2],"Dim    "+mins(config_.dimMinutes)); text(settingsValues_[3],"Sleep    "+mins(config_.sleepMinutes));
-        for(int i=0;i<4;++i) lv_obj_set_style_text_color(settingsValues_[i],lv_color_hex(i==settingsField_ ? white : dim),0);
+        for(int i=0;i<4;++i) style::set_text_color(settingsValues_[i],lv_color_hex(i==settingsField_ ? white : dim),0);
     }
 }
 }
