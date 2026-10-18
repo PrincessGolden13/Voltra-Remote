@@ -6,7 +6,10 @@ This does not establish physical safety, advanced modes or Twin routing. Explici
 unload is the only physical control write enabled in that diagnostic profile.
 
 Source revisions are fixed in [UPSTREAM_AUDIT.md](UPSTREAM_AUDIT.md).
-Physical validation in this project: **none**.
+October 18: [physical connection audit](LIVE_CONNECTION_2026_10_18.md) confirms
+GATT discovery, application acceptance after user approval, and read-only state
+at approximately ten feet with the local diagnostic profile. Training remains
+unvalidated. EP1.0 is a module tag, not proof of installed app firmware 1.x.
 
 ## September 20 SDK follow-up
 

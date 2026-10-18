@@ -6,11 +6,15 @@ namespace voltra {
 VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlSession* controls)
     : transport_(t), policy_(p), controls_(controls) {
     transport_.onConnection([this](bool connected) {
-        if (controls_) controls_->connectionChanged(connected);
+        linkUp_ = connected;
+        if (connected) return; // Validate GATT on the application loop first.
+        const bool failed = connecting_;
+        connecting_ = false;
+        if (controls_) controls_->connectionChanged(false);
         confirmed_ = {}; requested_ = {}; parser_.reset();
         confirmed_.connected = connected;
         pendingLoad_.reset();
-        feedback_ = connected ? "Turn wheel to adjust weight" : "Disconnected - press F6 to reconnect";
+        feedback_ = failed ? "Connection failed / tap to retry" : "Disconnected";
     });
     transport_.onNotification([this](const std::string& characteristic, const Bytes& bytes) {
         if (controls_) controls_->notification(characteristic,bytes);
@@ -35,10 +39,14 @@ VoltraController::~VoltraController() {
 }
 bool VoltraController::connect(const DeviceId& id) {
     disconnect();
-    if (transport_.connect(id) != TransportResult::Accepted) return false;
+    connecting_ = true;feedback_ = "Connecting...";
+    if (transport_.connect(id) != TransportResult::Accepted) { connecting_=false;feedback_="Connection unavailable";return false; }
+    return linkUp_ ? finishConnection() : true;
+}
+bool VoltraController::finishConnection() {
     const auto services = transport_.discoverServices();
     if (std::find(services.begin(), services.end(), VoltraGattProfile::service) == services.end()) {
-        disconnect(); return false;
+        disconnect(); feedback_="VOLTRA service unavailable";return false;
     }
     const auto chars = transport_.discoverCharacteristics(VoltraGattProfile::service);
     const auto found = std::find_if(chars.begin(), chars.end(), [](const Characteristic& c) {
@@ -48,19 +56,37 @@ bool VoltraController::connect(const DeviceId& id) {
         return c.uuid == VoltraGattProfile::write && c.canWrite;
     });
     if (found == chars.end() || writable == chars.end() || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
-        disconnect(); return false;
+        disconnect(); feedback_="VOLTRA subscription failed";return false;
+    }
+    // The pinned SDK and ESP32 reference receive replies on both channels.
+    // This is a profile decision, not a generic subscribe-to-everything policy.
+    if (writable->canNotify && transport_.subscribe(writable->uuid) != TransportResult::Accepted) {
+        disconnect();feedback_="VOLTRA response subscription failed";return false;
+    }
+    const auto telemetry=std::find_if(chars.begin(),chars.end(),[](const Characteristic& c) {
+        return c.uuid==VoltraGattProfile::telemetry && c.canNotify;
+    });
+    if(telemetry!=chars.end() && transport_.subscribe(telemetry->uuid)!=TransportResult::Accepted) {
+        disconnect();feedback_="VOLTRA telemetry subscription failed";return false;
     }
     // Subscription is not handshake success. The protocol session owns bootstrap
     // and application acceptance; neither step may replay a load/settings intent.
+    connecting_=false;confirmed_.connected=true;
+    if (controls_) controls_->connectionChanged(true);
+    feedback_="Connected / reading VOLTRA";
     return true;
 }
 void VoltraController::disconnect() {
+    connecting_=false;linkUp_=false;
+    if (controls_) controls_->connectionChanged(false);
     transport_.disconnect(); confirmed_ = {}; requested_ = {}; parser_.reset();
     pendingLoad_.reset();
 }
 void VoltraController::tick(uint64_t now) {
     now_ = now;
     transport_.poll(now);
+    // Discovery can block: bootstrap must start on a new loop with a fresh clock.
+    if (connecting_ && linkUp_) {finishConnection();return;}
     if (controls_) controls_->tick(now);
     if (controls_ && confirmed_.connected) {
         const auto evidence = controls_->readiness();

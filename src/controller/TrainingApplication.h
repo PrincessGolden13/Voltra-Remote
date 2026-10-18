@@ -15,6 +15,7 @@ public:
     bool forget(const DeviceId&);
     void leave(bool preserveFailure = false);
     bool connected() const { return controller_.confirmed().connected; }
+    bool connecting() const { return controller_.connecting(); }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
     TrainingReport report() const { return session_.trainingReport(); }
@@ -43,6 +44,8 @@ private:
     ControlSession& session_;
     DeviceMemory* memory_;
     std::vector<DeviceEntry> recent_, devices_, knownDevices_;
+    struct SeenDevice { DeviceEntry device; uint64_t at; };
+    std::map<DeviceId,SeenDevice> seenDevices_;
     std::map<DeviceId, DropSettings> dropSettings_;
     DeviceId selected_;
     std::string name_, message_, presetError_;

@@ -104,6 +104,24 @@ remain explicit future milestones.
   in this Windows session; shell scripts could not be executed here either.
 - No new test code, physical BLE implementation or physical validation added.
 
+## October 18 physical connection follow-up
+
+- Normal 1,195,213 program bytes / 31,768 RAM and isolated Simulator 929,113 /
+  21,236 build successfully. Both images flashed with verified esptool hashes.
+- Windows native build and existing Devices/Main/Twin 360 px renders pass.
+- Physical discovery and a radio link with MTU 247 were captured, alongside
+  repeatable HCI establishment failures (574). No resistance was commanded.
+- GATT discovery/subscriptions, acceptance after user approval and read-only state
+  were captured at approximately ten feet with the ignored local reference profile.
+  Generated local identity failed the same corrected handshake comparison. Identity
+  provisioning remains unresolved; default builds are not a validated configuration.
+- Live readback includes 30 LB base and a device-reported 230 LB maximum. Motor 0/1
+  decoding, prioritized reads and unload command 4/readback 0 confirmation are fixed.
+  EP1.0 is no longer misidentified as app firmware. Physical training is incomplete.
+- Final binary sizes: Normal 1,195,584 bytes; isolated Simulator 929,472 bytes.
+- Images/manifests and logs remain ignored locally; see
+  [physical connection evidence](LIVE_CONNECTION_2026_10_18.md).
+
 ## October 11 revision
 
 - CONFIRMED: Windows native build passes. Pre-edit simulator retained locally.

@@ -45,9 +45,11 @@ entitlements, routing or physical compatibility. Device reports take precedence.
 - INFERRED: Twin native-KG fallback ceilings of 180 and 208 from the native
   per-unit ceilings and combined-resistance requirement. Physical KG Twin
   readback/routing remains UNVERIFIED; a verified effective report overrides this.
-- UNVERIFIED physically: Normal diagnostics now read catalog candidate 21268;
-  candidate 21534 remains research evidence, not a universal maximum.
-  Neither is a combined limit without scope evidence. See VOLTRA_COMPATIBILITY.md.
+- CONFIRMED October 18: Normal diagnostics read 21268 = 230 LB from the user's
+  2.x unit. Its combined Twin scope remains UNVERIFIED. Candidate 21534 remains
+  research evidence. Neither may supply a combined limit without scope evidence.
+  The observed EP1.0 module tag must not be used as an app-firmware version.
+  See LIVE_CONNECTION_2026_10_18.md and VOLTRA_COMPATIBILITY.md.
 
 ## Implementation boundaries
 

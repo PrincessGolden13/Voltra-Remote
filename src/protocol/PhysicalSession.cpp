@@ -9,6 +9,10 @@ namespace voltra {
 namespace {
 constexpr uint16_t base=0x3e86, chains=0x3e87, eccentric=0x3e88, motor=0x3e89, workout=0x4fb0;
 constexpr uint16_t position=0x3e82, offset=0x506a, unit=20590, twin=20844, maxForce=21268;
+// HA/Android pace bootstrap at 90 ms. Their captured VOLTRA connect-request
+// deadline is ~5 s from radio connection; a 3 s post-HELLO wait plus full GATT
+// discovery exceeded it on this remote. Keep every bootstrap step nonblocking.
+constexpr uint64_t helloSettleMs=90, initPacingMs=90, readPacingMs=90;
 // Only catalogued widths. Unknown/truncated reports are rejected atomically.
 int width(uint16_t id) {
     switch(id) {
@@ -17,21 +21,29 @@ int width(uint16_t id) {
     case 0x5182: case 0x53b6: case 0x52e3: case 0x52ca: case 0x5102: case 0x4ee1: return 1;
     case 0x3e82: case 0x3e83: case 0x3e86: case 0x3e87: case 0x3e88: case 0x3e89:
     case 0x506a: case 0x53b0: case 21268: case 21476: case 21534: case 0x53c8:
-    case 0x5362: case 0x53b7: case 0x5011: case 0x5467: return 2;
+    case 0x5362: case 0x53b7: case 0x5011: case 0x5467:
+    case 21002: case 21003: case 21004: return 2; // BLE interval reports, Android capture.
     case 20590: case 21023: case 0x5183: case 0x5165: case 0x5355: case 0x53cf: return 4;
     default:return 0;
     }
 }
 uint16_t u16(const Bytes& b,size_t i) { return uint16_t(b[i])|uint16_t(b[i+1])<<8; }
 }
-PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_t,16>& identity)
-    : transport_(transport),identity_(identity) {}
+PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_t,16>& identity,
+                                 std::optional<std::array<uint8_t,6>> helloIdentity)
+    : transport_(transport),identity_(identity) {
+    if(helloIdentity) helloIdentity_=*helloIdentity;
+    else std::copy_n(identity.begin(),helloIdentity_.size(),helloIdentity_.begin());
+}
 void PhysicalSession::connectionChanged(bool connected) {
-    connected_=connected;accepted_=activated_=false; bootstrap_=readGroup_=0;sequence_=0;
-    diagnosticFrames_=0;
-    connectedAt_=now_;lastWrite_=reportRevision_=0;parser_.reset();values_.clear();seen_.clear();report_={};firmware_.clear();
+    connected_=connected;accepted_=activated_=false; bootstrap_=readGroup_=backgroundRead_=infoRead_=0;sequence_=0;
+    diagnosticFrames_=diagnosticVersions_=0;
+    connectedAt_=now_;lastWrite_=reportRevision_=0;
+    for(auto& parser:parsers_) parser.reset();fragmentAt_={};
+    values_.clear();seen_.clear();report_={};firmware_.clear();
     waitingWrite_.reset();
-    if(connected) {connectionFailure_=false;status_="Connecting / approve on VOLTRA";}
+    bootstrapWriteJustCompleted_=false;
+    if(connected) {connectionFailure_=false;status_="Opening VOLTRA session...";}
     else if(!connectionFailure_) status_="Connection lost";
 }
 std::optional<int64_t> PhysicalSession::fresh(uint16_t id) const {
@@ -41,12 +53,16 @@ std::optional<int64_t> PhysicalSession::fresh(uint16_t id) const {
 }
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
     if(!connected_) return false;
-    if(!accepted_) Serial.printf("VOLTRA bootstrap command %02x\n",unsigned(command));
+    if(!accepted_) Serial.printf("%llu VOLTRA bootstrap command %02x\n",static_cast<unsigned long long>(now_),unsigned(command));
     lastWrite_=now_;
-    if(transport_.write(VoltraGattProfile::write,buildFrame(command,payload,sequence_++,sender,receiver,type))!=TransportResult::Accepted) {
+    // All three captured bootstrap headers use sequence zero. Ordinary reads
+    // and explicit control requests use the session's incrementing sequence.
+    const uint16_t sequence=accepted_ ? sequence_++ : 0;
+    if(transport_.write(VoltraGattProfile::write,buildFrame(command,payload,sequence,sender,receiver,type))!=TransportResult::Accepted) {
         status_="Bluetooth write failed";connectionFailure_=true;
         transport_.disconnect();return false;
     }
+    if(!accepted_) bootstrapWriteJustCompleted_=true;
     return true;
 }
 bool PhysicalSession::read(std::initializer_list<uint16_t> ids) {
@@ -59,12 +75,14 @@ bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
     waitingWrite_=std::make_pair(id,value);waitingAt_=now_;return true;
 }
 void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
-    if(!connected_ || uuid!=VoltraGattProfile::notify) return;
-    if(now_-fragmentAt_>1000) parser_.reset();
-    fragmentAt_=now_;
-    for(const auto& f:parser_.feed(bytes)) {
+    if(!connected_ || (uuid!=VoltraGattProfile::notify && uuid!=VoltraGattProfile::write && uuid!=VoltraGattProfile::telemetry)) return;
+    const size_t channel=uuid==VoltraGattProfile::notify ? 0 : uuid==VoltraGattProfile::write ? 1 : 2;
+    auto& parser=parsers_[channel];
+    if(now_-fragmentAt_[channel]>1000) parser.reset();
+    fragmentAt_[channel]=now_;
+    for(const auto& f:parser.feed(bytes)) {
         // Bounded headers only: no identity, activation key or raw payload logging.
-        if(diagnosticFrames_++<24) Serial.printf("VOLTRA frame cmd=%02x sender=%02x receiver=%02x bytes=%u\n",unsigned(f.command),unsigned(f.sender),unsigned(f.receiver),unsigned(f.payload.size()));
+        if(diagnosticFrames_++<24) Serial.printf("VOLTRA frame channel=%u cmd=%02x sender=%02x receiver=%02x bytes=%u\n",unsigned(channel),unsigned(f.command),unsigned(f.sender),unsigned(f.receiver),unsigned(f.payload.size()));
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa) continue;
         const auto key=std::make_pair(f.command,f.sequence);
         if(std::find(seen_.begin(),seen_.end(),key)!=seen_.end()) continue;
@@ -86,17 +104,18 @@ void PhysicalSession::apply(const Frame& f) {
         if(activated_!=(p[1]==1)) Serial.printf("VOLTRA activation %u\n",unsigned(p[1]));
         activated_=p[1]==1;
     }
-    if(f.command==0x77) {
-        // Prefer the EP firmware tag. Do not interpret BMS/MC versions as app firmware.
+    if(f.command==0x77 && diagnosticVersions_++<2) {
+        // These are module/product identifiers, not the installed app release.
+        // EP1.0 is also present on the user's 2.x machine. Never use it to select
+        // a 1.x resistance limit. Log only bounded known module/version tokens.
         std::string text(p.begin(),p.end());
-        for(size_t at=0;(at=text.find("EP",at))!=std::string::npos;++at) {
-            size_t start=at+2;
-            while(start<text.size() && (text[start]<'0' || text[start]>'9') && start-at<12) ++start;
-            size_t end=start;while(end<text.size() && ((text[end]>='0' && text[end]<='9') || text[end]=='.')) ++end;
-            const auto version=text.substr(start,end-start);
-            if(firmwareFamily(version)) {
-                if(firmware_!=version) Serial.printf("VOLTRA EP firmware %s\n",version.c_str());
-                firmware_=version;break;
+        for(const std::string prefix:{"EP","BP","MainControlv","MotorControl","BMS","PMU"}) {
+            for(size_t at=0;(at=text.find(prefix,at))!=std::string::npos;++at) {
+                size_t end=at+prefix.size();
+                while(end<text.size() && end-at<32 && ((text[end]>='0' && text[end]<='9') || text[end]=='.')) ++end;
+                const auto token=text.substr(at,end-at);
+                if(end>at+prefix.size() && token.find('.')!=std::string::npos)
+                    Serial.printf("VOLTRA module tag %s (not app firmware)\n",token.c_str());
             }
         }
     }
@@ -119,14 +138,22 @@ void PhysicalSession::apply(const Frame& f) {
         values_[pair.first]={pair.second,now_};
         // Only normalized parameter values; never serial numbers or BLE identities.
         if(changed) Serial.printf("VOLTRA param %u = %lld\n",unsigned(pair.first),static_cast<long long>(pair.second));
-        if(waitingWrite_ && waitingWrite_->first==pair.first && waitingWrite_->second==pair.second && now_>=waitingAt_) waitingWrite_.reset();
+        if(waitingWrite_ && waitingWrite_->first==pair.first && now_>=waitingAt_) {
+            // Motor writes and readbacks have different enums on current devices:
+            // explicit unload command 4 is confirmed by unloaded readback 0.
+            const bool unloaded=pair.first==motor && waitingWrite_->second==4 && pair.second==0;
+            if(unloaded || waitingWrite_->second==pair.second) waitingWrite_.reset();
+        }
     }
     updateReport();
 }
 void PhysicalSession::updateReport() {
     const auto w=fresh(base),m=fresh(motor),mode=fresh(workout),u=fresh(unit);
     if(!w || !m || !mode || !u || (*u!=0 && *u!=1)) {report_={};return;}
-    if(*mode!=1 || (*m!=4 && *m!=5 && *m!=38 && *m!=39)) {
+    // Ryan dff6227 documents readback 0/1, distinct from write commands 4/5.
+    // The October 18 unloaded capture reports 0. Retain recognized legacy
+    // report values, but never turn an unknown value into an unloaded state.
+    if(*mode!=1 || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39)) {
         // A newly unknown/non-training mode must invalidate the previous report
         // immediately. The weight target then remains an unconditional unload,
         // rather than treating an unrecognized motor state as confirmed unloaded.
@@ -137,7 +164,7 @@ void PhysicalSession::updateReport() {
     report_.unit=*u==0 ? WeightUnit::Pounds : WeightUnit::Kilograms;
     report_.firmwareVersion=firmware_;
     report_.settings.weight=convertWeightUnits(int(*w),WeightUnit::Pounds,report_.unit);
-    report_.loaded=*m==5 || *m==39;report_.autoLoadArmed=*m==38;
+    report_.loaded=*m==1 || *m==5 || *m==39;report_.autoLoadArmed=*m==38;
     // The current public catalog names this register but does not define its
     // enum/peer-health semantics. Preserve raw diagnostics; never guess readiness.
     report_.twinKnown=false;report_.twin=false;
@@ -153,7 +180,7 @@ void PhysicalSession::updateReport() {
     report_.magicSupported={false,c.has_value(),false};report_.eccentricSupported=e && *e>=0;
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
     report_.revision=++reportRevision_;
-    if(!busy()) status_=*mode!=1 ? "Select Weight Training on VOLTRA" : !report_.twinKnown ? "Twin state needs validation" : "Connection diagnostic build";
+    if(!busy()) status_="Connected / read only";
 }
 TrainingReport PhysicalSession::trainingReport() const { return report_; }
 SessionReadiness PhysicalSession::readiness() const {
@@ -184,33 +211,40 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
 TransportResult PhysicalSession::triggerAutoLoad() { status_="Auto Load profile not validated";return TransportResult::Unsupported; }
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
-    if(!accepted_ && now_-connectedAt_>30000) { status_="Connection approval timed out";connectionFailure_=true;transport_.disconnect();return; }
+    // tick() time predates a synchronous GATT write. Start the settling deadline
+    // on the next loop, after that write completes, rather than backdating it.
+    if(bootstrapWriteJustCompleted_) {lastWrite_=now;bootstrapWriteJustCompleted_=false;}
+    if(!accepted_ && now_-connectedAt_>30000) { status_="VOLTRA session timed out";connectionFailure_=true;transport_.disconnect();return; }
     if(waitingWrite_ && now_-waitingAt_>3000) {waitingWrite_.reset();status_="No device confirmation";}
-    if(now_-lastWrite_<90) return;
+    const auto pacing=bootstrap_==1 ? helloSettleMs : bootstrap_==2 ? initPacingMs : readPacingMs;
+    if(now_-lastWrite_<pacing) return;
     if(bootstrap_==0) {
         Bytes hello(21,0);const std::string name="VOLTRA Remote";std::copy(name.begin(),name.end(),hello.begin());
-        hello.insert(hello.end(),identity_.begin(),identity_.begin()+6);hello.push_back(1);
+        hello.insert(hello.end(),helloIdentity_.begin(),helloIdentity_.end());hello.push_back(1);
         if(send(0x4f,hello,1)) ++bootstrap_;
     } else if(bootstrap_==1) {if(send(0xff,{0,0xaa},0xaa,0xd2,0x08)) ++bootstrap_;}
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {
-        // Small read groups avoid the upstream cold-bootstrap wide-query failure.
-        switch(readGroup_++%15) {
-        case 0:read({base,motor,workout});break;
-        case 1:read({chains,eccentric});break;
-        case 2:read({position,offset});break;
-        case 3:read({unit});break;
-        case 4:read({twin});break;
-        case 5:read({20772});break; // Child lock, read-only.
-        case 6:read({20566});break; // Dock/quick-release status, raw until mapped.
-        case 7:read({21476});break; // OTA status, read-only.
-        case 8:read({0x4e2d});break;
-        case 9:read({maxForce});break;
-        case 10:read({0x5355,0x53cf});break;
-        case 11:send(0x74,{});break;
-        case 12:send(0x77,{0});break;
-        case 13:send(0x77,{1});break;
-        case 14:send(0xab,{1});break;
+        // Prioritize core state instead of letting slow info reads exceed its
+        // 2 s freshness budget. Small groups (at most four) avoid wide cold reads.
+        // One informational read per twelve state reads; no write/intent replay.
+        const auto slot=readGroup_++%13;
+        if(slot==12) {
+            switch(infoRead_++%8) {
+            case 0:read({20772,21476});break; // Read-only lock/OTA status.
+            case 1:read({20566});break; // Raw dock status until mapped.
+            case 2:read({0x4e2d});break;
+            case 3:read({0x5355,0x53cf});break;
+            case 4:send(0x74,{});break;
+            case 5:send(0x77,{0});break;
+            case 6:send(0x77,{1});break;
+            case 7:send(0xab,{1});break;
+            }
+        } else if(slot%2==0) read({base,motor,workout,unit});
+        else switch(backgroundRead_++%3) {
+        case 0:read({chains,eccentric});break;
+        case 1:read({position,offset});break;
+        case 2:read({twin,maxForce});break;
         }
     }
 }

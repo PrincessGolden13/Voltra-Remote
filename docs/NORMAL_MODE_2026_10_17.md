@@ -1,16 +1,17 @@
 # Normal mode and physical connection work — October 17, 2026
 
 October 18 follow-up: [first physical discovery attempt](LIVE_CONNECTION_2026_10_18.md).
-The user now has a 2.x VOLTRA ready; the remote scans successfully but no VOLTRA
-service has matched yet. Exact tile/connection observations remain pending.
+The user supplied a 2.x VOLTRA. After connection/protocol corrections, discovery,
+GATT, acceptance after approval and live readback are confirmed at ten feet with
+the local diagnostic profile. Training remains incomplete; see the follow-up.
 
 ## User request and remaining work
 
 The user authorized real discovery, connections and all Weight Training functions,
 superseding the earlier offline-only development milestone. The requested real
 training functionality is **not complete**. Discovery, GATT connection, protocol
-bootstrap and read-only observations are implemented. No physical VOLTRA has been
-available for validation; the user will make one available later.
+bootstrap and read-only observations are implemented. A physical VOLTRA became
+available on October 18; validation is in progress as recorded above.
 
 Normal firmware currently permits an explicit unload request only. Weight edits,
 loading, Magic/EO changes, Auto Load and dropsets remain disabled. Current public
@@ -40,7 +41,8 @@ returns Unsupported for those operations until a supported physical profile exis
 - No load state, base resistance, pending command or dropset activation is restored.
   Global presets/preferences are shared; restoring them never sends a preset.
 - VOLTRA application acceptance is distinct from BLE connection. The UI can show
-  the connected screen while awaiting an approval on VOLTRA. A timeout/refusal
+  the connected screen while awaiting acceptance/approval on VOLTRA. The user
+  observed and approved a prompt in the October 18 session. A timeout/refusal
   returns to Devices with the reason. Only acceptance saves a new device.
 
 ## Build isolation and recovery
@@ -73,11 +75,13 @@ CONFIRMED in external source checkouts, not on a physical VOLTRA here:
 | [Home Assistant](https://github.com/dylanmaniatakes/Beyond-Power-HomeAssistant/tree/93b0819745e665ab4d35f4cc501d48c6296c81f7) | 93b0819745e665ab4d35f4cc501d48c6296c81f7 | Independent framing and readiness cross-check |
 
 Checkouts are outside the source tree, in `%TEMP%/voltra-live-oct17/`. Existing
-pinned validator checkouts remain separate. No captured client identity or device
-key was copied. Normal firmware generates and persists a local UUID; acceptance
-of that identity is UNVERIFIED. Bootstrap sends HELLO, routing initialization and
-connection identity, never load or configuration. Accepted sessions request small
-read groups with 90 ms spacing. Reads include units, base/motor/workout state,
+pinned validator checkouts remain separate. No identity/key values are committed.
+The generated local UUID did not complete the corrected handshake in the October
+18 comparison. The locally flashed diagnostic profile uses reference fields from
+ignored LocalConfig.h and was accepted; provisioning remains unresolved. Bootstrap
+sends HELLO, routing initialization and connection fields, never load/configuration.
+Accepted sessions request small prioritized read groups with 90 ms spacing. Reads
+include units, base/motor/workout state,
 modifiers, cable position/offset, raw Twin/lock/OTA status, max force and firmware.
 The parser rejects unknown widths, truncation and trailing bytes atomically.
 Disconnect/queue overflow invalidates the session. A BLE write is never confirmation.
@@ -86,8 +90,10 @@ the normalized report so the weight target remains an unload action. Valid repor
 revisions remain monotonic within a connection after recovery from unknown state.
 
 The catalog gives 21268 (EP_MAX_ALLOWED_FORCE) as uint16 LB. It is a single-unit
-candidate, not proof of a combined Twin ceiling. Unit enum 0=LB/1=KG is INFERRED.
-Firmware extraction uses EP tags, not BMS/MC versions. Current Twin status 20844
+candidate, observed as 230 on the user's 2.x unit, not proof of a combined Twin
+ceiling. Unit enum 0=LB/1=KG is source evidence; KG has not been physically checked.
+EP1.0 appeared on this 2.x device and is not used as the app firmware version.
+Current Twin status 20844
 has no verified enum/peer-health mapping here, so `twinKnown` stays false and the
 effective limit stays unavailable. The shared resolver still prefers fresh scoped
 reports, then unit-specific firmware fallbacks: **2.x 230 LB / 104 KG single,
@@ -99,15 +105,14 @@ describe cable/readiness checks, unloaded mode transitions, selectors and Twin
 master routing. They do not supply the missing BLE encodings. Cortex is not a
 runtime dependency; no Cortex API key/CLI is available in this environment.
 
-## Next physical observation (user deferred)
+## Remaining physical validation
 
-Keep the USB remote connected; turn on one unloaded VOLTRA with other controllers
-disconnected. Observe its firmware version and any connection approval. The first
-session records normalized read-only values and connection outcome, without
-automatic resistance actions. Resolve current-role/readiness and unit mappings
-against these observations before enabling any training profile. Full Twin and
-advanced-mode support needs the additional confirmed mappings listed above.
+The first accepted session is recorded in the October 18 follow-up. Resolve exact
+firmware encoding, current-role/readiness and modifier/unit mappings before enabling
+training. Full Twin and advanced-mode support needs the additional confirmed
+mappings listed above. No autonomous motor tests are authorized.
 
-Physical discovery/acceptance, saved-device persistence on this board, mode-switch
-gesture feel, all resistance controls and real telemetry remain UNVERIFIED.
+Discovery/acceptance/read-only values are confirmed for the local profile. Saved
+device persistence, mode-switch gesture feel, resistance controls and real workout
+telemetry remain UNVERIFIED.
 No new automated test code was added; validation results go in BASELINE.md.

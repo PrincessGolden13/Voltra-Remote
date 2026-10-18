@@ -2,6 +2,12 @@
 #include "protocol/VoltraGattProfile.h"
 #include <algorithm>
 namespace voltra {
+namespace {
+constexpr uint64_t discoveryIntervalMs=5000;
+// Three scan intervals tolerate missed radio packets; never machine readiness.
+constexpr uint64_t discoveryGraceMs=15000;
+constexpr size_t maximumDiscoveredDevices=64;
+}
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
     : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
     if (memory_) recent_ = memory_->load();
@@ -23,7 +29,7 @@ bool TrainingApplication::forget(const DeviceId& id) {
     return true;
 }
 bool TrainingApplication::tryAutomaticSelection() {
-    if (!automaticSelection_ || !scanned_ || scanPending_ || connected()) return false;
+    if (!automaticSelection_ || !scanned_ || scanPending_ || connected() || connecting()) return false;
     const auto count = std::count_if(devices_.begin(), devices_.end(), [](const auto& d) { return d.online; });
     if (!count) return false; // Keep discovering when the remote starts first.
     automaticSelection_ = false; // One startup attempt; never fight manual navigation.
@@ -32,18 +38,28 @@ bool TrainingApplication::tryAutomaticSelection() {
     return select(it->id);
 }
 void TrainingApplication::scan() {
-    if (connected() || scanPending_) return;
+    if (connected() || connecting() || scanPending_) return;
     const auto found=transport_.scan();
     scanPending_=transport_.scanInProgress();
     if (!scanPending_) refreshDiscovery(found);
     scannedAt_ = now_; scanned_ = true;
 }
 void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& found) {
+    for(auto it=seenDevices_.begin();it!=seenDevices_.end();) {
+        if(now_-it->second.at>=discoveryGraceMs) it=seenDevices_.erase(it);else ++it;
+    }
+    for (const auto& a : found) {
+        if (std::find(a.services.begin(), a.services.end(), VoltraGattProfile::service) == a.services.end()) continue;
+        if(seenDevices_.size()>=maximumDiscoveredDevices && !seenDevices_.count(a.id)) continue;
+        auto& seen=seenDevices_[a.id];seen.device.id=a.id;seen.device.online=true;seen.at=now_;
+        if(!a.name.empty()) seen.device.name=a.name;
+        if(seen.device.name.empty()) seen.device.name="VOLTRA";
+    }
     devices_ = knownDevices_;
     for(const auto& d : recent_) if(std::none_of(devices_.begin(),devices_.end(),[&](const auto& known){return known.id == d.id;})) devices_.push_back(d);
     for (auto& d : devices_) d.online = false;
-    for (const auto& a : found) {
-        if (std::find(a.services.begin(), a.services.end(), VoltraGattProfile::service) == a.services.end()) continue;
+    for (const auto& pair : seenDevices_) {
+        const auto& a=pair.second.device;
         auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == a.id; });
         if (it == devices_.end()) devices_.push_back({a.id, a.name.empty() ? "VOLTRA" : a.name, true, {}});
         else { if(!a.name.empty()) it->name = a.name; it->online = true; }
@@ -56,6 +72,7 @@ bool TrainingApplication::select(const DeviceId& id) {
     leave();
     if (!controller_.connect(chosen.id)) { message_ = "Connection unavailable"; scan(); return false; }
     selected_ = chosen.id; name_ = chosen.name;
+    if(connecting()) message_="Connecting to "+name_+"...";
     connectingDevice_ = chosen;
     if (session_.accepted()) rememberConnection();
     return true;
@@ -74,7 +91,7 @@ void TrainingApplication::rememberConnection() {
     scan();
 }
 void TrainingApplication::leave(bool preserveFailure) {
-    const std::string failure = preserveFailure ? (session_.status().empty() ? "Connection lost" : session_.status()) : "";
+    const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
     automaticSelection_ = false;
     scanned_ = scanPending_ = false;
     connectingDevice_.reset();
@@ -273,8 +290,14 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
+    if(connecting()) return;
+    if(connectingDevice_ && !connected()) {
+        const std::string feedback=controller_.feedback();
+        message_=feedback=="Disconnected" && !session_.status().empty() ? session_.status() : feedback;
+    }
+    else if(connected() && message_.compare(0,14,"Connecting to ")==0) message_.clear();
     if (scanPending_ && !transport_.scanInProgress()) { scanPending_=false; refreshDiscovery(transport_.discovered()); }
-    if (!scanned_ || now - scannedAt_ >= 5000) scan();
+    if (!scanned_ || now - scannedAt_ >= discoveryIntervalMs) scan();
     if (!connected()) { connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return; }
     if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();

@@ -774,7 +774,7 @@ void UiController::edited() {
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     app_.tick(now);
-    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected()) { app_.leave(true); navigate(Screen::Devices); }
+    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting()) { app_.leave(true); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {
         if (!touchDown_ && !modeGestureUntil_ && !rebuild_ && app_.tryAutomaticSelection()) navigate(Screen::Main);
         std::string signature;

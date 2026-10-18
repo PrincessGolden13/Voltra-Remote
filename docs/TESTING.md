@@ -1,9 +1,9 @@
 # Validation status and pending tests
 
 October 18: see [physical discovery observations](LIVE_CONNECTION_2026_10_18.md).
-The scan-response retention fix builds and is flashed. Real radio scans work;
-VOLTRA discovery, acceptance and training are not yet established. Queue the
-scan aggregation/concurrency cases listed there; no new test code was added.
+Discovery, GATT subscriptions, acceptance after user approval and read-only state
+are physically established with the local diagnostic profile at ten feet.
+Training is unvalidated. Queue the cases below; no new test code was added.
 
 October 17 Normal-mode work: [implementation and blockers](NORMAL_MODE_2026_10_17.md).
 New test code remains deferred. Queue future cases for zero/one/multiple completed
@@ -11,7 +11,7 @@ scans, late power-on, accepted-only persistence, failed GATT/approval, stale sca
 refresh during a hold, forget/persistence failure, retained offline devices,
 mode gesture versus page swipes, simulator-to-normal reboot selection, per-image
 link isolation, notification overflow/generation, truncated read groups and
-unknown Twin/readiness. Physical connection and training are not validated.
+unknown Twin/readiness. Physical training is not validated.
 Also cover immediate invalidation on unknown units/motor/workout mode, unload
 from that state, and monotonic report revisions after valid state returns.
 
@@ -23,6 +23,23 @@ or physical-resistance validation.
 The explicit instruction under REQUIRED TEST CASES defers new test code for now.
 Existing upstream validators are run; no artificial coverage or passing CTest
 placeholder is supplied. This is not a tested production control implementation.
+
+## October 18 connection checks
+
+Normal, isolated Simulator and Windows native builds pass after the asynchronous
+connection change; existing offline renders open Devices/Main/Twin successfully.
+Physical captures reproduce error 574 and show a later successful radio link/MTU
+negotiation. They exposed cached-only GATT enumeration; the correction now reaches
+three services, three subscriptions, acceptance and live state. No autonomous
+resistance command or new test code was used. Queue fresh empty GATT caches, bounded 574-only
+retries, cancellation during connect/backoff/MTU, late callbacks before a different
+target, no pre-subscription bootstrap, failed service/subscription feedback, and
+missed-scan availability grace versus unchanged machine-state freshness. Also
+cover missing CCCDs, independent three-channel fragmentation, bootstrap timing
+after blocking discovery/write, approved versus refused/expired sessions, 0/1
+motor readbacks versus 4/5 commands, core-read prioritization, and module tags
+that must not be interpreted as installed app firmware. Local identity/profile
+comparison is a physical diagnostic, not a validated provisioning algorithm.
 
 ## Existing upstream results
 

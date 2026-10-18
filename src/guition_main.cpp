@@ -10,6 +10,9 @@
 #include "ble/NimBleTransport.h"
 #include "protocol/PhysicalSession.h"
 #include <esp_system.h>
+#if __has_include("LocalConfig.h")
+#include "LocalConfig.h" // Ignored, local-only diagnostic identities; never Git.
+#endif
 #endif
 namespace {
 voltra::guition::Board board;
@@ -45,9 +48,14 @@ void setup() {
     if(!board.begin()) { Serial.println("Hardware init failed; no radio or machine commands");return; }
     if(!bootMode.begin()) { Serial.println("Normal boot target unavailable; mode switching cannot be validated"); }
 #ifndef VOLTRA_SIMULATOR
-    transport.onDiagnostic([](const std::string& message){Serial.println(message.c_str());});
+    transport.onDiagnostic([](const std::string& message){Serial.printf("%llu %s\n",static_cast<unsigned long long>(board.nowMs()),message.c_str());});
     if(!transport.begin()) {Serial.println("BLE init failed");return;}
+#if defined(VOLTRA_LOCAL_BOOTSTRAP_PROFILE) && VOLTRA_LOCAL_BOOTSTRAP_PROFILE
+    Serial.println("Local bootstrap diagnostic profile; physical loading unavailable");
+    physicalSession=new voltra::PhysicalSession(transport,voltra::local::finishIdentity,voltra::local::helloIdentity);
+#else
     physicalSession=new voltra::PhysicalSession(transport,clientIdentity());
+#endif
     auto& session=*physicalSession;
 #endif
     controller=new voltra::VoltraController(transport,{},&session);
@@ -86,8 +94,11 @@ void loop() {
     if(now-diagnosticsAt>=1000) {
         diagnosticsAt=now;
         size_t online=0;for(const auto& d:application->devices()) if(d.online) ++online;
+        const auto report=application->report();
         const auto summary=std::string("VOLTRA session: online=")+std::to_string(online)+
             " connected="+std::to_string(application->connected())+" accepted="+std::to_string(physicalSession->accepted())+
+            " fresh="+std::to_string(application->fresh())+" weightTicks="+std::to_string(report.revision ? report.settings.weight : -1)+
+            " loaded="+std::to_string(report.revision ? int(report.loaded) : -1)+
             " status="+application->message();
         if(summary!=previousDiagnostics) {Serial.println(summary.c_str());previousDiagnostics=summary;}
     }

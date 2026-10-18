@@ -15,6 +15,7 @@ public:
     VoltraController(const VoltraController&) = delete;
     VoltraController& operator=(const VoltraController&) = delete;
     bool connect(const DeviceId&);
+    bool connecting() const { return connecting_; }
     void disconnect();
     void tick(uint64_t nowMs);
     void adjustDraft(int delta);
@@ -37,6 +38,8 @@ private:
     uint64_t now_ = 0;
     ControlSession* controls_ = nullptr;
     std::optional<bool> pendingLoad_;
+    bool connecting_ = false, linkUp_ = false;
+    bool finishConnection();
     uint64_t sentAt_ = 0;
     static constexpr uint64_t commandTimeoutMs = 3000;
     const char* feedback_ = "Turn wheel to adjust weight";

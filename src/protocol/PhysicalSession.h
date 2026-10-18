@@ -11,7 +11,8 @@
 namespace voltra {
 class PhysicalSession final : public ControlSession {
 public:
-    PhysicalSession(BleTransport&,const std::array<uint8_t,16>& clientIdentity);
+    PhysicalSession(BleTransport&,const std::array<uint8_t,16>& clientIdentity,
+                    std::optional<std::array<uint8_t,6>> helloIdentity = {});
     void connectionChanged(bool) override;
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
@@ -27,17 +28,21 @@ public:
 private:
     BleTransport& transport_;
     std::array<uint8_t,16> identity_;
-    FrameParser parser_;
+    std::array<uint8_t,6> helloIdentity_{};
+    std::array<FrameParser,3> parsers_; // Command, transport and telemetry response.
+    std::array<uint64_t,3> fragmentAt_{};
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::deque<std::pair<uint8_t,uint16_t>> seen_;
     TrainingReport report_;
     std::string status_,firmware_;
-    uint64_t now_=0,connectedAt_=0,lastWrite_=0,fragmentAt_=0,reportRevision_=0;
+    uint64_t now_=0,connectedAt_=0,lastWrite_=0,reportRevision_=0;
     uint16_t sequence_=0;
-    size_t bootstrap_=0,readGroup_=0;
+    size_t bootstrap_=0,readGroup_=0,backgroundRead_=0,infoRead_=0;
     unsigned diagnosticFrames_=0;
+    unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
+    bool bootstrapWriteJustCompleted_=false;
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;
     std::optional<int64_t> fresh(uint16_t) const;

@@ -13,6 +13,8 @@ public:
     // Asynchronous adapters expose only a completed scan window to the app.
     virtual bool scanInProgress() const { return false; }
     virtual std::vector<Advertisement> discovered() const { return {}; }
+    // Accepted may mean queued. onConnection(true/false) delivers link outcome;
+    // neither acceptance nor a link establishes a VOLTRA protocol session.
     virtual TransportResult connect(const DeviceId&) = 0;
     virtual void disconnect() = 0;
     virtual std::vector<std::string> discoverServices() = 0;
