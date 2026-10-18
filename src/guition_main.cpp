@@ -69,7 +69,7 @@ void setup() {
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");
 #else
-    Serial.println("Shared UI started. Connection diagnostics; physical loading unavailable. Serial: d=devices");
+    Serial.println("Shared UI started. Physical loading unavailable. Serial: d=devices, c=connect single available");
 #endif
 }
 void loop() {
@@ -83,6 +83,13 @@ void loop() {
 #ifdef VOLTRA_SIMULATOR
         if(c=='r') transport.completeRep();if(c=='h') transport.setHeld(true);if(c=='m') transport.setHeld(false);
         if(c=='u') application->unload();
+#else
+        // Development connection aid only. It never changes weight or loads.
+        if(c=='c' && !application->connected() && !application->connecting()) {
+            size_t online=0;voltra::DeviceId target;
+            for(const auto& d:application->devices()) if(d.online) {++online;target=d.id;}
+            if(online==1 && application->select(target)) ui->navigate(voltra::Screen::Main);
+        }
 #endif
         if(c=='d') {application->leave();ui->navigate(voltra::Screen::Devices);}
     }

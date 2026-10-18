@@ -13,13 +13,22 @@ training functionality is **not complete**. Discovery, GATT connection, protocol
 bootstrap and read-only observations are implemented. A physical VOLTRA became
 available on October 18; validation is in progress as recorded above.
 
-Normal firmware currently permits an explicit unload request only. Weight edits,
-loading, Magic/EO changes, Auto Load and dropsets remain disabled. Current public
+Normal firmware permits explicit unload and now implements explicit unloaded LB
+weight edits for the observed standalone profile. The user confirmed both screens
+changed; logs record returned weights 29, 32, 33, 37, 43 and 45 while unloaded.
+Loading, Magic/EO changes, Auto Load triggering
+and dropsets remain disabled. Current public
 sources do not establish this project's required Twin role/peer-health semantics,
 all safety predicates, Mountain/IC selectors, percentage/absolute selectors,
 fractional-KG command encoding, or RP hold telemetry. Do not describe a successful
 build or connection as a working training release. The session deliberately
 returns Unsupported for those operations until a supported physical profile exists.
+
+The LB write path requires accepted connection, fresh unloaded motor state, Weight
+Training, pounds, current standalone reports, limit, modifiers, child-lock off and
+OTA inactive. It writes only base parameter 16006, preserves modifiers and Auto
+Load preferences, and waits for base-weight readback. No replay on reconnect or
+load command is added. KG encoding and automatic modifier trimming remain blocked.
 
 ## Remote behavior
 
@@ -93,9 +102,12 @@ The catalog gives 21268 (EP_MAX_ALLOWED_FORCE) as uint16 LB. It is a single-unit
 candidate, observed as 230 on the user's 2.x unit, not proof of a combined Twin
 ceiling. Unit enum 0=LB/1=KG is source evidence; KG has not been physically checked.
 EP1.0 appeared on this 2.x device and is not used as the app firmware version.
-Current Twin status 20844
-has no verified enum/peer-health mapping here, so `twinKnown` stays false and the
-effective limit stays unavailable. The shared resolver still prefers fresh scoped
+Current Twin status 20844 and remote status 21023 both report zero in the user's
+confirmed standalone state. The narrow profile recognizes only that fresh zero/zero
+state, never active roles or peer readiness. Optional paired endpoint 21605 is
+omitted by this firmware; if supplied on another device, a nonzero or stale report
+also blocks the standalone profile. This is not a complete Twin decoder. The
+shared resolver still prefers fresh scoped
 reports, then unit-specific firmware fallbacks: **2.x 230 LB / 104 KG single,
 460 LB / inferred 208 KG Twin**. See [weight evidence](WEIGHT_LIMITS.md).
 

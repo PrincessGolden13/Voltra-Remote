@@ -9,6 +9,7 @@ namespace voltra {
 namespace {
 constexpr uint16_t base=0x3e86, chains=0x3e87, eccentric=0x3e88, motor=0x3e89, workout=0x4fb0;
 constexpr uint16_t position=0x3e82, offset=0x506a, unit=20590, twin=20844, maxForce=21268;
+constexpr uint16_t remoteCoworker=21023, pairedDevice=21605;
 // HA/Android pace bootstrap at 90 ms. Their captured VOLTRA connect-request
 // deadline is ~5 s from radio connection; a 3 s post-HELLO wait plus full GATT
 // discovery exceeded it on this remote. Keep every bootstrap step nonblocking.
@@ -24,6 +25,7 @@ int width(uint16_t id) {
     case 0x5362: case 0x53b7: case 0x5011: case 0x5467:
     case 21002: case 21003: case 21004: return 2; // BLE interval reports, Android capture.
     case 20590: case 21023: case 0x5183: case 0x5165: case 0x5355: case 0x53cf: return 4;
+    case pairedDevice: return 8;
     default:return 0;
     }
 }
@@ -50,6 +52,16 @@ std::optional<int64_t> PhysicalSession::fresh(uint16_t id) const {
     const auto it=values_.find(id);
     if(it==values_.end() || now_<it->second.at || now_-it->second.at>2000) return {};
     return it->second.value;
+}
+bool PhysicalSession::standalone() const {
+    // October 18: the user confirmed standalone while BOTH current coworker
+    // status reports were zero. Missing/stale/nonzero current reports fail closed.
+    // This firmware omits the newer paired-EP field. If a device does report it,
+    // require its fresh absence too; never let expiry erase a known relationship.
+    // No historical role, active Twin routing or load authorization is inferred.
+    const auto paired=values_.find(pairedDevice);
+    return fresh(twin)==0 && fresh(remoteCoworker)==0 &&
+        (paired==values_.end() || fresh(pairedDevice)==0);
 }
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
     if(!connected_) return false;
@@ -128,8 +140,10 @@ void PhysicalSession::apply(const Frame& f) {
         if(at+2>p.size()) return; const auto id=u16(p,at);at+=2;
         const int bytes=width(id);
         if(!bytes || at+bytes>p.size()) { Serial.printf("VOLTRA unparsed parameter %u\n",unsigned(id));return; }
-        uint32_t value=0;for(int i=0;i<bytes;++i) value|=uint32_t(p[at++])<<(8*i);
-        decoded[id]=(id==eccentric || id==0x3e83) ? int16_t(value) : int64_t(value);
+        uint64_t value=0;for(int i=0;i<bytes;++i) value|=uint64_t(p[at++])<<(8*i);
+        // Only retain presence for a paired identifier; do not log/persist it.
+        decoded[id]=id==pairedDevice ? int64_t(value!=0) :
+            (id==eccentric || id==0x3e83) ? int16_t(value) : int64_t(value);
     }
     if(at!=p.size()) return;
     for(const auto& pair:decoded) {
@@ -137,7 +151,8 @@ void PhysicalSession::apply(const Frame& f) {
         const bool changed=previous==values_.end() || previous->second.value!=pair.second;
         values_[pair.first]={pair.second,now_};
         // Only normalized parameter values; never serial numbers or BLE identities.
-        if(changed) Serial.printf("VOLTRA param %u = %lld\n",unsigned(pair.first),static_cast<long long>(pair.second));
+        if(changed && pair.first==pairedDevice) Serial.printf("VOLTRA paired endpoint present = %u\n",unsigned(pair.second!=0));
+        else if(changed) Serial.printf("VOLTRA param %u = %lld\n",unsigned(pair.first),static_cast<long long>(pair.second));
         if(waitingWrite_ && waitingWrite_->first==pair.first && now_>=waitingAt_) {
             // Motor writes and readbacks have different enums on current devices:
             // explicit unload command 4 is confirmed by unloaded readback 0.
@@ -165,9 +180,9 @@ void PhysicalSession::updateReport() {
     report_.firmwareVersion=firmware_;
     report_.settings.weight=convertWeightUnits(int(*w),WeightUnit::Pounds,report_.unit);
     report_.loaded=*m==1 || *m==5 || *m==39;report_.autoLoadArmed=*m==38;
-    // The current public catalog names this register but does not define its
-    // enum/peer-health semantics. Preserve raw diagnostics; never guess readiness.
-    report_.twinKnown=false;report_.twin=false;
+    // This profile recognizes only verified absence, never active Twin roles,
+    // peer readiness, combined limits or routing.
+    report_.twinKnown=standalone();report_.twin=false;
     WeightLimitEvidence limits;limits.model="VOLTRA I";limits.firmware=firmware_;
     limits.twinKnown=report_.twinKnown;limits.twin=report_.twin;
     if(const auto max=fresh(maxForce)) limits.single.pounds=int(*max);
@@ -180,7 +195,8 @@ void PhysicalSession::updateReport() {
     report_.magicSupported={false,c.has_value(),false};report_.eccentricSupported=e && *e>=0;
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
     report_.revision=++reportRevision_;
-    if(!busy()) status_="Connected / read only";
+    if(!busy()) status_=standalone() && report_.unit==WeightUnit::Pounds ?
+        (report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Unloaded weight adjustment") : "Connected / read only";
 }
 TrainingReport PhysicalSession::trainingReport() const { return report_; }
 SessionReadiness PhysicalSession::readiness() const {
@@ -198,8 +214,29 @@ TransportResult PhysicalSession::setWeight(uint16_t pounds) {
     auto settings=report_.settings; settings.weight=convertWeightUnits(pounds,WeightUnit::Pounds,report_.unit);
     return setTraining(settings);
 }
-TransportResult PhysicalSession::setTraining(const TrainingSettings&) {
-    status_="Physical safety profile not validated";return TransportResult::Unsupported;
+TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
+    if(!connected_ || !accepted_) return TransportResult::Disconnected;
+    const auto m=fresh(motor),w=fresh(base),maximum=fresh(maxForce);
+    if(!standalone() || !m || (*m!=0 && *m!=4) || !w || !maximum ||
+       fresh(workout)!=1 || fresh(unit)!=0 || !report_.revision ||
+       fresh(20772)!=0 || fresh(21476)!=0 || !fresh(chains) || !fresh(eccentric) ||
+       now_-report_.receivedAtMs>2000 || (waitingWrite_ && waitingWrite_->first!=base)) {
+        status_="Weight adjustment unavailable";return TransportResult::Unsupported;
+    }
+    // Auto Load being enabled is a preference, not an armed load. No motor or
+    // Auto Load configuration is written here. Only explicit unloaded LB edits
+    // are supported until modifier selectors and fractional KG encoding are known.
+    const auto same=[](const Modifier& a,const Modifier& b) {
+        return a.enabled==b.enabled && a.value==b.value && a.percent==b.percent;
+    };
+    if(settings.magicMode!=report_.settings.magicMode ||
+       !same(settings.magic,report_.settings.magic) || !same(settings.eccentric,report_.settings.eccentric)) {
+        status_="Modifier adjustment unavailable";return TransportResult::Unsupported;
+    }
+    if(settings.weight<1 || settings.weight>*maximum || envelopeHundredths(settings)>*maximum*100) {
+        status_="Outside device limits";return TransportResult::Failed;
+    }
+    return writeParameter(base,settings.weight,2) ? TransportResult::Accepted : TransportResult::Failed;
 }
 TransportResult PhysicalSession::setLoaded(bool loaded) {
     if(!connected_) return TransportResult::Disconnected;
@@ -243,8 +280,8 @@ void PhysicalSession::tick(uint64_t now) {
         } else if(slot%2==0) read({base,motor,workout,unit});
         else switch(backgroundRead_++%3) {
         case 0:read({chains,eccentric});break;
-        case 1:read({position,offset});break;
-        case 2:read({twin,maxForce});break;
+        case 1:read({position,offset,20772,21476});break;
+        case 2:read({twin,remoteCoworker,pairedDevice,maxForce});break;
         }
     }
 }

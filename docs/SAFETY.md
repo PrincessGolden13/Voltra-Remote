@@ -1,9 +1,11 @@
 # Safety contract
 
 Current status: Normal firmware implements BLE connection, protocol bootstrap and
-read-only observations. Explicit unload is the only enabled physical control;
-all other training writes return Unsupported pending a validated safety/profile
-mapping. Physical compatibility is unverified. See [current status](NORMAL_MODE_2026_10_17.md).
+read-only observations. Explicit unload and guarded unloaded LB base-weight edits
+are implemented; load, modifier changes and Auto Load remain unsupported pending
+a validated profile. The user-driven unloaded LB dial test returned matching
+weights on both screens and retained motor state 0; no load test was performed.
+See [current status](NORMAL_MODE_2026_10_17.md).
 The separately linked simulator has no physical BLE implementation. Its loaded
 state comes only from synthetic reports, including responses to mock commands.
 
@@ -16,6 +18,9 @@ Mandatory invariants from PROJECT_REQUIREMENTS.md:
 - Unknown or stale required evidence fails closed. Observations have per-field
   timestamps. An unrelated notification cannot freshen a safety field.
 - Auto Load/Auto Unload configuration is always read-only, including bootstrap.
+  The user clarified on October 18 that enabled Auto Load is a preference; only
+  the explicit long press arms its delayed load. The enabled preference itself
+  must not block unloaded weight adjustment or be silently changed.
   The revised brief permits a one-shot Auto Load trigger from a long weight
   press. The new operation is semantic and currently implemented only by mocks.
   Existing device-side automatic behavior is not disabled by the remote; it
@@ -38,13 +43,16 @@ is not proof of device-side readiness or a substitute for BLE state checks.
 
 ## Foundation limitations
 
-Physical load/settings/Auto Load requests remain unavailable. Explicit unload
+Physical load/modifier/Auto Load requests remain unavailable. Explicit unload
 uses the source-documented motor=4 write and requires a matching report; delivery
 and physical behavior remain unverified. Offline mock commands support
 delayed confirmation, timeout and priority unload cancellation of pending weight
 or load intent. Tapping the bright weight requests unload; only confirmation
 darkens it. Unknown state is explicitly amber. No separate STOP button is used.
-Full physical safety predicates, command ordering and reconnect race handling
+Unloaded LB base edits require fresh standalone/current mode/motor/unit/limit/
+modifier/lock/OTA evidence and an explicit input. They send no motor command and
+must be confirmed by a subsequent base-weight report. Full physical safety
+predicates, command ordering and reconnect race handling
 still require implementation and validation.
 No physical training use is supported by this foundation.
 

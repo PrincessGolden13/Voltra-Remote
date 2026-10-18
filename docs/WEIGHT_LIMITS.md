@@ -58,10 +58,10 @@ reports. Red and Black omit a max report to exercise firmware fallback through
 the same resolver. Names are presentation only; limits use version/model
 metadata. Black's 1.8 identity is synthetic, not a device observation.
 
-The physical ControlSession now performs connection/read-only diagnostics.
-Its unknown Twin mapping leaves effective limits and training writes disabled.
-It must supply fresh scoped capabilities and independently validate mode,
-readiness, routing and peer health before enabling training commands. See
+The physical ControlSession recognizes the observed standalone zero/zero current
+Twin-status profile and uses its reported 230 LB limit for unloaded LB edits.
+Active/unknown Twin states still have no effective limit or control routing.
+Physical loading, KG and modifier changes remain disabled. See
 [physical implementation status](NORMAL_MODE_2026_10_17.md).
 
 Recipes convert absolute values/stair steps to the nearest tick; envelope

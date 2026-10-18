@@ -41,6 +41,13 @@ motor readbacks versus 4/5 commands, core-read prioritization, and module tags
 that must not be interpreted as installed app firmware. Local identity/profile
 comparison is a physical diagnostic, not a validated provisioning algorithm.
 
+Unloaded LB write cases queued: explicit input only; fresh zero/zero standalone
+reports; nonzero/stale/unknown peer fields; optional paired field omitted versus
+previously present then stale; lock/OTA/unit/motor changes between inputs; modifier
+freshness; no settings or load on reconnect; accepted write without readback;
+readback mismatch/clamping; rapid explicit edits; unload priority; KG and modifier
+edits rejected. Auto Load enabled versus actually armed must remain distinct.
+
 ## Existing upstream results
 
 - PASS: Ryan `tools/check_packets.py`: 203 SDK packets, generated weight range

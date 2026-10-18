@@ -137,3 +137,15 @@ remain explicit future milestones.
   model, controller guards and pickers build successfully. Additional final
   editor renders cover percent/LB/KG and unsupported-percent profiles.
 - Physical network, update, haptic and BLE adapters remain unavailable.
+
+## October 18 unloaded weight path
+
+- Normal builds: 1,196,269 program bytes / 31,768 static RAM; binary 1,196,640 bytes.
+  Simulator remains isolated: 929,113 program bytes / 21,236 static RAM.
+- Flash/recovery/partition checks and esptool hashes passed.
+- Accepted session, fresh core state and the observed standalone profile are
+  physically confirmed. User-driven LB changes were returned by VOLTRA and
+  confirmed on both screens, with motor state still unloaded. Rapid-input
+  freshness and intermittent startup link failures remain tracked limitations.
+- No autonomous weight or load action was issued; no new test code was created.
+- Final images/manifests are retained in build/guition/2026-10-18-unloaded-weight.

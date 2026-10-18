@@ -125,3 +125,39 @@ reconnection did not require another approval. Rotary weight changes still did
 nothing because PhysicalSession::setTraining remains Unsupported. Subsequent
 boots still encountered intermittent 574 before GATT, so reliable startup is not
 yet established. Final readback image is preserved in build/guition/2026-10-18-readback.
+
+## Unloaded LB weight follow-up
+
+The user confirmed the device is unloaded and standalone, with Auto Load enabled
+as a preference (not armed). That preference is not a reason to block ordinary
+unloaded edits and is never changed by this remote.
+
+Fresh current fields 20844 and 21023 both returned zero. The newer paired-EP field
+21605 was omitted from a successful read response; it is not a required supported
+field on this device. The narrow observed standalone profile accepts current
+zero/zero, with stale/nonzero/unknown current reports blocked. If a paired endpoint
+is reported, require fresh absence too; do not let its expiry erase a relationship.
+Active Twin roles, lost-peer transitions and other firmware are still unverified;
+physical loading remains disabled.
+
+The new explicit-input path writes only unloaded LB base weight (16006, uint16).
+It requires fresh motor/mode/units/maximum/modifier/lock/OTA evidence, preserves
+modifiers and Auto Load settings, and confirms only from a subsequent weight report.
+KG, modifier edits/automatic trimming, load and Auto Load trigger are unsupported.
+A serial c command connects exactly one available device for debugging; it cannot
+write resistance. Bootstrap/reconnect never restores weight or load intent.
+
+CONFIRMED after flashing: automatic link on attempt two, remembered acceptance
+without a prompt, sustained fresh 30 LB/unloaded readback, all required standalone
+fields and the "Unloaded weight adjustment" status. The user then turned the dial
+and confirmed both screens changed. Captured base readbacks: 30 -> 29 -> 32 -> 33
+-> 37 -> 43 -> 45, all with unloaded state 0. No resistance was loaded, and no
+Auto Load preference was changed. Images and SHA256 manifest:
+build/guition/2026-10-18-unloaded-weight.
+
+Remaining observed issue: a rapid input burst briefly showed "Device state
+unavailable" while a required background field expired; later inputs and fresh
+reports recovered. Freshness checks were not relaxed. Poll scheduling/input
+coalescing needs further work for continuous fast rotation. Unsolicited state
+packets containing uncatalogued 21007 are rejected atomically; explicit small
+read groups still provide weight confirmation. Do not claim perfect responsiveness.

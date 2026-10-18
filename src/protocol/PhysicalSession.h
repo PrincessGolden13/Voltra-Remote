@@ -46,6 +46,7 @@ private:
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;
     std::optional<int64_t> fresh(uint16_t) const;
+    bool standalone() const;
     bool send(uint8_t,const Bytes&,uint8_t sender=0xaa,uint8_t receiver=0x10,uint8_t type=0x04);
     bool read(std::initializer_list<uint16_t>);
     bool writeParameter(uint16_t,int,int);

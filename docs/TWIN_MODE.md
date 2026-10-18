@@ -46,9 +46,16 @@ peer lock/battery bit layout, separate freshness, command routing, total-weight
 confirmation, failure behavior, and an explicit combined maximum. No reviewed
 capture establishes the example 300 lb combined write or its distribution.
 
-The foundation therefore retains raw 0x521F observations with timestamps.
-`TwinState.active` remains Unknown. No synthesized peer-ready fields or
-combined-limit arithmetic is implemented.
+October 18: the user confirmed standalone/unloaded while 20844 and 21023 both
+reported zero. The limited unloaded-LB profile recognizes that fresh zero/zero
+combination; all nonzero/unknown/stale current values block it. Optional paired
+endpoint 21605 was omitted by this firmware. If reported elsewhere, its fresh
+absence is additionally required. Historical role is never substituted.
+
+This is CONFIRMED for the observed standalone state, INFERRED as a narrow profile;
+transitions/lost-peer and other firmware remain UNVERIFIED. Physical loading stays
+disabled. No active-Twin roles, synthesized peer readiness, combined limits or
+command distribution are implemented. This does not establish Twin support.
 
 ## Validation needed
 

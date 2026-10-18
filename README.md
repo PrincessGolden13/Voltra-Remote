@@ -4,9 +4,10 @@ Standalone round touchscreen/rotary Weight Training remote, with a shared LVGL
 application and offline Windows and macOS simulators.
 
 The Guition remote now has Normal Bluetooth firmware and a separate offline
-Simulator image. **Real training control is not ready:** connection/read-only
-diagnostics and explicit unload are implemented, but physical compatibility and
-the remaining control mappings await validation. Desktop devices are synthetic.
+Simulator image. **Full real training control is not ready:** connection and
+unloaded LB dial changes are physically confirmed with the local diagnostic profile;
+explicit unload is implemented. Loading, modifier/KG/Twin control and connection
+robustness remain incomplete. Desktop devices are synthetic.
 See [current implementation and blockers](docs/NORMAL_MODE_2026_10_17.md).
 
 The remote boots Normal. On Devices, press the rotary button, then turn left
@@ -109,8 +110,8 @@ Build Windows with `tools/Build-Desktop.ps1`; build Mac with
 [hardware](docs/HARDWARE_COMPATIBILITY.md),
 [safety](docs/SAFETY.md) and [Twin evidence](docs/TWIN_MODE.md).
 
-Next physical step: validate connection/approval and read-only reports with an
-unloaded VOLTRA. The user has deferred that observation until later.
+October 18 physical results and remaining work are recorded in the
+[connection and weight audit](docs/LIVE_CONNECTION_2026_10_18.md).
 
 ### October 11 simulator profiles
 

@@ -1,3 +1,8 @@
+> October 18 clarification: Auto Load **enabled in settings** is distinct from
+> Auto Load **armed by the explicit long press**. Enabling that preference must
+> not block ordinary unloaded weight adjustment. Leave its configuration alone;
+> determine active/armed state from the machine's current reports.
+>
 > October 17 Normal-mode request supersedes the earlier offline-only milestone:
 > boot Normal, hide Simulator behind rotary press + three left clicks, auto-connect
 > one discovered VOLTRA, retain remembered devices, hold/confirm to forget, and
