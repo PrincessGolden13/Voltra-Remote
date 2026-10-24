@@ -24,6 +24,7 @@ struct TrainingReport {
     bool percentageSupported = false, modifierUnitsSelectable = false;
     bool sharedModifierUnits = false; // Device selects one interpretation for both accessories.
     int maxWeight = 0; // Effective single/Twin ceiling in display ticks, resolved by profile.
+    int minWeight = 0; // Profile's effective base floor in display ticks; zero is unknown.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
     bool twinKnown = false, twin = false, loaded = false, autoLoadArmed = false;
@@ -65,10 +66,14 @@ inline int baseMaximum(const TrainingReport& r) {
 }
 inline int nextStairWeight(const TrainingReport& r,int step) {
     const int ceiling = baseMaximum(r);
-    if (ceiling < 1) return r.settings.weight;
-    const int target = std::clamp(r.settings.weight + step,1,ceiling);
+    if (r.minWeight < 1 || ceiling < r.minWeight) return r.settings.weight;
+    const int target = std::clamp(r.settings.weight + step,r.minWeight,ceiling);
     if ((step > 0 && target < r.settings.weight) || (step < 0 && target > r.settings.weight)) return r.settings.weight;
     return target;
+}
+inline int nextRestPauseWeight(const TrainingReport& r,int percent) {
+    if(r.minWeight < 1 || r.settings.weight <= r.minWeight) return r.settings.weight;
+    return std::max(r.minWeight,r.settings.weight*(100-std::clamp(percent,0,80))/100);
 }
 inline bool modifierUnitsAllowed(const TrainingReport& r, const TrainingSettings& s) {
     if(r.sharedModifierUnits && s.magic.percent!=s.eccentric.percent) return false;

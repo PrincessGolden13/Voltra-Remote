@@ -199,6 +199,24 @@ the travel direction; device minimum/maximum clamps remain authoritative. Fine
 precision remains 1 LB / 0.5 KG / 1%, and absolute coarse grids use whole units.
 The prior 120 ms/three-detent ramp and 160 ms rate filter remain tunable policy.
 
+## Selected-weight display and minimum-weight follow-up
+
+CONFIRMED (user and capture): ordinary 10 LB reps varied around 9--11 LB on the
+remote because it displayed measured force (AA81 samples around 94--109 tenths
+LB), while Black kept its selected 10 LB visible. The user's latest requirement
+supersedes the intermediate active-phase force-display rule above. Live now
+always uses the fresh confirmed selected base, independent of force availability,
+rep phase or whether drops are armed. Raw force remains available to RP logic.
+
+CONFIRMED (user and capture): consecutive Stairs now works from 10 -> 8 -> 6.
+The subsequent 4 LB request was clamped by Black to 5 LB. The remote waited for
+4 and eventually showed "Rep before confirmation; drops stopped". The official
+minimum is 5 LB / 2 KG; see WEIGHT_LIMITS.md for evidence and KG/Twin boundaries.
+Targets and previews now respect a profile minimum, so the final reduction is
+explicitly 6 -> 5, can receive matching confirmation, and displays MIN 5 LB
+thereafter without further reduction writes. This applies to RP and manual
+base selection too. Physical observation of the new floor/display is pending.
+
 Future regression cases (new tests deferred): selector rejection/reversion;
 EO across unit conversion; mixed presets; duplicate/reset/gapped reps; first
 motion and expiry; slow drift; one drop per hold; movement rearm; busy trigger;

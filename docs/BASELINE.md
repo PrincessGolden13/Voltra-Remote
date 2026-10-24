@@ -284,3 +284,24 @@ remain explicit future milestones.
   bytes, SHA256 319E6BF284AECC126FC41BF7F17799DE5EA5EA7CE326D55DEDBD976FD650E5BA.
   Simulator binary: 937,584 bytes,
   SHA256 126D1386849029725A0D264CEEA47C96BF89C0F4C6B3404A2F0968C2CDEBEBF8.
+
+## October 24 selected-weight display and device minimum
+
+- User/capture confirm consecutive drops 10 -> 8 -> 6 LB. The 4 LB request
+  returned 5 LB, consistent with the official minimum; the old code waited for
+  4 and stopped at the next completed rep. Profile minimums now bound manual
+  base edits, Stairs/RP targets and previews. At Black's 5 LB floor, no further
+  descending write is queued and Live shows MIN 5 LB.
+- Latest user requirement: Live always displays fresh confirmed selected base,
+  including active reps. Measured-force noise no longer changes that number.
+  Physical observation of these new changes is pending; KG wire and real Twin
+  minimums remain outside the confirmed Black LB evidence.
+- Native, Normal and isolated Simulator builds pass. Existing packet/upstream
+  validators pass (203 SDK / 593 modifier packets). Existing 360 px renders
+  inspected: ordinary 10 LB Live, Stairs 6 / NEXT 5, Stairs MIN 5 LB, and RP
+  MIN 2 KG. These are presentation checks, not physical automation tests; no
+  new test code was created.
+- Snapshot: build/guition/2026-10-24-base-display-floor. Normal binary: 1,217,760
+  bytes, SHA256 7C561561E56585244E549509B3AC641ECBDB929598FDB26612F8E69074A0EAC5.
+  Simulator binary: 940,176 bytes,
+  SHA256 AE88FB0FAE288B38EB435F4FC625D5226A8AF56C3338065C6D01103534268273.

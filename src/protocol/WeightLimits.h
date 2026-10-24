@@ -8,6 +8,14 @@ struct WeightLimit {
     int ticks = 0;
     WeightLimitSource source = WeightLimitSource::Unknown;
 };
+// Official VOLTRA I native-unit minimum, confirmed on Black in LB (Oct 24:
+// request 4 -> device returned 5). KG wire behavior still needs observation.
+// No validated device-published base-minimum register is mapped yet. A scoped
+// device capability must take precedence when one is established. Not Twin.
+inline int voltraISingleMinimum(WeightUnit unit) {
+    constexpr int minimumPounds=5, minimumHalfKilograms=4; // 2 KG, not LB conversion.
+    return unit==WeightUnit::Pounds ? minimumPounds : minimumHalfKilograms;
+}
 struct UnitWeightLimits {
     std::optional<int> pounds, halfKilograms;
     std::optional<int> forUnit(WeightUnit unit) const {

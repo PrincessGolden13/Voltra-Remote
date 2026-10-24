@@ -15,6 +15,8 @@ MockTransport::MockTransport() {
         r.magicSupported = {true,true,i != 4};
         r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
         r.twinKnown = true; r.twin = i == 1 || i == 2;
+        // Explicit synthetic combined floor, not a physical Twin inference.
+        r.minWeight = r.twin ? 10 : voltraISingleMinimum(r.unit);
         r.twinPeerName = i == 1 ? names[2] : i == 2 ? names[1] : "";
         r.telemetryValid = true; r.repsStarted = false;
         r.settings.magic.value = i == 4 ? 10 : 50;
@@ -47,6 +49,7 @@ void MockTransport::previewUnit(WeightUnit unit) {
     for (auto* m : {&r.settings.magic, &r.settings.eccentric})
         if (!m->percent) m->value = convertWeightUnits(m->value, r.unit, unit);
     r.unit = unit; r.maxWeight = resolveWeightLimit(device.limits, unit).ticks;
+    r.minWeight = r.twin ? (unit==WeightUnit::Pounds ? 10 : 8) : voltraISingleMinimum(unit);
     sent_ = false;
 }
 void MockTransport::previewWeight(int ticks) {
@@ -164,7 +167,7 @@ SessionReadiness MockTransport::readiness() const {
     if (r.validated && r.twinSafe) {
         r.capabilities.weightTraining = Knowledge::Yes;
         r.capabilities.effectiveMaxWeightLbs = uint16_t(resolveWeightLimit(devices_[active_].limits,WeightUnit::Pounds).ticks);
-        r.minWeightLbs = 0;
+        r.minWeightLbs = state.twin ? 10 : 5;
     }
     return r;
 }
@@ -172,7 +175,7 @@ bool MockTransport::consumeIgnored() { const bool ignored = ignoreNext_; ignoreN
 TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     const auto r = trainingReport();
     if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
-        s.weight < 1 || s.magic.value < 0 || s.eccentric.value < 0 ||
+        r.minWeight < 1 || s.weight < r.minWeight || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && (s.magic.value < 1 || !r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||
         (s.eccentric.enabled && (s.eccentric.value < 1 || !r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
         envelopeHundredths(s) > r.maxWeight*100) return TransportResult::Failed;
@@ -190,7 +193,8 @@ TransportResult MockTransport::setWeight(uint16_t pounds) {
 TransportResult MockTransport::setLoaded(bool loaded) {
     if (!connected_) return TransportResult::Disconnected;
     const auto r = readiness();
-    if (loaded && (!r.ready || !r.cableZero || !r.twinSafe || pendingSettings_ || pendingLoaded_ || trainingReport().settings.weight < 1))
+    if (loaded && (!r.ready || !r.cableZero || !r.twinSafe || pendingSettings_ || pendingLoaded_ ||
+        trainingReport().minWeight < 1 || trainingReport().settings.weight < trainingReport().minWeight))
         return TransportResult::Failed;
     if (consumeIgnored()) return TransportResult::Accepted;
     pendingSettings_.reset(); pendingAuto_ = false; pendingLoaded_ = loaded; dueMs_ = nowMs_ + confirmationDelayMs;
@@ -198,7 +202,8 @@ TransportResult MockTransport::setLoaded(bool loaded) {
 }
 TransportResult MockTransport::triggerAutoLoad() {
     if (!readiness().ready || !readiness().twinSafe || !trainingReport().autoLoadSupported ||
-        pendingSettings_ || pendingLoaded_ || trainingReport().settings.weight < 1) return TransportResult::Failed;
+        pendingSettings_ || pendingLoaded_ || trainingReport().minWeight < 1 ||
+        trainingReport().settings.weight < trainingReport().minWeight) return TransportResult::Failed;
     if (consumeIgnored()) return TransportResult::Accepted;
     pendingAuto_ = true; dueMs_ = nowMs_ + confirmationDelayMs; return TransportResult::Accepted;
 }

@@ -210,3 +210,12 @@ set-close while workout remains active -> base=8 -> set 13 moving rep 0 ->
 settled readback -> set 13 completed rep 1 -> request 6 LB. Also cover readback
 before the new start, readback with the next completed rep in one controller
 tick, failed/mismatched/late confirmation, and no quota reset for RP segments.
+
+Latest October 24 cases (new test code deferred): Live remains 10 LB while
+sensor force changes 9/10/11, and while force or rep-phase reports are missing
+but core state stays fresh. Stale/disconnected core state still shows unknown.
+Stairs 10 -> 8 -> 6 -> 5 must confirm the final 5, then issue no more writes;
+NEXT and MIN labels must agree. RP floors, signed ascending Stairs, manual
+rotary limits, below-floor incoming state, invalid/unknown minimum, presets with
+insufficient base headroom, and explicit mock Twin/native-KG minima are queued.
+Never reinterpret an unexpected mismatch as confirmation or automatic unloading.

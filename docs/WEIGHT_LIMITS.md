@@ -78,4 +78,32 @@ alone does not establish Overdrive entitlement or its configured ceiling.
 Recipes convert absolute values/stair steps to the nearest tick; envelope
 ceilings and RP reductions round down. Integer-KG recipes migrate once to half-KG
 ticks (desktop format 3, board NVS format 2). Zero-valued legacy modifiers become
-disabled. Default stairs remain -2 KG (-4 ticks); reduction floor is one tick.
+disabled. Default stairs remain -2 KG (-4 ticks).
+
+## October 24 minimum-weight correction
+
+CONFIRMED (Black capture and user): consecutive Stairs requests produced
+10 -> 8 -> 6 LB. The next target was 4 LB; register 16006 instead returned 5,
+and the remote stopped at the next completed rep because 4 never confirmed.
+This is consistent with the official single-unit minimum of 5 LB / 2 KG:
+[Beyond Power specifications](https://www.beyond-power.com/products/voltra).
+The older advertised maximum on that page does not override Black's reported
+230 LB maximum or later firmware/Overdrive evidence above.
+
+TrainingReport now carries an effective base minimum in display ticks, separate
+from overload amounts and the maximum. Zero means unknown and disables settings/
+drops. The standalone physical profile uses 5 LB / 4 half-KG ticks; the KG native
+minimum is source-backed but its wire mapping remains UNVERIFIED on Black.
+The control adapter's existing physical load-readiness gate is unchanged.
+No validated published base-minimum register has been mapped: Android catalog
+entries 21335 (MC_MIN_FORCE_01LBS) and 20746 (MC_WEIGHT_MIN_LIMIT_LBS) are not
+assumed to mean the selectable Weight Training floor. A validated, fresh,
+scoped device capability should replace this profile value when established.
+
+Rotary base edits, Stairs/RP targets and NEXT previews share the minimum.
+Descending Stairs reaches 5 from 6, and stays there with MIN 5 LB shown; it does
+not repeatedly request 4, retry writes, infer success from a mismatched report,
+raise an already-below-floor report, or unload automatically. Modifier minima
+remain one percent or one display tick. Synthetic singles use 5 LB / 2 KG;
+the paired simulator scenario explicitly uses 10 LB / 4 KG combined. Those
+synthetic combined values are not evidence for any physical Twin minimum.

@@ -113,7 +113,8 @@ bool TrainingApplication::fresh() const {
 }
 bool TrainingApplication::settingsAllowed() const {
     const auto r = report();
-    return fresh() && r.twinKnown && session_.readiness().validated && r.maxWeight > 0 && !r.autoLoadArmed && !requestedLoad_;
+    return fresh() && r.twinKnown && session_.readiness().validated &&
+        r.minWeight > 0 && r.maxWeight >= r.minWeight && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
     if (result != TransportResult::Accepted) { message_ = session_.status().empty() ? "Request not accepted" : session_.status(); return; }
@@ -122,7 +123,7 @@ void TrainingApplication::sent(TransportResult result) {
 }
 bool TrainingApplication::sendSettings(TrainingSettings s) {
     const auto r = report();
-    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < 1 || s.magic.value < 0 || s.eccentric.value < 0 ||
+    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < r.minWeight || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && s.magic.value == 0) || (s.eccentric.enabled && s.eccentric.value == 0) ||
         (s.magic.enabled && s.magic.value > modifierMaximum(r, s, true)) ||
         (s.eccentric.enabled && s.eccentric.value > modifierMaximum(r, s, false)) ||
@@ -138,7 +139,9 @@ void TrainingApplication::adjustWeight(int delta) {
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
     if(running_ || dropTarget_) stopDrops("Drops stopped for manual adjustment");
     auto s = settingsIntent_.value_or(r.settings);
-    s.weight = std::clamp(weightIntent_.value_or(s.weight) + delta, 1, r.loaded ? std::max(1,baseMaximum(r)) : r.maxWeight);
+    const int ceiling=r.loaded ? baseMaximum(r) : r.maxWeight;
+    if(ceiling<r.minWeight) {message_="Outside device limits";return;}
+    s.weight = std::clamp(weightIntent_.value_or(s.weight) + delta, r.minWeight, ceiling);
     // The original brief specifies reducing modifiers before capping the base.
     // Trim EO first, then magic; this is part of this explicit knob request.
     for (auto* m : {&s.eccentric, &s.magic}) {
@@ -158,8 +161,8 @@ void TrainingApplication::toggleWeight() {
         unload(); return;
     }
     const auto e = session_.readiness();
-    if (pending_ || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < 1) {
-        message_ = r.settings.weight == 0 ? "Set at least "+weightText(1,r.unit)+" "+unitName(r.unit) :
+    if (pending_ || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
+        message_ = r.minWeight>0 && r.settings.weight < r.minWeight ? "Set at least "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
             !e.reason.empty() ? e.reason : "Device not ready"; return;
     }
     const auto result = session_.setLoaded(true);
@@ -174,7 +177,7 @@ void TrainingApplication::unload() {
 }
 void TrainingApplication::autoLoad() {
     const auto r = report(); const auto e = session_.readiness();
-    if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < 1) {
+    if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; return;
     }
     const auto result = session_.triggerAutoLoad();
@@ -251,7 +254,7 @@ DropSettings TrainingApplication::drops() const {
 }
 bool TrainingApplication::applyDrops(DropSettings d) {
     if (!fresh() || selected_.empty()) { message_ = "Device state unavailable"; return false; }
-    if(d.enabled && (!report().liveWeightSupported || report().autoLoadArmed || pending())) {
+    if(d.enabled && (!report().liveWeightSupported || report().minWeight<1 || report().autoLoadArmed || pending())) {
         message_="Wait for weight controls before arming drops";return false;
     }
     if(dropTarget_) stopDrops("");
@@ -278,7 +281,7 @@ void TrainingApplication::stopDrops(const char* reason) {
 }
 void TrainingApplication::runDrops(const TrainingReport& r) {
     if(!drops().enabled) return;
-    if(!fresh() || !r.twinKnown || !r.liveWeightSupported || r.autoLoadArmed) {
+    if(!fresh() || !r.twinKnown || !r.liveWeightSupported || r.minWeight<1 || r.autoLoadArmed) {
         if(wasLoaded_ || dropTarget_) stopDrops("Drops stopped: state unavailable");
         return;
     }
@@ -357,7 +360,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     if (!trigger) return;
     if(pending()) {stopDrops("Busy at drop trigger; drops stopped");return;}
     auto s = r.settings;
-    s.weight = d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : std::max(1,s.weight * (100-d.percent)/100);
+    s.weight = d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : nextRestPauseWeight(r,d.percent);
     if (s.weight == r.settings.weight) return;
     if (sendSettings(s)) {dropTarget_ = s.weight;holdConsumed_=true;movementSeen_=false;}
     else stopDrops("Drop request refused; stopped");

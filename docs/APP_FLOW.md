@@ -1,4 +1,11 @@
 > October 24 feedback supersedes conflicting behavior below:
+> - Live always shows the machine-confirmed selected base weight, including
+>   during reps. Do not substitute measured cable tension. Raw force remains
+>   available internally for motion/hold logic.
+> - Respect the profile's base minimum for rotary edits, Stairs, RP and previews.
+>   Black clamps requests below 5 LB to 5. End descending drops at that floor
+>   with a MIN label, without another write or a confirmation error. This
+>   supersedes the earlier one-tick base floor; modifier minima remain 1/1%.
 > - Drops must distinguish an observed new set from a broken rep sequence even
 >   when the device remains loaded between sets. After a confirmed close/rest,
 >   a fresh moving zero-rep report for a different set establishes its baseline;
@@ -10,10 +17,6 @@
 > - Once a rotary stroke accelerates, retain 5/10-unit grid values through its
 >   slowdown. A 300 ms pause, reversal or new touch selection restores fine
 >   1 LB / 0.5 KG / 1% steps. Device limit clamps can end off the coarse grid.
-> - Between reps and after a set, show the machine-confirmed selected weight,
->   not its fluctuating idle cable tension. Normal Live shows measured force
->   only during a fresh machine-reported active rep phase. Keep raw force and
->   motion available to the controller; this is a presentation rule.
 > - The user confirmed first-rep tracking and post-set counts after restoring
 >   the default Weight Training telemetry subscription. Prefer a published
 >   elapsed rest value; if unavailable, the user now authorizes a remote clock

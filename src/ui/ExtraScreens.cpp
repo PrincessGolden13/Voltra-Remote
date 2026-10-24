@@ -149,15 +149,16 @@ void UiController::updateExtra() {
         const auto d=app_.drops();
         text(status_,r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
         const bool known=app_.fresh() && r.telemetryValid;
-        // Black publishes small changing cable-tension samples in idle phase,
-        // before its delayed set-close report. Match its selected-weight display
-        // there; measured force belongs only to a fresh active repetition.
-        const bool showForce=!d.enabled && r.loaded && r.setActive!=false && r.repActive==true && r.force.has_value();
-        largeValue(known ? weightText(showForce ? *r.force : r.settings.weight,r.unit) : "--");
+        // Match Black's selected-weight display throughout the repetition.
+        // Sensor tension remains telemetry, never this primary control number.
+        largeValue(app_.fresh() ? weightText(r.settings.weight,r.unit) : "--");
         text(start_,d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) : "");
-        int next=std::max(1,d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : r.settings.weight*(100-d.percent)/100);
+        int next=d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : nextRestPauseWeight(r,d.percent);
         if(d.mode == DropMode::RestPause && app_.dropsCompleted() >= d.drops) next=r.settings.weight;
-        text(nextWeight_,d.enabled ? "NEXT "+(known ? weightText(next,r.unit) : "--") : unitName(r.unit));
+        const bool atFloor=known && r.minWeight>0 && r.settings.weight<=r.minWeight &&
+            (d.mode==DropMode::Stairs ? d.step<0 : d.percent>0);
+        text(nextWeight_,d.enabled ? atFloor ? "MIN "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
+            "NEXT "+(known ? weightText(next,r.unit) : "--") : unitName(r.unit));
         text(liveValues_[0],known && r.setNumber ? std::to_string(*r.setNumber) : "");
         text(liveValues_[1],known ? std::to_string(r.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");

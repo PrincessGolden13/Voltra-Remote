@@ -356,6 +356,7 @@ void PhysicalSession::updateReport() {
     limits.twinKnown=report_.twinKnown;limits.twin=report_.twin;
     if(const auto max=fresh(maxForce)) limits.single.pounds=int(*max);
     report_.maxWeight=resolveWeightLimit(limits,report_.unit).ticks;
+    report_.minWeight=report_.twinKnown ? voltraISingleMinimum(report_.unit) : 0;
     report_.settings.magicMode=fresh(mountain)==1 ? MagicMode::Mountain :
         fresh(inverse)==1 ? MagicMode::InverseChains : MagicMode::Chains;
     const auto c=fresh(chains),e=fresh(eccentric);
@@ -448,7 +449,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     pounds.weight=convertWeightUnits(settings.weight,report_.unit,WeightUnit::Pounds);
     for(auto* m:{&pounds.magic,&pounds.eccentric}) if(!m->percent)
         m->value=convertWeightUnits(m->value,report_.unit,WeightUnit::Pounds);
-    if(settings.weight<1 || settings.weight>report_.maxWeight ||
+    if(report_.minWeight<1 || settings.weight<report_.minWeight || settings.weight>report_.maxWeight ||
        envelopeHundredths(settings)>report_.maxWeight*100 ||
        envelopeHundredths(pounds)>*fresh(maxForce)*100) {
         status_="Outside device limits";return TransportResult::Failed;
