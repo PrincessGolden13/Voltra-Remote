@@ -20,6 +20,7 @@ struct TrainingReport {
     std::string firmwareVersion, twinPeerName;
     std::optional<bool> repsStarted;
     std::optional<bool> setActive; // Actual device workout phase, not a local timer.
+    std::optional<bool> repActive; // Fresh device rep phase; idle tension is not selected weight.
     bool percentageSupported = false, modifierUnitsSelectable = false;
     bool sharedModifierUnits = false; // Device selects one interpretation for both accessories.
     int maxWeight = 0; // Effective single/Twin ceiling in display ticks, resolved by profile.

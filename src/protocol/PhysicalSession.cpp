@@ -88,7 +88,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
     closedSet_.reset();setEndRevision_=setEndedAt_=0;
     motionAt_=motionRevision_=repAt_=repRevision_=telemetryLogAt_=0;
-    motionPosition_=motionVelocity_=motionForce_=0;completedRep_=0;repSet_.reset();intentLoaded_=false;liveIntent_.reset();
+    motionPosition_=motionVelocity_=motionForce_=0;motionPhase_=0;completedRep_=0;repSet_.reset();intentLoaded_=false;liveIntent_.reset();
     workoutStatus_.reset();telemetryHeaders_=telemetrySetup_=0;
     telemetryTypes_={};rawTelemetryHeaders_=0;
     bootstrapWriteJustCompleted_=false;
@@ -309,7 +309,7 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
         const int rep=int(p[4])*256+p[5];
         if(rep>10000) return;
         deviceSet_=p[3];deviceRep_=rep;telemetryAt_=motionAt_=now_;++motionRevision_;
-        motionForce_=u16(p,11);motionPosition_=u16(p,13);motionVelocity_=int16_t(u16(p,15));
+        motionPhase_=p[2];motionForce_=u16(p,11);motionPosition_=u16(p,13);motionVelocity_=int16_t(u16(p,15));
         if(now_-telemetryLogAt_>=250) {
             telemetryLogAt_=now_;
             Serial.printf("VOLTRA motion phase=%u set=%d rep=%d posMm=%d speedMmS=%d forceTenthsLb=%d\n",
@@ -389,6 +389,7 @@ void PhysicalSession::updateReport() {
     report_.repAtMs=repAt_;report_.repRevision=repRevision_;
     report_.completedRep=completedRep_;report_.repSet=repSet_;
     const bool live=motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs;
+    report_.repActive=live ? std::optional<bool>(motionPhase_!=0) : std::optional<bool>{};
     report_.moving=live && std::abs(motionVelocity_)>stationarySpeedMmPerSec;
     report_.held=live && !report_.moving && fresh(offset) &&
         motionPosition_>=*fresh(offset)*10+heldExtensionMm && motionForce_>=heldForceTenthsLb;

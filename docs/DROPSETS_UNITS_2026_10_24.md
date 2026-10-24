@@ -124,6 +124,19 @@ Guition's board adapter has no implemented buzzer/haptic driver. Rest alerts
 currently wake the screen and show visual feedback for two seconds, once per
 rest period; the hardware hook remains available for a validated future driver.
 
+CONFIRMED (user, follow-up): the rest timer appears after a set and disappears
+when another starts. The user then observed 1–4 LB jumping on the remote while
+Black displayed the selected 10 LB. The capture shows actual idle AA81 samples:
+set 8 / rep 3, phase 0, position 148 mm, velocity about -1 to +2 mm/s, and force
+0–36 tenths LB. These are genuine sensor readings, not locally generated weights
+or a base-setting change. Live previously displayed every fresh force sample
+until the later set-close/status event switched to Main. Presentation now uses
+measured force only for fresh phases 1–3 in a loaded active set, and uses the
+confirmed base for idle/unknown/stale rep phase or absent force. Unknown core
+state still displays unavailable. Raw telemetry, drops, load commands and set/
+rep/rest tracking are unchanged. Physical display observation of this fix remains
+pending.
+
 CONFIRMED (Black, physical action): the user unloaded, released the mounting
 lock and secured it again. Register 20642 changed 2→1→2; the user then confirmed
 it was secured. Companion 21224 remained 6, as during successful manual loading.

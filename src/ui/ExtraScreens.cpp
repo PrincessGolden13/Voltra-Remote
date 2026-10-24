@@ -149,7 +149,11 @@ void UiController::updateExtra() {
         const auto d=app_.drops();
         text(status_,r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
         const bool known=app_.fresh() && r.telemetryValid;
-        largeValue(known ? (d.enabled ? weightText(r.settings.weight,r.unit) : r.force ? weightText(*r.force,r.unit) : "--") : "--");
+        // Black publishes small changing cable-tension samples in idle phase,
+        // before its delayed set-close report. Match its selected-weight display
+        // there; measured force belongs only to a fresh active repetition.
+        const bool showForce=!d.enabled && r.loaded && r.setActive!=false && r.repActive==true && r.force.has_value();
+        largeValue(known ? weightText(showForce ? *r.force : r.settings.weight,r.unit) : "--");
         text(start_,d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) : "");
         int next=std::max(1,d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : r.settings.weight*(100-d.percent)/100);
         if(d.mode == DropMode::RestPause && app_.dropsCompleted() >= d.drops) next=r.settings.weight;

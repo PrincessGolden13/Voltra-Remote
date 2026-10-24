@@ -1,4 +1,8 @@
 > October 24 feedback supersedes conflicting behavior below:
+> - Between reps and after a set, show the machine-confirmed selected weight,
+>   not its fluctuating idle cable tension. Normal Live shows measured force
+>   only during a fresh machine-reported active rep phase. Keep raw force and
+>   motion available to the controller; this is a presentation rule.
 > - The user confirmed first-rep tracking and post-set counts after restoring
 >   the default Weight Training telemetry subscription. Prefer a published
 >   elapsed rest value; if unavailable, the user now authorizes a remote clock

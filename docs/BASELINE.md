@@ -235,3 +235,18 @@ remain explicit future milestones.
   vibration has no validated Guition driver; the alert wakes/shows the screen.
   Stairs/RP reductions, KG and Auto Load triggering still need physical checks.
   Real Twin remains deferred. See [full evidence](DROPSETS_UNITS_2026_10_24.md).
+
+## October 24 idle-force display follow-up
+
+- User confirmed the preceding rest timer works. Captured idle AA81 force noise
+  (0–36 tenths LB, phase 0, stationary 148 mm cable) explained the jumping number
+  while the confirmed base remained 10 LB. Live now uses selected base outside a
+  fresh active rep, retaining raw force for the controller. No control writes or
+  counter/rest logic changed.
+- Normal, isolated Simulator and native builds pass. Existing 360 px idle Live
+  renders inspected at 10 LB and 10.5 KG. No new test code was created; these are
+  presentation/build checks, not a physical retest of the updated display.
+- Snapshot: build/guition/2026-10-24-idle-force. Normal binary: 1,215,024 bytes,
+  SHA256 DCCC3CD41647F5A58AA76289E67E6F1AA74694FFEC117410D392CF27F18CCECE.
+  Simulator binary: 937,296 bytes,
+  SHA256 C287B896DC9ACCECDA96D9FD07B41DA09F9CCEBA753EE798E4D1B42A78A25290.

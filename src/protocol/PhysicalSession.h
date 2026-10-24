@@ -60,6 +60,7 @@ private:
     uint64_t unitSwitchAt_=0;
     uint64_t motionAt_=0, motionRevision_=0, repAt_=0, repRevision_=0, telemetryLogAt_=0;
     int motionPosition_=0, motionVelocity_=0, motionForce_=0;
+    uint8_t motionPhase_=0;
     uint32_t completedRep_=0;
     std::optional<int> repSet_;
     bool intentLoaded_=false;

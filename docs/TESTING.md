@@ -1,5 +1,13 @@
 # Validation status and pending tests
 
+October 24 idle-force regression (new test code deferred): with confirmed base
+10 LB, fresh idle phase 0 and force samples 0–36 tenths LB at a stationary
+148 mm cable, Live must retain 10. Active phases 1–3 use fresh reported force;
+missing/stale phase or force returns to confirmed base, never a fabricated force.
+Unknown core state remains unavailable. Check modifiers during active reps,
+half-KG formatting, delayed set-close, unchanged drops/raw telemetry, first rep,
+set summary and rest timer. The user confirmed the preceding rest-timer update.
+
 October 24: [units, guarded loading and telemetry](DROPSETS_UNITS_2026_10_24.md)
 supersedes the older unvalidated-training status below. The user confirmed
 %/LB controls, remote-tap loading, return to Main, post-set counts and first-rep
