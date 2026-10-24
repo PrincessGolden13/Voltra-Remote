@@ -25,6 +25,9 @@ public:
     virtual TransportResult setLoaded(bool loaded) = 0;
     virtual TrainingReport trainingReport() const { return {}; }
     virtual TransportResult setTraining(const TrainingSettings&) { return TransportResult::Unsupported; }
+    // Already-loaded base only, dispatched without rotary coalescing. Never a
+    // load/reload command; implementations must preserve all accessory settings.
+    virtual TransportResult setLiveWeight(int ticks) { (void)ticks; return TransportResult::Unsupported; }
     virtual void cancelTraining() {} // Cancel unsent settings, never load/unload or retry.
     virtual TransportResult triggerAutoLoad() { return TransportResult::Unsupported; }
 };

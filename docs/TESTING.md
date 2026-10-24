@@ -236,3 +236,17 @@ unknown or loaded state must retain unload access. Preserve the recovery reason,
 clear pending intent, and never replay resistance commands after reconnect.
 Manual adjustment after exhaustion disables the recipe; it must not silently
 resume drops or leave an active NEXT preview for a dormant executor.
+
+RP/rest cases queued (new test code deferred): status 3 after returning the cable
+ends a grouped set without unload; next moving zero-rep start increments SET and
+resets REP/RP quota while retaining the old summary during rest. Status 2 plus
+AA85 from a base edit does not end it. Preserve failed-unload cancellation across
+rest. A 500-2000 ms motion gap discards partial hold time and requires new motion;
+a longer loss stops automation. An unchanged extended hold cannot consume two
+drops, and a pending drop cannot trigger another. Two confirmed RP holds produce
+15 -> 7 -> 5 LB; the floor produces no further write. Strict sequence guards
+still apply to Stairs. Verify only base is sent with percent or absolute Magic/EO,
+including delayed/mismatched accessory reports. Loaded drops skip rotary quiet
+time but preserve readback/deadline checks. Cue occurs once per settled target,
+never on GATT success, mismatched target, timeout or reconnect. It must not imply
+measured force has already changed. Hardware sound/vibration remains unverified.

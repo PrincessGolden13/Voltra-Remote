@@ -120,3 +120,54 @@ training; a new explicit connection follows the existing one-shot setup rules.
 Numeric control-write ID/value/timestamp diagnostics were added for future
 investigation, without logging handshake identities. Physical verification of
 these changes is pending; no device fault was intentionally reproduced.
+
+## RP timing and actual rest boundary
+
+CONFIRMED (user): the grouped dropset counters and minimum continuation worked.
+The next set incorrectly continued the same count after the cable was returned
+and left idle. CONFIRMED (capture): after segment 6 / rep 3, Black sent a set
+summary and workout status 3 (rest), remaining loaded, before active set 7 began.
+This supersedes the previous loaded-sequence-only boundary: the physical profile
+now exposes recognized between-set rest separately from an active statistics
+close, and both the presentation counter and drop executor reset for a new real
+set. Weight-change closes at status 2 still preserve the group and RP quota.
+
+CONFIRMED (capture): RP sent base=7 during the extended stationary hold, at
+device log times 287816 ms and 312811 ms in two trials. Black reported base=7
+before subsequent movement, but force stayed near 15 LB into the following rep.
+An eventual motion-freshness failure stopped RP before the second hold, despite
+later motion samples resuming. The code's 500 ms motion limit previously made
+that cancellation permanent on the first missed freshness deadline.
+
+RP now pauses through a short motion gap, clears all accumulated hold duration,
+and requires fresh movement followed by an entire new hold. A loss over 2000 ms
+still disarms it. RP is driven by that live motion/hold evidence, not completed
+rep sequence continuity; Stairs retains its strict rep sequence checks. An
+unconfirmed target still prevents any next drop, and timeouts never retry it.
+
+A dedicated loaded base-only operation copies current confirmed Magic/EO
+settings, retains context/envelope validation, and dispatches before background
+polls without the 100 ms manual-input quiet period. The physical loaded planner
+can write only parameter 16006, never accessory/unit/load parameters. Critical
+polling resumes immediately afterward. Percentage modifiers retain their
+percentage, so their derived pound contribution follows the new base naturally;
+absolute modifiers retain their configured amount. Physical modifier-on drops
+remain pending user verification.
+
+After settled target readback, Live shows a two-second accented TARGET value.
+It calls the optional hardware drop-alert hook, but the present K5 adapter has
+no verified sound/vibration output; the shipped cue is visual. No guessed GPIO
+or a different knob model's audio/haptic wiring has been adopted.
+
+UNVERIFIED: a safe command that makes Black physically apply a reduced target
+immediately during an unfinished rep. The pinned SDK 79f6c55 and Android
+da514d2 setters write the same base parameter. The kirby 8e1ea1c reference uses
+a load-mode reassertion in a different active-state path; this project does not
+adopt load retries/reassertions. The official
+[training command reference](https://cortex.beyond-power.com/docs/cortex/training-control)
+documents set-weight as a target; its
+[training guidance](https://cortex.beyond-power.com/docs/skills/voltra-device-training)
+describes apply_force_immediately under the force-load override, which is outside
+this project's no-bypass loading rules. The new cue therefore confirms a target,
+not an instantaneous change in measured cable force. This timing limitation is
+not represented as fixed by the shorter request queue.

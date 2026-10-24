@@ -818,6 +818,13 @@ void UiController::edited() {
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     app_.tick(now);
+    if(app_.dropConfirmationRevision()!=dropCueRevision_) {
+        dropCueRevision_=app_.dropConfirmationRevision();
+        if(app_.fresh() && app_.confirmedDropWeight()) {
+            hardware_.dropAlert(300);dropCueUntil_=now+2000;
+        }
+    }
+    if(!app_.fresh() || !app_.confirmedDropWeight() || !app_.report().loaded) dropCueUntil_=0;
     rememberModifiers();
     if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting()) { app_.leave(true); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {

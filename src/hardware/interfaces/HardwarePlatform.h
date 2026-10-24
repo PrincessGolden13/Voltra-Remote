@@ -16,6 +16,7 @@ public:
     virtual std::optional<uint8_t> batteryPercent() const { return std::nullopt; }
     // Optional outputs; board adapters own electrical timing and power behavior.
     virtual void restAlert(uint32_t durationMs) { (void)durationMs; }
+    virtual void dropAlert(uint32_t durationMs) { (void)durationMs; }
     virtual void setDisplayPower(bool asleep, bool dimmed) { (void)asleep; (void)dimmed; }
 };
 }

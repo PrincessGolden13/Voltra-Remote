@@ -159,11 +159,17 @@ void UiController::updateExtra() {
             (d.mode==DropMode::Stairs ? d.step<0 : d.percent>0);
         text(nextWeight_,d.enabled ? atFloor ? "MIN "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
             "NEXT "+(known ? weightText(next,r.unit) : "--") : unitName(r.unit));
+        const bool dropCue=known && hardware_.nowMs()<dropCueUntil_ && app_.confirmedDropWeight();
+        if(dropCue) text(nextWeight_,"TARGET "+weightText(*app_.confirmedDropWeight(),r.unit)+" "+unitName(r.unit));
+        // Confirmed target feedback, not a claim that measured cable force has
+        // already changed. Visual fallback is always available on this board.
+        style::set_text_color(weight_,lv_color_hex(dropCue ? accent() : 0xf5f8ff),0);
+        style::set_text_color(nextWeight_,lv_color_hex(dropCue ? accent() : 0xf5f8ff),0);
         const auto counters=app_.displayCounters();
         text(liveValues_[0],counters.set ? std::to_string(*counters.set) : "");
         text(liveValues_[1],counters.rep ? std::to_string(*counters.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
-        text(message_,known ? app_.message() : "State unknown / tap weight to unload");
+        text(message_,known ? app_.dropPending() && app_.message().empty() ? "Setting drop..." : app_.message() : "State unknown / tap weight to unload");
     }
     if(page_ == Screen::PresetNotice || page_ == Screen::Presets || page_ == Screen::SavePreset || page_ == Screen::OverridePreset) {
         text(message_,r.loaded || r.autoLoadArmed || !app_.fresh() ? "Tap here to unload / cancel" : app_.message());

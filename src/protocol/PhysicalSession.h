@@ -25,6 +25,7 @@ public:
     TransportResult setWeight(uint16_t) override;
     TransportResult setLoaded(bool) override;
     TransportResult setTraining(const TrainingSettings&) override;
+    TransportResult setLiveWeight(int ticks) override;
     void cancelTraining() override { if(intentUnit_) cancelWrites(""); }
     TransportResult triggerAutoLoad() override;
 private:
@@ -71,6 +72,7 @@ private:
     unsigned rawTelemetryHeaders_=0;
     bool telemetrySubscribed_=false, commandFailed_=false;
     bool entryHandled_=false, targetClockPending_=false;
+    bool targetImmediate_=false;
     bool trainingSeen_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     bool standalone() const;

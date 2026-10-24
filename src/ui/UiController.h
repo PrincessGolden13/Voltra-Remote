@@ -77,6 +77,7 @@ private:
     bool sleeping_ = false, dimmed_ = false;
     bool wakeTouch_ = false;
     uint64_t alertUntil_ = 0;
+    uint64_t dropCueRevision_=0, dropCueUntil_=0;
     Preset saveDraft_;
     lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
     lv_obj_t* settingsValues_[4]{};

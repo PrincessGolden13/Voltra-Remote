@@ -42,6 +42,9 @@ public:
     bool applyDrops(DropSettings);
     void toggleDrops();
     int dropsCompleted() const { return dropsCompleted_; }
+    uint64_t dropConfirmationRevision() const { return dropConfirmationRevision_; }
+    std::optional<int> confirmedDropWeight() const { return confirmedDropWeight_; }
+    bool dropPending() const { return dropTarget_.has_value(); }
     Preset currentPreset() const;
     Preset presetForCurrentDevice(Preset) const;
     const std::string& presetCompatibilityError() const { return presetError_; }
@@ -77,6 +80,8 @@ private:
     bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;
     bool dropsCancelled_ = false, waitingForDropSet_ = false, dropsExhausted_ = false;
     int dropsCompleted_ = 0;
+    uint64_t dropConfirmationRevision_=0;
+    std::optional<int> confirmedDropWeight_;
     int startingWeight_ = 0;
     bool observedLoaded_ = false;
     std::optional<Preset> presetIntent_;

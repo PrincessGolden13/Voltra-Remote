@@ -1,4 +1,13 @@
 > October 24 feedback supersedes conflicting behavior below:
+> - Group device weight-change segments into one dropset, but finish it on an
+>   actual device between-set rest as well as unload. The next moving set gets
+>   a new logical set and rep total; RP quota resets only at that real boundary.
+> - RP sends a base-only target when its continuous hold qualifies, without the
+>   rotary coalescing delay. Magic/EO configuration stays unchanged. Confirmed
+>   target changes get a visible cue; target readback is not proof that cable
+>   force has already changed during an unfinished rep.
+> - A brief RP motion-stream gap resets the hold and requires fresh movement
+>   before a new full hold can trigger. A loss beyond two seconds stops RP.
 > - Live always shows the machine-confirmed selected base weight, including
 >   during reps. Do not substitute measured cable tension. Raw force remains
 >   available internally for motion/hold logic.
@@ -13,7 +22,7 @@
 >   A weight change can itself close a device statistics set. Track the next
 >   observed start while that change is pending; require confirmation before
 >   the next completed rep triggers another drop. RP's drop quota persists
->   across these set IDs until unload or explicit rearming.
+>   across weight-induced set IDs until genuine rest, unload or explicit rearming.
 > - Once a rotary stroke accelerates, retain 5/10-unit grid values through its
 >   slowdown. A 300 ms pause, reversal or new touch selection restores fine
 >   1 LB / 0.5 KG / 1% steps. Device limit clamps can end off the coarse grid.

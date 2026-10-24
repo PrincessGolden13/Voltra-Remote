@@ -4,7 +4,8 @@
 
 namespace voltra {
 // Local presentation only. Black closes its statistics segment on each base
-// change. A user dropset instead spans the loaded sequence, including RP rests.
+// change. A user dropset spans those segments until actual between-set rest or
+// unload. An extended-cable RP hold remains within the active device workout.
 // Never feed these counters back into the protocol or automatic drop triggers.
 class DropSetProgress {
 public:
@@ -39,7 +40,7 @@ public:
         // An old completion retained across a new load cannot start a segment.
         if (newRep && r.repSet && segments_.count(*r.repSet) && now >= r.repAtMs && now-r.repAtMs <= 2000)
             add(*r.repSet, r.completedRep);
-        if (!r.loaded) {
+        if (!r.loaded || r.resting==true) {
             active = false;
             if (reps > 0) { ++completedSets; lastReps = reps; }
         }

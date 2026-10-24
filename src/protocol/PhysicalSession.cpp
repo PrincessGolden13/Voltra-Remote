@@ -85,6 +85,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
     trainingSeen_=false;
+    targetImmediate_=false;
     telemetryAt_=unitSwitchAt_=0;commandFailed_=false;intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
     closedSet_.reset();setEndRevision_=setEndedAt_=0;
@@ -140,7 +141,7 @@ bool PhysicalSession::liveWeightReady() const {
 }
 void PhysicalSession::cancelWrites(const char* reason) {
     waitingWrite_.reset();writes_.clear();target_.reset();status_=reason;
-    targetClockPending_=false;
+    targetClockPending_=targetImmediate_=false;
     liveIntent_.reset();
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();unitSwitchAt_=0;commandFailed_=*reason!=0;
 }
@@ -388,6 +389,7 @@ void PhysicalSession::updateReport() {
     report_.telemetryValid=telemetryAt_!=0;
     report_.rep=deviceRep_.value_or(0);report_.setNumber=deviceSet_;
     report_.setActive=workoutStatus_ && *workoutStatus_<=4 ? std::optional<bool>(*workoutStatus_==2) : std::optional<bool>{};
+    report_.resting=workoutStatus_ && *workoutStatus_<=4 ? std::optional<bool>(*workoutStatus_==3) : std::optional<bool>{};
     report_.repsStarted=deviceRep_ ? std::optional<bool>(*deviceRep_>0) : std::optional<bool>{};
     report_.completedSets=completedSets_;report_.lastSetReps=completedReps_;
     report_.setEndRevision=setEndRevision_;report_.setEndedAtMs=setEndedAt_;
@@ -462,12 +464,20 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     }
     // Coalesce only new explicit settings intents. Never replay on reconnect,
     // timeout, mode change, or after unload. Do not overwrite an in-flight ACK.
-    target_=settings;targetAt_=now_;targetClockPending_=true;writes_.clear();status_.clear();commandFailed_=false;
+    target_=settings;targetAt_=now_;targetClockPending_=true;targetImmediate_=false;writes_.clear();status_.clear();commandFailed_=false;
     intentUnit_=report_.unit;intentInterpretation_=fresh(extraMode);intentMaximum_=fresh(maxForce);
     intentLoaded_=report_.loaded;
     liveIntent_=intentLoaded_ ? std::optional<TrainingSettings>(settings) : std::optional<TrainingSettings>{};
     if(!intentDisplay_) intentDisplay_=fresh(accessoryDisplayPercent);
     return TransportResult::Accepted;
+}
+TransportResult PhysicalSession::setLiveWeight(int ticks) {
+    if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs)
+        return TransportResult::Unsupported;
+    auto s=report_.settings;s.weight=ticks;
+    const auto result=setTraining(s);
+    if(result==TransportResult::Accepted) targetImmediate_=true;
+    return result;
 }
 void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     const auto add=[&](uint16_t id,int value,int bytes) {writes_.push_back({id,value,bytes});};
@@ -593,11 +603,11 @@ void PhysicalSession::tick(uint64_t now) {
         // sequence of settings and readbacks occupies the link. Track requests,
         // not optional-field replies, so an unsupported field cannot monopolize it.
         const auto oldest=std::min_element(pollAt_.begin(),pollAt_.end());
-        if(*oldest==0 || now_-*oldest>=criticalPollIntervalMs) {
+        if(!(target_ && targetImmediate_ && !waitingWrite_) && (*oldest==0 || now_-*oldest>=criticalPollIntervalMs)) {
             pollState(size_t(oldest-pollAt_.begin()));return;
         }
         if(enterTrainingOnConnect()) return;
-        if(!waitingWrite_ && target_ && now_-targetAt_>=settingsQuietMs) {
+        if(!waitingWrite_ && target_ && (targetImmediate_ || now_-targetAt_>=settingsQuietMs)) {
             const int display=target_->magic.percent ? 1 : 0;
             if(fresh(accessoryDisplayPercent)!=display) {
                 // Switch only while unloaded; read it back before planning any
@@ -611,7 +621,7 @@ void PhysicalSession::tick(uint64_t now) {
                 pollState(1);return;
             }
             unitSwitchAt_=0;
-            prepareWrites(*target_);target_.reset();
+            prepareWrites(*target_);target_.reset();targetImmediate_=false;
         }
         if(!waitingWrite_ && !writes_.empty()) {
             const auto step=writes_.front();writes_.pop_front();

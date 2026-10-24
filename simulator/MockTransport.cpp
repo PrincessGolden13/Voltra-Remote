@@ -190,6 +190,11 @@ TransportResult MockTransport::setWeight(uint16_t pounds) {
     s.weight = int(std::lround(pounds * ticksPerUnit(r.unit) / (r.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     return setTraining(s);
 }
+TransportResult MockTransport::setLiveWeight(int ticks) {
+    const auto r=trainingReport();
+    if(!r.loaded || pendingSettings_ || pendingLoaded_ || pendingAuto_) return TransportResult::Unsupported;
+    auto s=r.settings;s.weight=ticks;return setTraining(s);
+}
 TransportResult MockTransport::setLoaded(bool loaded) {
     if (!connected_) return TransportResult::Disconnected;
     const auto r = readiness();

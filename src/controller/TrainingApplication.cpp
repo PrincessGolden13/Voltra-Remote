@@ -116,6 +116,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     presetIntent_.reset(); observedLoaded_ = false;
     restSince_.reset();restSetRevision_=0;
     dropProgress_={};
+    confirmedDropWeight_.reset();
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
     pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_ = failure; resetDrops();
@@ -295,6 +296,19 @@ void TrainingApplication::stopDrops(const char* reason) {
 void TrainingApplication::runDrops(const TrainingReport& r) {
     if(!drops().enabled) return;
     if(fresh() && !r.loaded) { resetDrops(); return; }
+    if(fresh() && r.resting==true) {
+        // A genuine device rest ends this set, unlike AA85 emitted by a base
+        // edit while status stays active. No queued automatic change crosses it.
+        if(dropTarget_) {session_.cancelTraining();pending_=false;settingsIntent_.reset();weightIntent_.reset();message_.clear();}
+        const bool cancelled=dropsCancelled_;
+        resetDrops();dropsCancelled_=cancelled;
+        // Preserve the old completed counter only as a baseline while waiting
+        // for the next real set's observed start. Loading need not toggle here.
+        wasLoaded_=true;waitingForDropSet_=true;
+        lastRep_=r.completedRep;repSet_=r.repSet;repRevision_=r.repRevision;
+        telemetryRevision_=r.motionRevision;dropSetEndRevision_=r.setEndRevision;
+        return;
+    }
     // A confirmed floor/quota ends automation for this loaded sequence. Reps
     // still update independently; there is nothing left to validate or send.
     if(dropsExhausted_) return;
@@ -308,6 +322,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         if (session_.commandFailed() || !message_.empty() || r.settings.weight != *dropTarget_) {
             stopDrops("Drop unconfirmed; stopped");return;
         }
+        confirmedDropWeight_=*dropTarget_;++dropConfirmationRevision_;
         dropTarget_.reset(); ++dropsCompleted_;
     }
     const bool descending=d.mode==DropMode::RestPause ? d.percent>0 : d.step<0;
@@ -331,7 +346,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         // only after observing the new set's actual zero-count moving stream;
         // a new set number alone must not excuse a gap or replay missed drops.
         running_=movementSeen_=holdConsumed_=false;holdSince_=0;holdPosition_.reset();
-        if(motionFresh && r.setActive==true && r.moving && r.rep==0 &&
+        if(motionFresh && r.setActive==true && r.moving && (r.rep==0 || d.mode==DropMode::RestPause) &&
            r.setNumber && r.setNumber!=repSet_) {
             // A base change can close Black's statistics set before readback
             // finishes. Observe the next start now; the pending-drop check
@@ -342,7 +357,15 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         }
     }
     if(!motionFresh) {
-        if(running_) stopDrops("Drops stopped: motion reports lost");
+        if(d.mode==DropMode::RestPause) {
+            // A short stream gap pauses RP instead of permanently disabling it.
+            // Never accrue hold time through the gap. Require fresh movement
+            // and a whole new hold; a prolonged loss still disarms automation.
+            constexpr uint64_t rpMotionLossStopMs=2000;
+            movementSeen_=false;holdConsumed_=true;holdSince_=0;holdPosition_.reset();
+            if(r.motionRevision && (now_<r.motionAtMs || now_-r.motionAtMs>rpMotionLossStopMs))
+                stopDrops("Drops stopped: motion reports lost");
+        } else if(running_) stopDrops("Drops stopped: motion reports lost");
         return; // Wait for first actual sample after loading, never infer a hold.
     }
     running_=!waitingForDropSet_;
@@ -350,15 +373,15 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     bool completed=false;
     if(newRep) {
         repRevision_=r.repRevision;
-        if((repSet_ && r.repSet!=repSet_) || r.completedRep<lastRep_ || r.completedRep>lastRep_+1 ||
-           now_<r.repAtMs || now_-r.repAtMs>repFreshMs) {
+        if(d.mode==DropMode::Stairs && ((repSet_ && r.repSet!=repSet_) || r.completedRep<lastRep_ || r.completedRep>lastRep_+1 ||
+           now_<r.repAtMs || now_-r.repAtMs>repFreshMs)) {
             stopDrops("Rep sequence changed; drops stopped");return;
         }
         completed=r.completedRep==lastRep_+1;
         repSet_=r.repSet;lastRep_=r.completedRep;
     }
     if (dropTarget_) {
-        if(completed) stopDrops("Rep before confirmation; drops stopped");
+        if(completed && d.mode==DropMode::Stairs) stopDrops("Rep before confirmation; drops stopped");
         return;
     }
     if(waitingForDropSet_) return;
@@ -384,8 +407,12 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     auto s = r.settings;
     s.weight = d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : nextRestPauseWeight(r,d.percent);
     if (s.weight == r.settings.weight) return;
-    if (sendSettings(s)) {dropTarget_ = s.weight;holdConsumed_=true;movementSeen_=false;}
-    else stopDrops("Drop request refused; stopped");
+    // This dedicated session operation copies the confirmed accessories and
+    // can emit only a base write. No manual modifier trimming or load command.
+    const auto result=session_.setLiveWeight(s.weight);sent(result);
+    if (result==TransportResult::Accepted) {
+        settingsIntent_=s;dropTarget_ = s.weight;holdConsumed_=true;movementSeen_=false;
+    } else stopDrops("Drop request refused; stopped");
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
@@ -401,6 +428,7 @@ void TrainingApplication::tick(uint64_t now) {
         if(!selected_.empty() && !session_.status().empty()) message_=session_.status();
         restSince_.reset();restSetRevision_=0;
         dropProgress_={};
+        confirmedDropWeight_.reset();
         if(!selected_.empty()) dropSettings_[selected_].enabled=false;
         connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return;
     }
@@ -410,6 +438,7 @@ void TrainingApplication::tick(uint64_t now) {
     else {
         const bool wasDropActive=dropProgress_.active;
         dropProgress_.observe(r,drops().enabled,now_);
+        if(!wasDropActive && dropProgress_.active) startingWeight_=r.settings.weight;
         if(dropProgress_.visible) {
             // Ignore statistics closes caused by changing base. Only a device
             // rest phase or confirmed unload starts the grouped rest clock.

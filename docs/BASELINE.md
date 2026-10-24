@@ -333,3 +333,37 @@ remain explicit future milestones.
   Black reconnected on the second link attempt, accepted the remembered remote,
   and reported fresh 5 LB, unloaded, Weight Training selected, maximum 230 LB.
   No resistance command was issued by the installation/connection check.
+
+## October 24 RP timing and genuine between-set rest
+
+- User/capture confirm the preceding grouped counting and floor continuation.
+  Black's status 3 between-set rest now ends the logical dropset even while
+  loaded. The next observed moving set starts a new rep total and RP quota.
+  Weight-induced statistics closes while status 2 remains active keep the group.
+- RP pauses through brief motion gaps, discards partial holds, and requires
+  fresh movement plus a new full hold. A gap beyond 2000 ms still stops it.
+  The previous permanent stop at the first 500 ms freshness failure explained
+  why no second drop was sent in the captured trial.
+- Automatic drops have a dedicated base-only session operation, bypassing the
+  manual rotary quiet period and one background poll. Confirmed Magic/EO
+  settings are preserved; loaded preparation emits only the base parameter.
+  Live highlights a settled target for two seconds. The K5 has no verified
+  sound/vibration implementation, so this build's cue is visual.
+- The old capture already showed base=7 before movement resumed, while measured
+  force remained near 15 LB. Immediate physical application during a hold remains
+  UNVERIFIED; the queue change is not evidence that this device behavior is fixed.
+  No load reassertion, retry, bypass, or accessory rewrite was introduced.
+- Native, Normal and isolated Simulator builds pass. Existing validators pass
+  (203 SDK / 593 modifier packets plus pinned upstream checks). Existing 360 px
+  RP renders inspected at 7 LB / NEXT 5 and MIN 5 LB. These are build/layout/
+  reference checks, not physical verification of rest reset, RP continuation,
+  cue timing or modifier-on drops. No new test code was created.
+- Snapshot: build/guition/2026-10-24-rp-rest. Normal binary: 1,220,864 bytes,
+  SHA256 DEE9909A9F860DFB44CA99B3E0FB5226141345AB49A4D83139178ADD9A0391BD.
+  Simulator binary: 942,896 bytes,
+  SHA256 99AD93317A7C34D8D0E155B8DE588BB039B0269ED507B3B27E87BC2393BE47B7.
+- Installed with verified recovery/partition bounds and flash hashes. Normal
+  boot initialized display/touch/encoder and continued BLE discovery; Black
+  was not detected in the initial post-install scan window. The connection-only
+  diagnostic did not issue any load or resistance command. Physical retest is
+  pending; the read-only capture is retained locally.

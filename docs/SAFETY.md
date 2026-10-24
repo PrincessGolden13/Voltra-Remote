@@ -109,3 +109,15 @@ ends the BLE session so the UI can return to device selection with a reason.
 The unloaded motor observation must be at least as recent as the mode observation.
 Loaded/unknown state retains the unload target, and a later connection cannot
 restore or replay any load, drop, or settings intent.
+
+RP/rest follow-up: confirmed workout status 3 ends the logical set and resets
+the recipe quota even without unload. A weight-induced statistics close during
+active status 2 does not. Rest cancels any pending automatic base target; it does
+not restore the starting weight or load. A brief RP motion gap clears the hold
+and requires fresh movement plus a complete new hold; beyond 2000 ms RP stops.
+Each drop still requires motion no older than 500 ms, fresh control context and
+confirmed preceding settings. Stairs keeps its strict completed-rep sequence
+guard. The expedited base-only path retains those guards and never changes
+Magic/EO units or values, retries loading, or forces immediate cable engagement.
+The visual target cue follows readback, not GATT success, and does not establish
+that measured force has changed during an unfinished rep.
