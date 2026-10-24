@@ -19,7 +19,9 @@ struct TrainingReport {
     WeightUnit unit = WeightUnit::Pounds;
     std::string firmwareVersion, twinPeerName;
     std::optional<bool> repsStarted;
+    std::optional<bool> setActive; // Actual device workout phase, not a local timer.
     bool percentageSupported = false, modifierUnitsSelectable = false;
+    bool sharedModifierUnits = false; // Device selects one interpretation for both accessories.
     int maxWeight = 0; // Effective single/Twin ceiling in display ticks, resolved by profile.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
@@ -27,6 +29,13 @@ struct TrainingReport {
     bool telemetryValid = false, moving = false, held = false;
     uint32_t rep = 0;
     uint64_t revision = 0, receivedAtMs = 0;
+    // Independent clocks: polling settings must never renew motion or rep data.
+    uint64_t motionRevision = 0, motionAtMs = 0, repRevision = 0, repAtMs = 0;
+    // Receipt of an actual set-close report, never a load/unload button event.
+    uint64_t setEndRevision = 0, setEndedAtMs = 0;
+    uint32_t completedRep = 0;
+    std::optional<int> repSet;
+    std::optional<int> positionMm;
     // Optional device telemetry; absent fields are omitted by the UI.
     std::optional<int> force, setNumber, completedSets, lastSetReps, restSeconds;
 };
@@ -61,10 +70,20 @@ inline int nextStairWeight(const TrainingReport& r,int step) {
     return target;
 }
 inline bool modifierUnitsAllowed(const TrainingReport& r, const TrainingSettings& s) {
+    if(r.sharedModifierUnits && s.magic.percent!=s.eccentric.percent) return false;
     if ((s.magic.enabled && s.magic.percent && !r.percentageSupported) ||
         (s.eccentric.enabled && s.eccentric.percent && !r.percentageSupported)) return false;
     return r.modifierUnitsSelectable || (s.magic.percent == r.settings.magic.percent &&
         s.eccentric.percent == r.settings.eccentric.percent);
+}
+// A shared device selector cannot retain mixed interpretations. Convert the other
+// enabled amount at the current base, to the nearest supported display step.
+inline void convertModifierUnit(Modifier& m, bool percent, int base) {
+    if(m.percent==percent) return;
+    m.value=percent ? (base>0 ? int(std::lround(m.value*100.0/base)) : 0) :
+        int(std::lround(m.value*base/100.0));
+    if(m.enabled) m.value=std::max(1,m.value);
+    m.percent=percent;
 }
 enum class DropMode { Stairs, RestPause };
 struct DropSettings {

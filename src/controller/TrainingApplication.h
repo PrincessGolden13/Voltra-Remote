@@ -19,6 +19,9 @@ public:
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
     TrainingReport report() const { return session_.trainingReport(); }
+    // Presentation clock; prefer machine elapsed time, otherwise use its actual
+    // set-close event. Never put locally elapsed seconds into TrainingReport.
+    std::optional<int> restSeconds() const;
     // Local requested weight for responsive presentation; never machine state.
     std::optional<int> weightPreview() const {
         return pending_ && fresh() && report().unit==weightIntentUnit_ ? weightIntent_ : std::optional<int>{};
@@ -33,7 +36,7 @@ public:
     void toggleModifier(bool magic);
     bool applyModifier(bool magic, MagicMode mode, int value, bool percent);
     DropSettings drops() const;
-    void applyDrops(DropSettings);
+    bool applyDrops(DropSettings);
     void toggleDrops();
     int dropsCompleted() const { return dropsCompleted_; }
     Preset currentPreset() const;
@@ -54,6 +57,8 @@ private:
     DeviceId selected_;
     std::string name_, message_, presetError_;
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
+    uint64_t restSetRevision_ = 0;
+    std::optional<uint64_t> restSince_;
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
     bool automaticSelection_ = false;
     bool scanPending_ = false;
@@ -63,6 +68,8 @@ private:
     std::optional<TrainingSettings> settingsIntent_;
     uint32_t lastRep_ = 0;
     uint64_t telemetryRevision_ = 0, holdSince_ = 0;
+    uint64_t repRevision_ = 0;
+    std::optional<int> repSet_, holdPosition_;
     bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;
     bool dropsCancelled_ = false;
     int dropsCompleted_ = 0;
@@ -73,6 +80,7 @@ private:
     bool settingsAllowed() const;
     bool sendSettings(TrainingSettings);
     void resetDrops();
+    void stopDrops(const char*);
     void runDrops(const TrainingReport&);
     void refreshDiscovery(const std::vector<Advertisement>&);
     void rememberConnection();

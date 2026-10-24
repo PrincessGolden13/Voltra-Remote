@@ -25,6 +25,7 @@ public:
     virtual TransportResult setLoaded(bool loaded) = 0;
     virtual TrainingReport trainingReport() const { return {}; }
     virtual TransportResult setTraining(const TrainingSettings&) { return TransportResult::Unsupported; }
+    virtual void cancelTraining() {} // Cancel unsent settings, never load/unload or retry.
     virtual TransportResult triggerAutoLoad() { return TransportResult::Unsupported; }
 };
 }

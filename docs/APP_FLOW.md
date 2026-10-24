@@ -1,4 +1,13 @@
 > October 24 feedback supersedes conflicting behavior below:
+> - The user confirmed first-rep tracking and post-set counts after restoring
+>   the default Weight Training telemetry subscription. Prefer a published
+>   elapsed rest value; if unavailable, the user now authorizes a remote clock
+>   anchored to the machine's confirmed set-close event. Never start it from a
+>   load/unload tap. Keep the local clock separate from machine-confirmed state.
+> - The latest follow-up requires % / machine-unit editing and real local
+>   dropsets. See [unit and dropset implementation](DROPSETS_UNITS_2026_10_24.md)
+>   for shared-unit behavior, source evidence, loaded-write guards and pending
+>   physical verification. The older preview-only notes below are historical.
 > - On accepted connection, open Weight Training automatically from confirmed
 >   idle/unloaded state, once; wait for mode readback. Never load resistance.
 > - Show Twin information only for a detected pair. Missing status alone is not

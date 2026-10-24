@@ -110,6 +110,7 @@ void MockTransport::poll(uint64_t now) {
         if (pendingLoaded_) {
             if (*pendingLoaded_ && !state.loaded) {
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
+                state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;
                 state.restSeconds.reset(); restSince_ = 0;
             } else if (!*pendingLoaded_ && state.loaded && state.repsStarted.value_or(false)) {
                 state.completedSets = state.setNumber.value_or(1); state.lastSetReps = int(state.rep);
@@ -126,6 +127,7 @@ void MockTransport::poll(uint64_t now) {
             if (now-heldSince_ >= 3000) {
                 state.loaded = true; state.autoLoadArmed = false; sent_ = false;
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
+                state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;
                 state.restSeconds.reset(); restSince_ = 0;
             }
         } else heldSince_ = 0;
@@ -142,6 +144,7 @@ void MockTransport::poll(uint64_t now) {
         const auto peerName = peer.twinPeerName;
         peer = state; peer.twinPeerName = peerName;
     }
+    state.motionAtMs=now;++state.motionRevision;
     state.receivedAtMs = now; ++state.revision; reported_ = state;
     device_.weightLbs = uint16_t(std::lround(state.settings.weight / double(ticksPerUnit(state.unit)) * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     device_.loaded = state.loaded;
@@ -203,6 +206,7 @@ void MockTransport::completeRep() {
     auto& r = devices_[active_].state;
     if (!connected_ || !r.loaded) return;
     ++r.rep; r.repsStarted = true; r.moving = true; r.held = false; sent_ = false;
+    r.completedRep=r.rep;r.repSet=r.setNumber;r.repAtMs=nowMs_;++r.repRevision;
 }
 void MockTransport::setHeld(bool held) {
     auto& r = devices_[active_].state;

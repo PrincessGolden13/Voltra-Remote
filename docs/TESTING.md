@@ -1,5 +1,16 @@
 # Validation status and pending tests
 
+October 24: [units, guarded loading and telemetry](DROPSETS_UNITS_2026_10_24.md)
+supersedes the older unvalidated-training status below. The user confirmed
+%/LB controls, remote-tap loading, return to Main, post-set counts and first-rep
+tracking. Stairs/RP reductions, KG and Auto Load triggering remain unverified.
+No new test code was created. Future regression cases: subscription masks must
+not silently change the expected stream layout; sparse summaries cannot freshen
+motion; duplicate set closes do not restart rest; no timer from load toggles,
+settings, reconnect or old summaries; stale-state cancellation; new-set motion
+ends rest; reported elapsed time takes precedence; alert fires once and wakes
+the display; local elapsed time never becomes machine-confirmed state.
+
 October 18: see [physical discovery observations](LIVE_CONNECTION_2026_10_18.md).
 Discovery, GATT subscriptions, acceptance after user approval and read-only state
 are physically established with the local diagnostic profile at ten feet.

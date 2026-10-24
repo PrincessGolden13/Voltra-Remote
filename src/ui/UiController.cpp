@@ -335,7 +335,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (held) return;
     if (action == Apply) {
-        if (page_ == Screen::Drops) { draftDrops_.enabled = true; app_.applyDrops(draftDrops_); }
+        if (page_ == Screen::Drops) { draftDrops_.enabled = true; if(!app_.applyDrops(draftDrops_)) return; }
         else app_.applyModifier(page_ == Screen::Magic, draftMode_, draftValue_, draftPercent_);
         navigate(Screen::Main);
     } else if (action >= ModeIC && action <= ModeMTN) {
@@ -569,6 +569,7 @@ int UiController::editMaximum() const {
     const auto r = app_.report();
     if (page_ == Screen::Drops) return draftDrops_.mode == DropMode::Stairs ? r.maxWeight : dropField_ == 1 ? 80 : 9;
     auto s = r.settings;
+    if(r.sharedModifierUnits) convertModifierUnit(page_ == Screen::Magic ? s.eccentric : s.magic,draftPercent_,s.weight);
     if (page_ == Screen::Magic) { s.magic.enabled = true; s.magic.percent = draftPercent_; }
     else { s.eccentric.enabled = true; s.eccentric.percent = draftPercent_; }
     return modifierMaximum(r, s, page_ == Screen::Magic);
@@ -704,7 +705,7 @@ void UiController::update() {
         color(presetValue_,activePreset_ >= 0 ? bright : muted);
         std::string summary;
         if (app_.fresh() && r.telemetryValid && r.completedSets && r.lastSetReps) summary = std::to_string(*r.completedSets)+" | "+std::to_string(*r.lastSetReps);
-        if (app_.fresh() && r.telemetryValid && r.restSeconds) summary += "    "+std::to_string(*r.restSeconds/60)+":"+(*r.restSeconds%60 < 10 ? "0" : "")+std::to_string(*r.restSeconds%60);
+        if (const auto rest=app_.restSeconds()) summary += "    "+std::to_string(*rest/60)+":"+(*rest%60 < 10 ? "0" : "")+std::to_string(*rest%60);
         value(stats_,summary);
         value(message_, !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
             r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
@@ -845,11 +846,13 @@ void UiController::tick() {
         pendingPreset_ = -1;
     }
     if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_])))) activePreset_ = -1;
-    if (app_.fresh() && r.loaded && r.telemetryValid && r.repsStarted.value_or(false) && page_ == Screen::Main) navigate(Screen::Live);
-    if (app_.fresh() && !r.loaded && page_ == Screen::Live) navigate(Screen::Main);
-    if (!r.restSeconds || *r.restSeconds == 0) restAlerted_ = false;
-    if (app_.fresh() && r.restSeconds && config_.restAlertSeconds > 0 && *r.restSeconds >= config_.restAlertSeconds && !restAlerted_) {
+    if (app_.fresh() && r.loaded && r.setActive.value_or(true) && r.telemetryValid && r.repsStarted.value_or(false) && page_ == Screen::Main) navigate(Screen::Live);
+    if (app_.fresh() && (!r.loaded || r.setActive==false) && page_ == Screen::Live) navigate(Screen::Main);
+    const auto rest=app_.restSeconds();
+    if (!rest || *rest == 0) restAlerted_ = false;
+    if (rest && config_.restAlertSeconds > 0 && *rest >= config_.restAlertSeconds && !restAlerted_) {
         hardware_.restAlert(2000); restAlerted_ = true; alertUntil_ = now+2000;
+        activityAt_=now;sleeping_=false; // Make the visual fallback visible after dim/sleep.
     }
     if (rebuild_) build();
     const int delta = hardware_.rotary().getDelta();

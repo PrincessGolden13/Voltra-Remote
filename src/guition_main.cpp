@@ -51,7 +51,7 @@ void setup() {
     transport.onDiagnostic([](const std::string& message){Serial.printf("%llu %s\n",static_cast<unsigned long long>(board.nowMs()),message.c_str());});
     if(!transport.begin()) {Serial.println("BLE init failed");return;}
 #if defined(VOLTRA_LOCAL_BOOTSTRAP_PROFILE) && VOLTRA_LOCAL_BOOTSTRAP_PROFILE
-    Serial.println("Local bootstrap diagnostic profile; physical loading unavailable");
+    Serial.println("Local bootstrap identity; load requires explicit input and fresh readiness");
     physicalSession=new voltra::PhysicalSession(transport,voltra::local::finishIdentity,voltra::local::helloIdentity);
 #else
     physicalSession=new voltra::PhysicalSession(transport,clientIdentity());
@@ -69,7 +69,7 @@ void setup() {
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");
 #else
-    Serial.println("Shared UI started. Physical loading unavailable. Serial: d=devices, c=connect single available");
+    Serial.println("Shared UI started. Serial: d=devices, c=connect single available (no load command)");
 #endif
 }
 void loop() {

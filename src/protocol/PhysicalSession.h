@@ -25,6 +25,7 @@ public:
     TransportResult setWeight(uint16_t) override;
     TransportResult setLoaded(bool) override;
     TransportResult setTraining(const TrainingSettings&) override;
+    void cancelTraining() override { if(intentUnit_) cancelWrites(""); }
     TransportResult triggerAutoLoad() override;
 private:
     BleTransport& transport_;
@@ -52,13 +53,28 @@ private:
     std::optional<TrainingSettings> target_;
     uint64_t targetAt_=0, telemetryAt_=0;
     std::optional<int> deviceSet_, deviceRep_, completedSets_, completedReps_;
+    std::optional<int> closedSet_;
+    uint64_t setEndRevision_=0, setEndedAt_=0;
     std::optional<WeightUnit> intentUnit_;
-    std::optional<int64_t> intentInterpretation_, intentMaximum_;
+    std::optional<int64_t> intentInterpretation_, intentMaximum_, intentDisplay_;
+    uint64_t unitSwitchAt_=0;
+    uint64_t motionAt_=0, motionRevision_=0, repAt_=0, repRevision_=0, telemetryLogAt_=0;
+    int motionPosition_=0, motionVelocity_=0, motionForce_=0;
+    uint32_t completedRep_=0;
+    std::optional<int> repSet_;
+    bool intentLoaded_=false;
+    std::optional<TrainingSettings> liveIntent_;
+    std::optional<int> workoutStatus_;
+    unsigned telemetryHeaders_=0, telemetrySetup_=0;
+    std::array<bool,256> telemetryTypes_{};
+    unsigned rawTelemetryHeaders_=0;
     bool telemetrySubscribed_=false, commandFailed_=false;
     bool entryHandled_=false, targetClockPending_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     bool standalone() const;
     bool settingsReady() const;
+    bool controlContextReady() const;
+    bool liveWeightReady() const;
     bool modifiersKnown() const;
     uint16_t percentParameter(bool magic) const;
     void prepareWrites(const TrainingSettings&);

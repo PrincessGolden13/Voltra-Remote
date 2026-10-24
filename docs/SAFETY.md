@@ -1,18 +1,18 @@
 # Safety contract
 
-Current status: Normal firmware implements BLE connection, protocol bootstrap and
-read-only observations. Explicit unload and guarded unloaded base/percentage edits
-are implemented; load and Auto Load remain unsupported pending
-a validated profile. The user-driven unloaded LB dial test returned matching
-weights on both screens and retained motor state 0; no load test was performed.
-See [current status](NORMAL_MODE_2026_10_17.md).
+Current status (October 24): Normal firmware implements real single-device
+settings, shared modifier units and explicit guarded loading/unloading. The user
+confirmed remote-tap loading on Black after the mounting-state check. Auto Load's
+one-shot trigger is implemented but not physically verified; local dropset
+execution still requires telemetry and user verification. See
+[current evidence and limits](DROPSETS_UNITS_2026_10_24.md).
 The separately linked simulator has no physical BLE implementation. Its loaded
 state comes only from synthetic reports, including responses to mock commands.
 
 Mandatory invariants from PROJECT_REQUIREMENTS.md:
 
 - No automatic load on any startup, restore, reconnect, UI, mode or Twin event.
-- Each future load needs an explicit current user action, validated connection/
+- Each load needs an explicit current user action, validated connection/
   handshake, fresh confirmed mode, known capability/limit, known safe cable and
   readiness/interlock state, valid required Twin state and no conflicting intent.
 - Unknown or stale required evidence fails closed. Observations have per-field
@@ -22,7 +22,8 @@ Mandatory invariants from PROJECT_REQUIREMENTS.md:
   the explicit long press arms its delayed load. The enabled preference itself
   must not block unloaded weight adjustment or be silently changed.
   The revised brief permits a one-shot Auto Load trigger from a long weight
-  press. The new operation is semantic and currently implemented only by mocks.
+  press. The physical path requires fresh enabled/safety/readiness reports and
+  sends one trigger, without retries or setting changes.
   Existing device-side automatic behavior is not disabled by the remote; it
   requires understanding before allowing changes that could trigger resistance.
 - No force/bypass loading, safety-skip, pairing or arbitrary parameter writes.
@@ -41,7 +42,11 @@ loading; its force option bypasses a cable-zero check. This project excludes
 that bypass entirely. The acknowledgement is a Cortex client-side concept and
 is not proof of device-side readiness or a substitute for BLE state checks.
 
-## Foundation limitations
+## Historical foundation limitations
+
+The following foundation description predates the October 24 guarded profile
+above. Its unavailable-load and percent-only statements are superseded by the
+linked current evidence; all no-bypass/no-retry invariants remain applicable.
 
 Physical load/Auto Load requests remain unavailable. Explicit unload
 uses the source-documented motor=4 write and requires a matching report; delivery

@@ -214,3 +214,24 @@ remain explicit future milestones.
   60 LB unloaded and maximum 230. New Mountain/dial interactions are pending
   user verification. Dropset configuration is visible, but actual real drops
   remain disabled. See [control evidence](CONTROL_FEEDBACK_2026_10_24.md).
+
+## October 24 units, loading, live reps and rest follow-up
+
+- Native, Normal and isolated Simulator builds pass. Normal program/static RAM:
+  1,214,589 / 31,768 bytes; Simulator: 936,869 / 21,316 bytes. Existing reference
+  validators passed earlier in this change (203 SDK / 593 modifier packets).
+  No new test code was created; these passes do not verify dropset behavior.
+- Both images installed with recovery-region/partition checks and esptool hash
+  verification. Snapshot: build/guition/2026-10-24-rest-final. Normal binary:
+  1,214,960 bytes, SHA256
+  EB1E6779B591D8672C8F31CFE9E6D1252F88B4B45FB7D1A1F98B72AF55664F5A.
+  Simulator binary: 937,232 bytes, SHA256
+  13FF7FB6180992FCB20F24F91A0BA8B6CBC1D02B1A1521DCE4ACDF1D5F00BD65.
+- User confirmed %/LB editing, remote-tap loading, return to Main, post-set
+  counts and first-rep tracking. Restoring subscription 20867=0 with 10 Hz
+  restored AA81 live reports; custom masks produced an incompatible AA94 layout.
+- Local rest fallback is explicitly authorized and implemented, anchored only
+  to a device set-close report. On-device timer observation is pending. Audio/
+  vibration has no validated Guition driver; the alert wakes/shows the screen.
+  Stairs/RP reductions, KG and Auto Load triggering still need physical checks.
+  Real Twin remains deferred. See [full evidence](DROPSETS_UNITS_2026_10_24.md).

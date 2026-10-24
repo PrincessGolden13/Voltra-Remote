@@ -25,6 +25,7 @@ public:
     TransportResult setLoaded(bool loaded) override;
     TrainingReport trainingReport() const override { return reported_; }
     TransportResult setTraining(const TrainingSettings&) override;
+    void cancelTraining() override { pendingSettings_.reset();pendingWeight_.reset(); }
     TransportResult triggerAutoLoad() override;
     void toggleAvailability();
     std::vector<DeviceEntry> catalog() const;
