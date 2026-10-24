@@ -1,8 +1,9 @@
 # VOLTRA compatibility
 
-No physical firmware version is supported/validated yet. Unknown capabilities
-are unavailable. Normal firmware implements connection/read-only diagnostics and
-explicit unload only; see [current status](NORMAL_MODE_2026_10_17.md).
+The observed standalone Black profile supports connection, readback and guarded
+unloaded percentage controls; this is not validation of every 2.x firmware or
+complete training support. Unknown capabilities remain unavailable. Loading and
+automatic physical drops remain gated; see [current status](NORMAL_MODE_2026_10_17.md).
 
 CONFIRMED (source): the reference implementations share the 0x55 framing/GATT
 family. Extended packet lengths and additional parameters are variations within
@@ -44,9 +45,16 @@ unknown Twin/readiness leaves the physical effective limit unavailable.
   cable adjustment, DTR, Overdrive activation and testing workflows are deferred.
 - Chains/eccentric/inverse-chains require a verified effective peak limit, not
   just a base-weight clamp. Modifier reduction is implemented in the shared
-  controller and simulator; physical command support remains pending.
+  controller, simulator and guarded standalone unloaded path.
 - Unknown commands may have side effects. Do not probe by writing adjacent IDs,
   guessed selectors or beta flags. Catalog writable flags do not authorize use.
 - Unknown safety behavior across firmware remains a release blocker for loading.
 
 See [source pins](UPSTREAM_AUDIT.md) and [Twin limits](TWIN_MODE.md).
+
+October 24: source-documented 0x556F (Mountain) and 0x5569 (accessory percent
+display) are polled explicitly. The current physical modifier profile requires
+fresh valid switch reports and percentage display, and rejects simultaneous
+inverse/Mountain flags. Source evidence and Black observations are distinguished
+in [control feedback](CONTROL_FEEDBACK_2026_10_24.md); missing optional fields on
+other firmware are not treated as known-off state.

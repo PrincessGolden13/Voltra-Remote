@@ -11,6 +11,8 @@ constexpr uint16_t base=0x3e86, chains=0x3e87, eccentric=0x3e88, motor=0x3e89, w
 constexpr uint16_t position=0x3e82, offset=0x506a, unit=20590, twin=20844, maxForce=21268;
 constexpr uint16_t remoteCoworker=21023, pairedDevice=21605;
 constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentricPercent=21456;
+// kirby6365/voltra_remote 8e1ea1c: polled uint8 switches, absent from older CSV.
+constexpr uint16_t mountain=0x556f, accessoryDisplayPercent=0x5569;
 constexpr uint16_t legacyChainsPercent=20873, legacyEccentricPercent=20874;
 constexpr uint16_t autoLoadEnabled=21272, autoLoadSafetyEnabled=21389, autoLoadStatus=21447;
 constexpr uint16_t childLock=20772, otaState=21476, battery=20013;
@@ -33,7 +35,8 @@ int width(uint16_t id) {
     case 0x4fb0: case 0x4e2d: case 0x1b5d: case 20844: case 20772: case 20566:
     case 0x5103: case 0x5106: case 0x538d: case 0x53c7: case 0x53c9: case 0x53c6:
     case 0x5182: case 0x53b6: case 0x52e3: case 0x52ca: case 0x5102: case 0x4ee1:
-    case 21007: case 21424: case 21272: case 21273: case 21716: case 20642: return 1;
+    case 21007: case 21424: case 21272: case 21273: case 21716: case 20642:
+    case mountain: case accessoryDisplayPercent: return 1;
     case 0x3e82: case 0x3e83: case 0x3e86: case 0x3e87: case 0x3e88: case 0x3e89:
     case 0x506a: case 21268: case 21476: case 21534: case 0x53c8: case 20873: case 20874:
     case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377:
@@ -78,8 +81,10 @@ uint16_t PhysicalSession::percentParameter(bool magic) const {
 }
 bool PhysicalSession::modifiersKnown() const {
     const auto c=fresh(chains),e=fresh(eccentric),direction=fresh(inverse),interpretation=fresh(extraMode);
+    const auto curve=fresh(mountain);
     if(!c || !e || *c<0 || *e<0 || !direction || (*direction!=0 && *direction!=1) ||
-       !interpretation || *interpretation!=0) return false;
+       !curve || (*curve!=0 && *curve!=1) || (*curve==1 && *direction==1) ||
+       !interpretation || *interpretation!=0 || fresh(accessoryDisplayPercent)!=1) return false;
     if(*interpretation==0) {
         for(const bool magic:{true,false}) {
             const auto pct=fresh(percentParameter(magic));
@@ -252,14 +257,15 @@ void PhysicalSession::updateReport() {
     limits.twinKnown=report_.twinKnown;limits.twin=report_.twin;
     if(const auto max=fresh(maxForce)) limits.single.pounds=int(*max);
     report_.maxWeight=resolveWeightLimit(limits,report_.unit).ticks;
-    report_.settings.magicMode=fresh(inverse)==1 ? MagicMode::InverseChains : MagicMode::Chains;
+    report_.settings.magicMode=fresh(mountain)==1 ? MagicMode::Mountain :
+        fresh(inverse)==1 ? MagicMode::InverseChains : MagicMode::Chains;
     const auto c=fresh(chains),e=fresh(eccentric);
     report_.settings.magic={c && *c>0,c ? convertWeightUnits(int(*c),WeightUnit::Pounds,report_.unit) : 0,false};
     report_.settings.eccentric={e && *e>0,e ? convertWeightUnits(int(*e),WeightUnit::Pounds,report_.unit) : 0,false};
     const bool modifiers=modifiersKnown();
-    // The user confirmed extraMode=0 and the modern 2000/2000 reports as
-    // 20% IC + 20% EO on Black. A missing/unsupported selector is never guessed.
-    report_.percentageSupported=modifiers && fresh(extraMode)==0;
+    // extraMode describes adaptation, not LB/% display. Require the separately
+    // reported percent selector; absolute editing is still a separate milestone.
+    report_.percentageSupported=modifiers;
     report_.modifierUnitsSelectable=false; // Global interpretation mapping only; mixed units unverified.
     if(report_.percentageSupported) {
         report_.settings.magic.value=int(*fresh(percentParameter(true)))/100;report_.settings.magic.percent=true;
@@ -267,7 +273,7 @@ void PhysicalSession::updateReport() {
         report_.settings.magic.enabled=report_.settings.magic.value>0;
         report_.settings.eccentric.enabled=report_.settings.eccentric.value>0;
     }
-    report_.magicSupported={modifiers,modifiers,false};report_.eccentricSupported=modifiers;
+    report_.magicSupported={modifiers,modifiers,modifiers};report_.eccentricSupported=modifiers;
     report_.autoLoadSupported=fresh(autoLoadEnabled)==1 && fresh(autoLoadSafetyEnabled)==1;
     // Rep/summary events are sparse, not a motion heartbeat. Keep received
     // counts while the connection's core state is fresh. Never use them to
@@ -309,7 +315,8 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     if(!settingsReady() || (waitingWrite_ && waitingWrite_->first==motor)) {
         status_="Unload / wait for fresh control state";return TransportResult::Unsupported;
     }
-    if(settings.magicMode==MagicMode::Mountain || !modifierUnitsAllowed(report_,settings)) {
+    const int mode=int(settings.magicMode);
+    if(mode<0 || mode>=int(report_.magicSupported.size()) || !report_.magicSupported[mode] || !modifierUnitsAllowed(report_,settings)) {
         status_="Mode / modifier units unavailable";return TransportResult::Unsupported;
     }
     for(const auto m:{settings.magic,settings.eccentric})
@@ -349,7 +356,13 @@ void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     };
     modifiers(true);
     const int direction=s.magicMode==MagicMode::InverseChains ? 1 : 0;
-    if(fresh(inverse)!=direction) add(inverse,direction,1);
+    const int mountainCurve=s.magicMode==MagicMode::Mountain ? 1 : 0;
+    // Clear the previous special curve before enabling another. Never enable
+    // both switches, and never touch EO just because the chain style changed.
+    if(!direction && fresh(inverse)!=0) add(inverse,0,1);
+    if(!mountainCurve && fresh(mountain)!=0) add(mountain,0,1);
+    if(direction && fresh(inverse)!=1) add(inverse,1,1);
+    if(mountainCurve && fresh(mountain)!=1) add(mountain,1,1);
     if(pounds>oldBase) add(base,pounds,2);
     modifiers(false);
 }
@@ -385,7 +398,7 @@ void PhysicalSession::pollState(size_t group) {
     pollAt_[group]=now_;
     switch(group) {
     case 0:read({base,motor,workout,unit});break;
-    case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false)});break;
+    case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false),mountain,accessoryDisplayPercent});break;
     case 2:read({childLock,otaState,twin,remoteCoworker,pairedDevice,maxForce});break;
     case 3:read({position,offset,battery,autoLoadEnabled,autoLoadSafetyEnabled});break;
     case 4:read({autoLoadStatus,20642,21224});break;

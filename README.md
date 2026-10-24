@@ -49,7 +49,9 @@ reported values remain authoritative, with no confirmation-driven retries.
 There are no X controls. Disable modifiers with their main-screen tiles;
 Dropsets retain Apply.
 
-Slow rotation changes 1 LB or 0.5 KG; faster rotation accelerates. Device paging
+Slow rotation changes 1 LB or 0.5 KG; faster rotation ramps through small even
+steps to round 5/10-unit marks, with immediate braking when slowed or reversed.
+Device paging
 supports arrows, horizontal swipes and rotary (positive rotation goes right).
 Twin pairs use overlapping circles. See [the October 17 fixes](docs/UI_FIXES_2026_10_17.md).
 Physical settings wait for a 100 ms pause in input before the latest intent is
@@ -59,6 +61,9 @@ Disabling either retains its last confirmed amount as an editor default for that
 device during the current run; reopening does not apply it until you tap/edit.
 Twin information is shown only when a pair is detected. The synthetic Yellow/Pink
 pair now reports 250 LB per unit / 500 LB combined (113 / 226 KG).
+The real Mountain path reads its separate switch and confirms unloaded curve
+changes. Dropset configuration stays visible as a local preview while real drop
+execution remains unavailable. See [current control feedback](docs/CONTROL_FEEDBACK_2026_10_24.md).
 
 Tap Presets to browse P01–P99 with the knob. Tap an existing preset to request
 its modifiers; hold it to compare OLD / NEW before saving an override. The

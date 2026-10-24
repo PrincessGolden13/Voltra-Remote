@@ -2,6 +2,7 @@
 #include "controller/TrainingApplication.h"
 #include "controller/RuntimeMode.h"
 #include "hardware/interfaces/HardwarePlatform.h"
+#include "RotaryAdjustment.h"
 #include <lvgl.h>
 #include <memory>
 #include <vector>
@@ -48,8 +49,8 @@ private:
     MagicMode draftMode_ = MagicMode::Chains;
     DropSettings draftDrops_;
     std::string deviceSignature_, scaleSignature_;
-    uint64_t lastTickMs_ = 0, lastRotateMs_ = 0;
-    int lastRotateDirection_ = 0;
+    uint64_t lastTickMs_ = 0;
+    RotaryAdjustment rotaryAdjustment_;
     bool touchDown_ = false, touchMoved_ = false;
     int touchStartX_ = 0, touchStartY_ = 0;
     RemoteConfigurationStore* store_ = nullptr;

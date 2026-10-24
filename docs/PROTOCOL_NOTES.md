@@ -99,6 +99,9 @@ aggregation require fixture comparison before implementation.
 UNVERIFIED: Mountain/MTN selector and captured behavior. Targeted search did not
 find a validated Mountain implementation in these sources. This is not proof
 that firmware lacks the feature; the UI must leave it unavailable.
+October 24 update: the additional kirby6365 reference documents the separate
+0x556F selector; see [new source and physical evidence](CONTROL_FEEDBACK_2026_10_24.md)
+for the implementation that supersedes this earlier search result.
 
 ## Before physical read-only work
 

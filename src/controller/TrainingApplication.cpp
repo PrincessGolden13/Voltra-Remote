@@ -233,11 +233,15 @@ DropSettings TrainingApplication::drops() const {
     auto d = DropSettings{}; d.step *= ticksPerUnit(report().unit); return d;
 }
 void TrainingApplication::applyDrops(DropSettings d) {
-    if (!fresh() || !report().liveWeightSupported || selected_.empty()) return;
+    if (!fresh() || selected_.empty()) { message_ = "Device state unavailable"; return; }
+    // Recipes are local. Keeping an unavailable recipe must never arm execution.
+    const bool executable = report().liveWeightSupported;
+    if (!executable) d.enabled = false;
     d.step = std::clamp(d.step, -report().maxWeight, report().maxWeight);
     d.drops = std::clamp(d.drops, 0, 9); d.percent = std::clamp(d.percent, 0, 80);
     d.holdSeconds = std::clamp(d.holdSeconds, 1, 9);
-    dropSettings_[selected_] = d; resetDrops(); message_.clear();
+    dropSettings_[selected_] = d; resetDrops();
+    message_ = executable ? "" : "Saved / drops unavailable";
 }
 void TrainingApplication::toggleDrops() { auto d = drops(); d.enabled = !d.enabled; applyDrops(d); }
 void TrainingApplication::resetDrops() {

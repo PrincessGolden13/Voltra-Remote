@@ -23,11 +23,20 @@ not yet verified; unit switching and unrecognized interpretations stay blocked.
 
 Loading and the one-shot Auto Load trigger have source-documented command paths
 behind a closed readiness gate. Lock reports do not yet have verified enum/bit
-semantics. Mountain, loaded weight changes and automatic dropsets remain unavailable.
+semantics. Loaded weight changes and automatic dropsets remain unavailable.
 Rep/summary decoding and the captured telemetry subscription are implemented;
 stationary-cable/motion decoding and a device rest timer are not established.
 The user explicitly deferred real Twin work to concentrate on Black first.
 Do not describe this as a complete training release.
+
+October 24 follow-up: a separate polled Mountain selector and accessory display
+selector are implemented from the new pinned reference. Fresh, valid replies are
+required for the current standalone percentage-control profile; missing replies
+do not imply standard Chains. Mode switches clear the previous special curve
+before enabling the next, with per-step readback. See
+[control feedback and physical evidence](CONTROL_FEEDBACK_2026_10_24.md).
+The dropset editor is visible for local recipe preparation, but an unsupported
+execution capability forces enabled=false and displays preview/unavailable status.
 
 October 24: the connection setup opens Weight Training once from fresh idle and
 unloaded reports, with current standalone status, child lock off and OTA inactive.

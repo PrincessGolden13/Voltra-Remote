@@ -157,3 +157,18 @@ memory; no writes on editor entry/reconnect; lower headroom clamps the draft;
 absolute-unit conversion; unsupported unit interpretations are not restored;
 forget/reset clears the local editor memory. This memory is session-local and
 does not override machine-confirmed enabled state or preset matching.
+
+The user confirmed IC disable/reopen retains its value. Further October 24 cases
+are queued for progressive rotary input: start/reversal/300 ms pause use fine
+steps; noisy batches cannot jump directly from level 0 to level 3; slowdown
+brakes immediately; 73 -> 75 -> 80 clockwise and 73 -> 70 counterclockwise at
+the 5-unit level; 0.5 KG precision, whole-unit coarse grids, signed stairs across
+zero, pending-intent accumulation and final maximum/minimum clamps. No new
+automated test pass is claimed for these cases.
+
+Mountain cases: fresh valid 0x556F and accessory-display reports; omitted/stale/
+invalid values; both inverse/Mountain switches set; clear prior special curve
+before enabling the new one; readback required at every step; EO unchanged;
+changing the device's display interpretation cancels percentage edits. Dropset
+preview/save on an unsupported connection must not arm it, write resistance,
+activate a preset or imply automatic execution is available.

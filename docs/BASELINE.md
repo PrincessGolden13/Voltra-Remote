@@ -197,3 +197,20 @@ remain explicit future milestones.
   installed; physical disable/reopen verification is pending. Loading, Auto Load,
   Mountain, mixed modifier units, loaded edits and dropsets retain their existing
   gates. Real Twin checks remain deferred at the user's request.
+
+## October 24 Mountain and progressive dial follow-up
+
+- Normal: 1,209,113 program bytes / 31,768 static RAM; Simulator: 935,477 /
+  21,236. Both firmware builds and native desktop build pass. No new test code.
+- Existing packet/upstream validators pass (203 SDK and 593 modifier packets).
+  Existing 360 px Main/Stairs/RP renders inspected; final Main matches byte-for-byte.
+- Bounded flash passed recovery, partition and esptool hash checks. Snapshot:
+  build/guition/2026-10-24-mountain-controls. Normal binary: 1,209,472 bytes,
+  SHA256 53C4FCA716EB83F8AB00BC3D53D585F01C53F55C28131130C0D830D2C884B8DF.
+  Simulator binary: 935,840 bytes,
+  SHA256 3B7688D6007ED1D527DEEE65C06575E0D954531241971AD4C2328CBF17746F4C.
+- User confirmed remembered modifier values work. Final startup connected on
+  attempt one and returned Mountain=1, percent display=1, 25% Mountain, 3% EO,
+  60 LB unloaded and maximum 230. New Mountain/dial interactions are pending
+  user verification. Dropset configuration is visible, but actual real drops
+  remain disabled. See [control evidence](CONTROL_FEEDBACK_2026_10_24.md).

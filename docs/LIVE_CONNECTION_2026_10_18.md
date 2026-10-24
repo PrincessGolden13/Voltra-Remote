@@ -277,3 +277,7 @@ The settings planner no longer clears/restores an unchanged modifier, and rotary
 weight requests settle for 100 ms while the UI shows a labelled local preview.
 The user has not separately confirmed every ordering, limit or timeout case.
 New automated test code remains deferred; future cases are in TESTING.md.
+
+Later October 24: the user confirmed modifier recall works, and requested Mountain,
+visible dropset configuration and more progressive rotary input. The separate
+[control feedback record](CONTROL_FEEDBACK_2026_10_24.md) continues those results.

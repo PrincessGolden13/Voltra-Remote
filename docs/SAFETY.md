@@ -83,3 +83,10 @@ unload, and no repeated mode entry when a user later exits the screen.
 The local requested-weight preview never changes confirmed state or enables load;
 it stays visually unloaded and carries a pending label until device confirmation.
 Suppressing a spurious Twin banner does not weaken required Twin/state guards.
+
+Mountain selection requires fresh valid Mountain and inverse switch reports;
+the previous special curve is cleared and confirmed before the other is enabled.
+The separate accessory-display register must confirm percentage interpretation
+for this physical profile. The old adaptation register alone is insufficient.
+Unavailable dropset recipes may be edited locally but are stored disabled; their
+presence on screen never authorizes live writes or automatic resistance changes.

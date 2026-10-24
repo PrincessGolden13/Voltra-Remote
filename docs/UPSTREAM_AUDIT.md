@@ -1,5 +1,15 @@
 # Upstream audit — 2026-09-06 (Mountain time)
 
+October 24 addition: [kirby6365/voltra_remote](https://github.com/kirby6365/voltra_remote/tree/8e1ea1cb752acd3108c61f1a502b63978a172832),
+commit 8e1ea1cb752acd3108c61f1a502b63978a172832, inspected outside this tree under
+%TEMP%/voltra-mountain-oct24. Its PROTOCOL.md, voltra_protocol.h/.cpp and
+voltra_client.cpp document independently observed Mountain (0x556F) and accessory
+display (0x5569) uint8 switches. Both require polling. This is source evidence,
+not official BLE documentation or proof of compatibility with every device.
+Official Cortex documentation independently confirms mutually exclusive inverse/
+Mountain switches but does not publish their IDs. Android, SDK and HA remote
+HEADs still match the previously reviewed da514d2 / 79f6c55 / 93b0819 pins.
+
 October 17 follow-up: [Normal-mode source review](NORMAL_MODE_2026_10_17.md)
 records newer SDK commit 79f6c55, unchanged Android/HA pins, live official behavior
 references, the implemented read-only subset and unresolved training mappings.

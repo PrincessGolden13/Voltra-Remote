@@ -10,6 +10,11 @@
 > - Disabling Magic/EO retains its last confirmed positive amount as a local
 >   editor default, independently per device. Reopening the editor recalls that
 >   amount within current limits; it does not reactivate the modifier by itself.
+> - Later October 24 feedback confirms modifier recall works. Rotary acceleration
+>   should ramp gradually and faster changes should land on round 5/10 values.
+>   Keep the dropset tile/editor visible when execution is unavailable; saved
+>   local recipes must remain disabled until the device supports execution.
+>   Mountain is available on Black and must use its separate confirmed selector.
 > - Synthetic Yellow/Pink have explicit Overdrive limits of 250 LB each and
 >   500 LB combined (113 / 226 KG). Do not assign 250 LB to all real 2.x devices.
 >

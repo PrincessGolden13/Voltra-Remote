@@ -216,7 +216,7 @@ void UiController::readTouch() { lv_indev_read(touch_); }
 void UiController::navigate(Screen page) {
     modeGestureUntil_ = 0;
     if (page == Screen::ForgetDevice && forgetId_.empty()) { forgetId_=app_.selectedDevice();forgetName_=app_.name(); }
-    lastRotateMs_ = 0; lastRotateDirection_ = 0;
+    rotaryAdjustment_.reset();
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
     editDirty_ = returnAfterEdit_ = false;
@@ -235,6 +235,7 @@ void UiController::navigate(Screen page) {
 }
 void UiController::act(int action, const std::string& id, bool held) {
     activityAt_ = hardware_.nowMs();
+    rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
         const size_t count = (app_.devices().size()+3)/4;
         if (action == PreviousDevices && devicePage_ > 0) --devicePage_;
@@ -327,8 +328,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         const auto r = app_.report();
         if (action == Magic && std::none_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; })) return;
         if (action == EO && !r.eccentricSupported) return;
-        if (action == Drops && !r.liveWeightSupported) return;
-        const bool enabled = action == Magic ? r.settings.magic.enabled : action == EO ? r.settings.eccentric.enabled : app_.drops().enabled;
+        const bool enabled = action == Magic ? r.settings.magic.enabled : action == EO ? r.settings.eccentric.enabled : app_.drops().enabled && r.liveWeightSupported;
         if (held || !enabled) navigate(action == Magic ? Screen::Magic : action == EO ? Screen::Eccentric : Screen::Drops);
         else if (action == Drops) app_.toggleDrops(); else app_.toggleModifier(action == Magic);
         return;
@@ -590,14 +590,12 @@ void UiController::rotate(int delta) {
         act(delta > 0 ? NextDevices : PreviousDevices,"",false); return;
     }
     if(page_ == Screen::Main || page_ == Screen::Live || page_ == Screen::Magic || page_ == Screen::Eccentric || (page_ == Screen::Drops && draftDrops_.mode == DropMode::Stairs)) {
-        const auto now=hardware_.nowMs();
-        const int direction = delta > 0 ? 1 : -1;
-        const auto interval=lastRotateMs_ && direction == lastRotateDirection_ ? (now-lastRotateMs_)/std::max(1,std::abs(delta)) : 1000;
-        lastRotateMs_=now;
-        lastRotateDirection_=direction;
-        // Tunable UI policy, independent of the board's physical pulse mapping.
-        constexpr uint64_t fastTurnMs = 55, mediumTurnMs = 130;
-        delta *= interval < fastTurnMs ? 10 : interval < mediumTurnMs ? 5 : 1;
+        if (!app_.fresh()) { rotaryAdjustment_.reset(); return; }
+        const auto r = app_.report();
+        const bool weight = page_ == Screen::Main || page_ == Screen::Live;
+        const int current = weight ? app_.weightPreview().value_or(r.settings.weight) : page_ == Screen::Drops ? draftDrops_.step : draftValue_;
+        const int wholeUnit = weight || page_ == Screen::Drops || !draftPercent_ ? ticksPerUnit(r.unit) : 1;
+        delta = rotaryAdjustment_.delta(delta,current,hardware_.nowMs(),wholeUnit);
     }
     if (page_ == Screen::Presets) {
         presetIndex_ = std::clamp(presetIndex_+delta,0,std::min(98,int(config_.presets.size())));
@@ -673,26 +671,27 @@ void UiController::update() {
         color(modeLabels_[0], r.settings.magic.enabled ? bright : muted);
         color(modeLabels_[2], r.settings.eccentric.enabled ? bright : muted);
         const bool supported[] = {std::any_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; }),
-            r.eccentricSupported, r.liveWeightSupported};
+            r.eccentricSupported, true}; // Local dropset editor remains visible when execution is unavailable.
         for (int i=0; i<3; ++i) {
             if (supported[i]) lv_obj_remove_flag(tiles_[i], LV_OBJ_FLAG_HIDDEN);
             else lv_obj_add_flag(tiles_[i], LV_OBJ_FLAG_HIDDEN);
         }
         const auto d = app_.drops();
-        color(tiles_[2], d.enabled ? bright : muted);
+        const bool dropsActive = d.enabled && r.liveWeightSupported;
+        color(tiles_[2], dropsActive ? bright : muted);
         for (auto* step : stairs_) {
             if (d.mode == DropMode::RestPause) lv_obj_add_flag(step, LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(step, LV_OBJ_FLAG_HIDDEN);
-            style::set_bg_color(step, lv_color_hex(d.enabled ? accent() : muted), 0);
+            style::set_bg_color(step, lv_color_hex(dropsActive ? accent() : muted), 0);
         }
         value(dropTitle_, d.mode == DropMode::RestPause ? LV_SYMBOL_PAUSE " " LV_SYMBOL_DOWN : "");
-        value(miniValue_[2], d.mode == DropMode::Stairs ? weightText(d.step,r.unit)+unitName(r.unit) :
+        value(miniValue_[2], !r.liveWeightSupported ? "OFF" : d.mode == DropMode::Stairs ? weightText(d.step,r.unit)+unitName(r.unit) :
             std::to_string(d.drops)+"\n"+std::to_string(d.percent)+"%\n"+std::to_string(d.holdSeconds)+"s");
         style::set_text_font(miniValue_[2],width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18,0);
         style::set_text_line_space(miniValue_[2],0,0);
         style::center(miniValue_[2]);
-        color(miniValue_[2], d.enabled ? bright : muted);
-        glow(tiles_[2], accent(), d.enabled);
+        color(miniValue_[2], dropsActive ? bright : muted);
+        glow(tiles_[2], accent(), dropsActive);
         // Prefer the explicitly selected/saved slot when duplicate recipes exist.
         if (!app_.fresh() || activePreset_ < 0 || activePreset_ >= int(config_.presets.size()) ||
             !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_]))) {
@@ -717,6 +716,8 @@ void UiController::update() {
         r.loaded ? weightText(r.settings.weight,r.unit)+" "+unitName(r.unit)+" / tap to unload" :
         r.autoLoadArmed ? "Auto Load / tap to cancel" : app_.message());
     if (page_ == Screen::Drops) {
+        if (app_.fresh() && !r.loaded && !r.autoLoadArmed && !r.liveWeightSupported)
+            value(status_,"Preview only / drops unavailable");
         for (int i=0; i<2; ++i) {
             glow(choice_[i], accent(), int(draftDrops_.mode) == i);
             color(choice_[i], int(draftDrops_.mode) == i ? bright : muted);
