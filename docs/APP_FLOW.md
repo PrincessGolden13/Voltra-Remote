@@ -3,6 +3,10 @@
 >   when the device remains loaded between sets. After a confirmed close/rest,
 >   a fresh moving zero-rep report for a different set establishes its baseline;
 >   completed-rep reports still trigger changes, with no catch-up or replay.
+>   A weight change can itself close a device statistics set. Track the next
+>   observed start while that change is pending; require confirmation before
+>   the next completed rep triggers another drop. RP's drop quota persists
+>   across these set IDs until unload or explicit rearming.
 > - Once a rotary stroke accelerates, retain 5/10-unit grid values through its
 >   slowdown. A 300 ms pause, reversal or new touch selection restores fine
 >   1 LB / 0.5 KG / 1% steps. Device limit clamps can end off the coarse grid.

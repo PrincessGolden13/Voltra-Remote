@@ -196,9 +196,17 @@ Later October 24 cases (new test code still deferred): arm Stairs while loaded
 at rest with completed set 10 / rep 2, observe active moving set 11 / rep 0,
 then completed rep 1 and request exactly one reduction. Repeat without unloading;
 reject a new set without its observed start, a gap/reset within the same set,
-and a new set while a prior drop is unconfirmed. Duplicate completions do not
-drop twice. Confirm RP's per-set movement/hold/quota reset without idle triggering.
+and a completed rep while a prior drop is unconfirmed. A fresh new-set start
+may precede weight readback; observing it must neither stop drops nor confirm
+the write. Duplicate completions do not drop twice. Confirm RP requires actual
+movement to rearm and retains its quota across weight-induced set boundaries.
 For rotary input, the later policy supersedes immediate return to fine steps:
 slowing retains a 5-unit grid until pause/reversal/touch reset. Check the gentle
 two-detent cadence, batched clicks, both directions, negative stairs, KG ticks,
 pending previews and off-grid device limits. No delayed write on release.
+
+Next captured ordering to cover: set 12 completed rep 1 -> request 8 LB ->
+set-close while workout remains active -> base=8 -> set 13 moving rep 0 ->
+settled readback -> set 13 completed rep 1 -> request 6 LB. Also cover readback
+before the new start, readback with the next completed rep in one controller
+tick, failed/mismatched/late confirmation, and no quota reset for RP segments.

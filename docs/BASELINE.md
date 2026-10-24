@@ -268,3 +268,19 @@ remain explicit future milestones.
   SHA256 82C989F11C7CEDD61D9CEF767D01EAABE6ABE4697B34E9122260C4BC028B1EDA.
   Simulator binary: 937,648 bytes,
   SHA256 594B196BA120C83218DE4645717B4C612853CDCB5C0DB159064E6698C4CAEEB9.
+
+## October 24 confirmation across weight-induced set boundaries
+
+- User and capture confirm the first Stairs change from 10 to 8 LB. Black closed
+  statistics set 12 after that rep, stayed in active workout status, and began
+  set 13. The controller rejected that start before checking the drop's readback.
+  It now observes the start without treating it as confirmation or an error;
+  a subsequent drop still requires the preceding change to be confirmed.
+- RP's quota persists across device set-number changes until unload/rearming.
+  Consecutive physical Stairs reductions and RP remain pending user verification.
+- Native, Normal and isolated Simulator builds pass, as do existing upstream
+  validators (203 SDK packets / 593 modifier packets). No new test code.
+- Snapshot: build/guition/2026-10-24-drops-confirmation. Normal binary: 1,215,312
+  bytes, SHA256 319E6BF284AECC126FC41BF7F17799DE5EA5EA7CE326D55DEDBD976FD650E5BA.
+  Simulator binary: 937,584 bytes,
+  SHA256 126D1386849029725A0D264CEEA47C96BF89C0F4C6B3404A2F0968C2CDEBEBF8.

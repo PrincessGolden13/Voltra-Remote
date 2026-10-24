@@ -302,8 +302,12 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         running_=movementSeen_=holdConsumed_=false;holdSince_=0;holdPosition_.reset();
         if(motionFresh && r.setActive==true && r.moving && r.rep==0 &&
            r.setNumber && r.setNumber!=repSet_) {
-            if(dropTarget_) {stopDrops("New set before drop confirmation; stopped");return;}
-            repSet_=r.setNumber;lastRep_=0;dropsCompleted_=0;waitingForDropSet_=false;
+            // A base change can close Black's statistics set before readback
+            // finishes. Observe the next start now; the pending-drop check
+            // below still requires confirmation before another completed rep
+            // can trigger a write. Never reset RP's quota on device set IDs:
+            // it belongs to the armed loaded sequence, not a weight segment.
+            repSet_=r.setNumber;lastRep_=0;waitingForDropSet_=false;
         }
     }
     if(!motionFresh) {

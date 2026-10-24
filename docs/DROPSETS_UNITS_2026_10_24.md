@@ -167,10 +167,27 @@ The controller now waits between confirmed sets, then establishes a zero baselin
 only on a fresh, moving, zero-rep sample for a different reported set in active
 workout state. This changes local automation bookkeeping, not device counters.
 The subsequent completed-return event still triggers the first drop. Missing
-start evidence, within-set gaps/resets, stale telemetry, pending or unconfirmed
-changes still stop automation; no missed drops are replayed. RP movement/hold
-state and its local quota restart only at that observed new set. Physical
-reductions with the fix remain pending user verification.
+start evidence, within-set gaps/resets, stale telemetry, or a completed rep while
+a change remains unconfirmed still stop automation; no missed drops are replayed.
+RP movement/hold state rearms with actual movement. Its local drop quota belongs
+to the armed loaded sequence and persists across reported statistics sets until
+unload or explicit rearming.
+
+CONFIRMED (next Black capture and user): the first drop changed 10 to 8 LB after
+completed set 12 / rep 1. Black emitted a set-12 summary while workout status
+remained 2, returned base=8, then streamed moving set 13 / rep 0. The controller
+stopped with "New set before drop confirmation" solely because its local
+dropTarget still existed, before checking whether confirmation had finished.
+The trace does not identify exactly when the settled readback completed; the
+user and force samples around 8 LB confirm the first physical change occurred.
+
+That premature rejection is removed. Observing a new set start only updates
+local sequence tracking; it does not acknowledge the weight write or send one.
+The existing pending/failed/mismatched confirmation checks still run, and the
+next distinct completed rep can trigger another change only after the preceding
+one is confirmed. RP's quota is no longer reset by each device set transition,
+which would otherwise replenish it after weight-induced segment changes. Further
+consecutive physical reductions and RP behavior remain pending user verification.
 
 CONFIRMED (source): the dial's former intermediate 2-tick grid, plus immediately
 falling back to fine steps while slowing, could end a fast stroke off 5/10 marks.
