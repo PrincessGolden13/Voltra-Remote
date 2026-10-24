@@ -107,3 +107,26 @@ assembly, malformed/replay diagnostics, session generation and freshness checks.
 Audit every bootstrap write for settings side effects. Record device/module
 versions and reported capabilities without persisting unnecessary identifiers.
 No resistance testing belongs in this stage.
+
+## October 24 connection and modifier follow-up
+
+CONFIRMED (source): pinned Android commit
+da514d2db1a16ebb4ded3156bc8fd200bed1e6eb, VoltraControlFrames.kt,
+enterWeightTrainingPayload writes parameter 20400 as uint8 value 1. Following
+the user's explicit request, connection setup now attempts this once from fresh
+idle/unloaded standalone state, with child-lock and OTA reports clear. An already
+active Weight Training session needs no write. Other workouts, loaded/armed or
+unknown state do not authorize automatic mode switching. Mode readback, not the
+BLE write result, confirms completion. No motor command is part of setup.
+
+CONFIRMED (Black, October 24): 20400 changed from 0 to 1 after that setup write;
+motor 16009 remained 0 and selected base remained 57 LB. A later reconnect found
+20400 already 1 and 60 LB unloaded. These observations do not validate loading.
+
+The previous settings planner temporarily cleared both modifier registers for
+any modifier edit. It now compares each requested effective value to its fresh
+report and writes only changed parameters. Base/modifier reductions precede
+increases; IC direction changes do not clear EO. The 100 ms quiet interval
+coalesces unsent explicit edits, with fresh reports and bounded confirmation
+still required. Physical tap/rotary behavior is user-tested, not an automated
+motor test. See LIVE_CONNECTION_2026_10_18.md for observed scope and limitations.

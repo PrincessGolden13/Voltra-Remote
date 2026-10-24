@@ -18,6 +18,8 @@ constexpr uint64_t stateFreshMs=2000, writeConfirmationMs=3000;
 // A bounded unloaded transaction can contain several individually confirmed
 // writes. Keep critical polls ahead of it; never retry a timed-out step.
 constexpr uint64_t settingsDeadlineMs=10000, criticalPollIntervalMs=1300;
+// Send the latest explicit setting after a short pause in rotary input.
+constexpr uint64_t settingsQuietMs=100;
 constexpr uint16_t telemetrySubscribe=20867;
 // Android da514d2's captured notification subscription (not a resistance setting).
 constexpr uint32_t fitnessNotificationMask=0x00657bf5;
@@ -57,7 +59,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
     values_.clear();seen_.clear();report_={};firmware_.clear();
     waitingWrite_.reset();
-    writes_.clear();target_.reset();telemetrySubscribed_=false;
+    writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
     telemetryAt_=0;commandFailed_=false;intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
     bootstrapWriteJustCompleted_=false;
@@ -94,6 +96,7 @@ bool PhysicalSession::settingsReady() const {
 }
 void PhysicalSession::cancelWrites(const char* reason) {
     waitingWrite_.reset();writes_.clear();target_.reset();status_=reason;
+    targetClockPending_=false;
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();commandFailed_=*reason!=0;
 }
 bool PhysicalSession::standalone() const {
@@ -230,7 +233,10 @@ void PhysicalSession::updateReport() {
         // immediately. The weight target then remains an unconditional unload,
         // rather than treating an unrecognized motor state as confirmed unloaded.
         report_={};
-        status_=*mode!=1 ? "Select Weight Training on VOLTRA" : "Unknown motor state / tap to unload";
+        if(!commandFailed_) status_=*mode!=1 ?
+            (waitingWrite_ && waitingWrite_->first==workout ? "Opening Weight Training..." :
+             !entryHandled_ ? "Preparing Weight Training..." : "Weight Training inactive") :
+            "Unknown motor state / tap to unload";
         return;
     }
     report_.unit=*u==0 ? WeightUnit::Pounds : WeightUnit::Kilograms;
@@ -290,7 +296,7 @@ SessionReadiness PhysicalSession::readiness() const {
     // one idle observation (Black currently reports lock=2, void-lock=6).
     r.ready=false;r.reason="Load interlock mapping unverified";
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
-    else if(!standalone()) r.reason="Twin state unavailable";
+    else if(!standalone()) r.reason="Device connection state unavailable";
     else if(!settingsReady()) r.reason="Control state unavailable";
     return r;
 }
@@ -321,38 +327,31 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     }
     // Coalesce only new explicit settings intents. Never replay on reconnect,
     // timeout, mode change, or after unload. Do not overwrite an in-flight ACK.
-    target_=settings;targetAt_=now_;writes_.clear();status_.clear();commandFailed_=false;
+    target_=settings;targetAt_=now_;targetClockPending_=true;writes_.clear();status_.clear();commandFailed_=false;
     intentUnit_=report_.unit;intentInterpretation_=fresh(extraMode);intentMaximum_=fresh(maxForce);
     return TransportResult::Accepted;
 }
 void PhysicalSession::prepareWrites(const TrainingSettings& s) {
-    const auto same=[](const Modifier& a,const Modifier& b) {
-        return a.enabled==b.enabled && a.value==b.value && a.percent==b.percent;
-    };
-    const bool modifiers=s.magicMode!=report_.settings.magicMode ||
-        !same(s.magic,report_.settings.magic) || !same(s.eccentric,report_.settings.eccentric);
     const auto add=[&](uint16_t id,int value,int bytes) {writes_.push_back({id,value,bytes});};
-    if(modifiers) {
-        // Unloaded transaction: remove modifiers before raising base or changing
-        // direction; confirm each step before the next. Failure never rolls back
-        // or retries. This prevents temporary over-limit intermediate settings.
-        for(const bool magic:{true,false}) {
-            const auto id=report_.percentageSupported ? percentParameter(magic) : magic ? chains : eccentric;
-            if(fresh(id)!=0) add(id,0,width(id));
-        }
-    }
     const int pounds=convertWeightUnits(s.weight,report_.unit,WeightUnit::Pounds);
-    if(pounds!=fresh(base)) add(base,pounds,2);
-    if(modifiers) {
-        const int direction=s.magicMode==MagicMode::InverseChains ? 1 : 0;
-        if(fresh(inverse)!=direction) add(inverse,direction,1);
+    const int oldBase=int(*fresh(base)); // settingsReady checked before planning.
+    // Monotone envelope ordering: reductions first, then increases. An unchanged
+    // modifier is never cleared/restored. Changing IC must not disturb EO.
+    if(pounds<oldBase) add(base,pounds,2);
+    const auto modifiers=[&](bool decreases) {
         for(const bool magic:{true,false}) {
             const auto m=magic ? s.magic : s.eccentric;
             const auto id=m.percent ? percentParameter(magic) : magic ? chains : eccentric;
             const int value=!m.enabled ? 0 : m.percent ? m.value*100 : convertWeightUnits(m.value,report_.unit,WeightUnit::Pounds);
-            if(value) add(id,value,width(id)); // Disabled was already confirmed zero above.
+            const int current=int(*fresh(id));
+            if(decreases ? value<current : value>current) add(id,value,width(id));
         }
-    }
+    };
+    modifiers(true);
+    const int direction=s.magicMode==MagicMode::InverseChains ? 1 : 0;
+    if(fresh(inverse)!=direction) add(inverse,direction,1);
+    if(pounds>oldBase) add(base,pounds,2);
+    modifiers(false);
 }
 TransportResult PhysicalSession::setLoaded(bool loaded) {
     if(!connected_) return TransportResult::Disconnected;
@@ -366,6 +365,7 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
         return writeParameter(motor,5,2) ? TransportResult::Accepted : TransportResult::Failed;
     }
     // Explicit unload remains available even if state is unknown or another request is pending.
+    entryHandled_=true; // Cancel any connection-time mode entry too.
     cancelWrites("");
     return writeParameter(motor,4,2) ? TransportResult::Accepted : TransportResult::Failed;
 }
@@ -391,8 +391,28 @@ void PhysicalSession::pollState(size_t group) {
     case 4:read({autoLoadStatus,20642,21224});break;
     }
 }
+bool PhysicalSession::enterTrainingOnConnect() {
+    if(entryHandled_ || busy()) return false;
+    const auto mode=fresh(workout),m=fresh(motor);
+    if(!mode || !m) return false;
+    if(*mode==1) {entryHandled_=true;return false;}
+    // User-authorized connection setup: enter from the idle home screen only.
+    // Never interrupt another workout, unload automatically, or issue a load.
+    if(*mode!=0 || (*m!=0 && *m!=4)) {
+        entryHandled_=true;status_="Finish current workout on VOLTRA";return false;
+    }
+    if(!standalone() || fresh(childLock)!=0 || fresh(otaState)!=0) return false;
+    entryHandled_=true;status_="Opening Weight Training...";
+    // Android da514d2 enterWeightTrainingPayload: 20400 uint8 = 1.
+    // One attempt per connection, confirmed by mode readback, never retried.
+    writeParameter(workout,1,1);
+    return true;
+}
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
+    // Input arrives after the previous protocol tick, possibly after a blocking
+    // GATT operation. Start quiet time on this fresh loop instead of backdating it.
+    if(target_ && targetClockPending_) {targetAt_=now;targetClockPending_=false;}
     // tick() time predates a synchronous GATT write. Start the settling deadline
     // on the next loop, after that write completes, rather than backdating it.
     if(bootstrapWriteJustCompleted_) {lastWrite_=now;bootstrapWriteJustCompleted_=false;}
@@ -419,7 +439,8 @@ void PhysicalSession::tick(uint64_t now) {
         if(*oldest==0 || now_-*oldest>=criticalPollIntervalMs) {
             pollState(size_t(oldest-pollAt_.begin()));return;
         }
-        if(!waitingWrite_ && target_) {
+        if(enterTrainingOnConnect()) return;
+        if(!waitingWrite_ && target_ && now_-targetAt_>=settingsQuietMs) {
             prepareWrites(*target_);target_.reset();
         }
         if(!waitingWrite_ && !writes_.empty()) {
@@ -430,7 +451,7 @@ void PhysicalSession::tick(uint64_t now) {
         if(waitingWrite_) {
             read({waitingWrite_->first});return;
         }
-        intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();
+        if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();}
         if(!telemetrySubscribed_) {
             telemetrySubscribed_=true;
             Bytes payload{1,0};append16(payload,telemetrySubscribe);

@@ -240,3 +240,40 @@ the information-read starvation is no longer present in that capture. Black
 remained outside Weight Training (20400 = 0), so normalized training controls were
 correctly unavailable. User confirmation of the new settings interactions is still
 pending. Image hashes and build sizes are recorded in BASELINE.md.
+
+## October 24 connection, latency and independent modifier fixes
+
+CONFIRMED (Black): the first installed correction found 57 LB, motor 0, mode
+20400 = 0, IC 60%, EO off and reported maximum 230 LB. Connection setup wrote
+only mode 20400 = 1; its subsequent readback confirmed Weight Training, with
+57 LB still unloaded. A later startup found mode already 1, 60 LB unloaded,
+IC 20%, EO off and maximum 230. It therefore needed no mode-entry write.
+No autonomous base/modifier or motor-setting test was performed.
+
+The intermittent 574 radio-establishment failure remains: the final startup
+capture failed attempt one and succeeded on attempt two, followed by remembered
+acceptance and fresh state. The empty steady-state capture is not a separate
+pass; diagnostics suppress unchanged values. Logs are retained in ignored
+build/voltra-live/2026-10-24. Firmware loading/readiness gates remain closed.
+
+The user reported that the controls work better after the correction, but found
+that reopening disabled IC lost its previous amount. The physical zero is
+correct for disabled state; the UI now separately retains last confirmed positive
+amounts for each modifier/device as editor defaults. This memory is local to the
+running UI, survives changing connections, converts absolute units and respects
+current limits/interpretation support. It never changes confirmed state, restores
+resistance on reconnect or sends a command merely by opening an editor. Forgetting
+a device or resetting the UI clears it. Physical recall verification is pending.
+
+The user also reported a black screen during testing while firmware installation
+and diagnostic restarts were still taking place. Both captured boots identify
+USB_UART_CHIP_RESET (0x15), matching those deliberate restarts; neither captured
+log contains a panic/backtrace/watchdog event. That supports an installation
+restart explanation but cannot identify the exact event without its timestamp.
+The pre-existing invalid flash-coredump-size warning still appears at boot and
+does not establish a new crash. Future installs should be announced before reset.
+
+The settings planner no longer clears/restores an unchanged modifier, and rotary
+weight requests settle for 100 ms while the UI shows a labelled local preview.
+The user has not separately confirmed every ordering, limit or timeout case.
+New automated test code remains deferred; future cases are in TESTING.md.

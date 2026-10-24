@@ -18,6 +18,9 @@ The remote boots Normal. On Devices, press the rotary button, then turn left
 three logical clicks within three seconds to enter/leave Simulator. Normal mode
 rescans every five seconds, attempts a sole available VOLTRA once, and keeps saved
 devices visible offline. Hold a saved device and confirm REMOVE to forget it.
+After an accepted real connection, the remote opens Weight Training from the
+idle, unloaded home screen and waits for confirmation. It never loads resistance
+or interrupts an active workout during connection setup.
 
 ## Run
 
@@ -49,6 +52,13 @@ Dropsets retain Apply.
 Slow rotation changes 1 LB or 0.5 KG; faster rotation accelerates. Device paging
 supports arrows, horizontal swipes and rotary (positive rotation goes right).
 Twin pairs use overlapping circles. See [the October 17 fixes](docs/UI_FIXES_2026_10_17.md).
+Physical settings wait for a 100 ms pause in input before the latest intent is
+sent. The main number/dial previews requested weight with "Setting weight...";
+only device reports confirm it. IC and EO changes do not clear one another.
+Disabling either retains its last confirmed amount as an editor default for that
+device during the current run; reopening does not apply it until you tap/edit.
+Twin information is shown only when a pair is detected. The synthetic Yellow/Pink
+pair now reports 250 LB per unit / 500 LB combined (113 / 226 KG).
 
 Tap Presets to browse P01–P99 with the knob. Tap an existing preset to request
 its modifiers; hold it to compare OLD / NEW before saving an override. The

@@ -19,6 +19,10 @@ public:
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
     TrainingReport report() const { return session_.trainingReport(); }
+    // Local requested weight for responsive presentation; never machine state.
+    std::optional<int> weightPreview() const {
+        return pending_ && fresh() && report().unit==weightIntentUnit_ ? weightIntent_ : std::optional<int>{};
+    }
     bool fresh() const;
     bool pending() const { return pending_ || session_.busy(); }
     const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
@@ -55,6 +59,7 @@ private:
     bool scanPending_ = false;
     std::optional<DeviceEntry> connectingDevice_;
     std::optional<int> weightIntent_, dropTarget_;
+    WeightUnit weightIntentUnit_=WeightUnit::Pounds;
     std::optional<TrainingSettings> settingsIntent_;
     uint32_t lastRep_ = 0;
     uint64_t telemetryRevision_ = 0, holdSince_ = 0;

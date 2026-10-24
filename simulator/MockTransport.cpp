@@ -25,7 +25,10 @@ MockTransport::MockTransport() {
         limits.combinedSemanticsKnown = r.twin;
         if (r.twin) {
             limits.peerFirmware = r.firmwareVersion;
-            limits.combinedTwin = {460, 416}; // Synthetic effective report: 460 LB / 208 KG.
+            // User's October 24 Overdrive scenario; explicit synthetic reports,
+            // not a general firmware fallback or a physical Twin routing claim.
+            limits.single = {250, 226}; // 250 LB / 113 KG per endpoint.
+            limits.combinedTwin = {500, 452}; // 500 LB / 226 KG effective pair.
         } else if (i == 0) limits.single = {230, 208};
         // Red and Black deliberately omit a max report and use the shared fallback.
         r.maxWeight = resolveWeightLimit(limits, r.unit).ticks;

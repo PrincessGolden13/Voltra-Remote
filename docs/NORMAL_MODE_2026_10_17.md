@@ -29,11 +29,21 @@ stationary-cable/motion decoding and a device rest timer are not established.
 The user explicitly deferred real Twin work to concentrate on Black first.
 Do not describe this as a complete training release.
 
+October 24: the connection setup opens Weight Training once from fresh idle and
+unloaded reports, with current standalone status, child lock off and OTA inactive.
+It writes only mode parameter 20400 = 1 and waits for readback. Other active
+workouts are not interrupted. A later manual mode exit is not fought; disconnect
+and reconnect starts a new setup attempt. Unload cancels a pending setup attempt.
+
 Settings require accepted connection, fresh unloaded motor state, Weight Training,
 known units, current standalone reports, device maximum, known modifiers,
 child-lock off and OTA inactive. Every step waits for parameter readback. Changes
 in units, interpretation, maximum, mode or standalone status cancel remaining
-steps. Critical reads take priority, each write has a three-second deadline, and
+steps. Physical edits settle for 100 ms before the latest requested settings are
+planned. Only changed fields are written; unchanged IC/EO values are not cleared
+and restored. Base/modifier reductions precede increases to preserve the envelope.
+The requested weight is previewed locally while device state stays authoritative.
+Critical reads take priority, each write has a three-second deadline, and
 the whole transaction is bounded to ten seconds. No retries, rollback writes or
 replay on reconnect. Auto Load preferences remain untouched.
 

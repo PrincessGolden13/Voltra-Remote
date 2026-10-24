@@ -170,3 +170,30 @@ remain explicit future milestones.
   modifier/KG/preset changes and long-duration connectivity are not marked passed.
   Loading, Auto Load, Mountain, mixed modifier units and dropsets remain blocked;
   real Twin verification is explicitly deferred by the user.
+
+## October 24 connection and control fixes
+
+- CONFIRMED builds: Normal 1,207,569 program bytes / 31,768 static RAM;
+  isolated Simulator 934,365 / 21,236. Windows native build also passes.
+- Both final images were installed after recovery-image, partition-boundary and
+  esptool hash checks. Snapshot: build/guition/2026-10-24-controls-remember.
+  Normal binary: 1,207,936 bytes, SHA256
+  384CD8F486329DCE6E36637DCE46FD1152ED6F041D4A0677DDB4F4EC5C78E604.
+  Simulator binary: 934,736 bytes, SHA256
+  082099BA4BE89FEF1988B0490A2B1EA54503D343AEE0AA86F9D8707C1AA5EBBF.
+- CONFIRMED on Black: automatic idle-to-Weight-Training entry returned mode 1
+  while remaining unloaded at 57 LB. Final installed-image startup reconnected
+  on attempt two, accepted the remembered remote and returned 60 LB unloaded,
+  mode already 1, IC 20%, EO off and reported maximum 230 LB. Initial link error
+  574 remains intermittent. No autonomous motor or resistance-setting test ran.
+- Existing reference validators passed: 203 SDK packets, weights 5–230,
+  593 modifier packets and pinned SDK/bootstrap consistency. These checks do
+  not establish physical compatibility or new transaction correctness.
+- Existing 360 px renders inspected: synthetic Twin at 500 LB and 226 KG,
+  standalone unknown Twin status without a Twin banner, and a 60% Magic editor.
+  The final Twin-500 render matches the preceding inspected BMP byte-for-byte.
+  This verifies layout only. No new test code was created.
+- The user reports improved controls. The follow-up remembered-value fix is
+  installed; physical disable/reopen verification is pending. Loading, Auto Load,
+  Mountain, mixed modifier units, loaded edits and dropsets retain their existing
+  gates. Real Twin checks remain deferred at the user's request.

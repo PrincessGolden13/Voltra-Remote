@@ -55,6 +55,7 @@ private:
     std::optional<WeightUnit> intentUnit_;
     std::optional<int64_t> intentInterpretation_, intentMaximum_;
     bool telemetrySubscribed_=false, commandFailed_=false;
+    bool entryHandled_=false, targetClockPending_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     bool standalone() const;
     bool settingsReady() const;
@@ -63,6 +64,7 @@ private:
     void prepareWrites(const TrainingSettings&);
     void cancelWrites(const char*);
     void pollState(size_t);
+    bool enterTrainingOnConnect();
     void applyTelemetry(const Frame&);
     bool send(uint8_t,const Bytes&,uint8_t sender=0xaa,uint8_t receiver=0x10,uint8_t type=0x04);
     bool read(std::initializer_list<uint16_t>);

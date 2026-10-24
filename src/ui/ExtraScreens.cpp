@@ -147,7 +147,7 @@ void UiController::updateExtra() {
     const auto r=app_.report();
     if(page_ == Screen::Live) {
         const auto d=app_.drops();
-        text(status_,r.twinKnown ? (r.twin ? "Twin: "+r.twinPeerName : "") : "Twin unknown");
+        text(status_,r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
         const bool known=app_.fresh() && r.telemetryValid;
         largeValue(known ? (d.enabled ? weightText(r.settings.weight,r.unit) : r.force ? weightText(*r.force,r.unit) : "--") : "--");
         text(start_,d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) : "");

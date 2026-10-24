@@ -142,7 +142,7 @@ void TrainingApplication::adjustWeight(int delta) {
     }
     if (!pending_ && s.weight == r.settings.weight && sameModifier(s.magic,r.settings.magic) &&
         sameModifier(s.eccentric,r.settings.eccentric)) return;
-    if (sendSettings(s)) weightIntent_ = s.weight;
+    if (sendSettings(s)) {weightIntent_ = s.weight;weightIntentUnit_=r.unit;}
 }
 void TrainingApplication::toggleWeight() {
     auto r = report();
@@ -179,7 +179,7 @@ void TrainingApplication::toggleModifier(bool magic) {
         message_ = r.loaded ? "Unload before changing mode" : "Awaiting device"; return;
     }
     auto s = settingsIntent_.value_or(r.settings); auto& m = magic ? s.magic : s.eccentric;
-    m.enabled = !(magic ? r.settings.magic.enabled : r.settings.eccentric.enabled);
+    m.enabled = !m.enabled;
     sendSettings(s);
 }
 Preset TrainingApplication::currentPreset() const {
@@ -305,6 +305,11 @@ void TrainingApplication::tick(uint64_t now) {
     // mid-transaction, and do not turn an unrelated report into a successful ACK.
     if (pending_ && !session_.busy() && (session_.commandFailed() || r.revision > sentRevision_ || now - sentAt_ >= 3000)) {
         message_ = session_.commandFailed() ? session_.status() : r.revision > sentRevision_ ? "" : "No confirmation";
+        const auto matches=[](Modifier a,Modifier b) {return a.enabled==b.enabled && (!a.enabled || sameModifier(a,b));};
+        if(!session_.commandFailed() && settingsIntent_ && (r.revision<=sentRevision_ || !fresh() ||
+           r.settings.weight!=settingsIntent_->weight || r.settings.magicMode!=settingsIntent_->magicMode ||
+           !matches(r.settings.magic,settingsIntent_->magic) || !matches(r.settings.eccentric,settingsIntent_->eccentric)))
+            message_="Settings not confirmed";
         pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {
             auto actual = currentPreset(); actual.drops = presetIntent_->drops;

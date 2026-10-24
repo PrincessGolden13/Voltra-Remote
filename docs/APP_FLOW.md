@@ -1,3 +1,18 @@
+> October 24 feedback supersedes conflicting behavior below:
+> - On accepted connection, open Weight Training automatically from confirmed
+>   idle/unloaded state, once; wait for mode readback. Never load resistance.
+> - Show Twin information only for a detected pair. Missing status alone is not
+>   evidence of Twin; retain internal safety guards without the spurious banner.
+> - Coalesce physical settings until rotary input pauses for 100 ms. Show local
+>   requested weight immediately with a pending label; confirmation stays separate.
+> - Magic and EO writes are independent. Send only changed fields, with reductions
+>   before increases when applying a combined-limit adjustment or preset.
+> - Disabling Magic/EO retains its last confirmed positive amount as a local
+>   editor default, independently per device. Reopening the editor recalls that
+>   amount within current limits; it does not reactivate the modifier by itself.
+> - Synthetic Yellow/Pink have explicit Overdrive limits of 250 LB each and
+>   500 LB combined (113 / 226 KG). Do not assign 250 LB to all real 2.x devices.
+>
 > October 18 testing priority: finish the single available VOLTRA first. The user
 > has other units but explicitly deferred real Twin work until later. Keep unknown
 > or active physical Twin states blocked; this does not change simulator limits.

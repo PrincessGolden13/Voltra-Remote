@@ -63,6 +63,12 @@ private:
     struct UnitSelections { int base = -1; WeightUnit unit = WeightUnit::Pounds; std::optional<int> percent, absolute; };
     std::map<DeviceId, std::array<UnitSelections, 2>> unitMemory_;
     UnitSelections& unitSelection();
+    // Editor defaults only. Disabled device reports remain disabled/zero, and
+    // recalling an amount never sends it or restores resistance on reconnect.
+    struct ModifierSelection { Modifier amount; WeightUnit unit; };
+    std::map<DeviceId, std::array<std::optional<ModifierSelection>, 2>> modifierMemory_;
+    void rememberModifiers();
+    Modifier editorModifier(bool magic) const;
     std::string presetNotice_;
 
     bool weightFocused_ = true, restAlerted_ = false;

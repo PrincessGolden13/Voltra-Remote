@@ -136,3 +136,24 @@ unrelated reports cannot erase a failure; half-KG round trips and wire envelopes
 disabled modifiers write zero while enabled values stay positive; no redundant
 style/alignment invalidation or hidden scale-label rewrite on idle frames;
 sparse rep events are not motion freshness; no synthetic physical rest timer.
+
+## October 24 feedback
+
+Existing packet/upstream validators pass again; no new test code was created.
+Future cases: one automatic idle-to-Weight-Training request per accepted connection;
+mode already selected; refusal/timeout/stale/loaded/armed/other-workout context;
+manual exit is not reversed; unload cancels setup; no load command during setup.
+One-modifier changes must never write the other parameter; all reduction/increase
+orderings must remain within the envelope. Repeated taps use latest requested
+state; coalesced edits preserve both independent fields. Continuous rotary input
+must retain fresh reports while waiting for the 100 ms quiet interval. Requested
+weight is labelled, discarded on failure/disconnect and never authorizes loading.
+Missing standalone Twin status must not create a Twin banner. Synthetic pair
+limits are 500 LB / 226 KG; ordinary 2.x fallback stays 230 LB / 104 KG.
+Disabled physical reports contain zero, so UI editor recall must retain the last
+confirmed positive Magic/EO amounts independently per device. Future cases:
+60% IC -> disable -> reopen at 60%; EO unaffected; report-driven changes update
+memory; no writes on editor entry/reconnect; lower headroom clamps the draft;
+absolute-unit conversion; unsupported unit interpretations are not restored;
+forget/reset clears the local editor memory. This memory is session-local and
+does not override machine-confirmed enabled state or preset matching.

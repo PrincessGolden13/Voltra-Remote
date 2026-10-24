@@ -223,11 +223,13 @@ void UiController::navigate(Screen page) {
     next_ = page; rebuild_ = true;
     const auto r = app_.report();
     if (page == Screen::Magic || page == Screen::Eccentric) {
+        rememberModifiers();
+        const auto amount = editorModifier(page == Screen::Magic);
         draftMode_ = r.settings.magicMode;
-        draftPercent_ = (page == Screen::Magic ? r.settings.magic : r.settings.eccentric).percent;
+        draftPercent_ = amount.percent;
         if (page == Screen::Magic && !r.magicSupported[int(draftMode_)])
             for (int i = 0; i < 3; ++i) if (r.magicSupported[i]) { draftMode_ = MagicMode(i); break; }
-        draftValue_ = page == Screen::Magic ? r.settings.magic.value : r.settings.eccentric.value;
+        draftValue_ = amount.value;
     }
     if (page == Screen::Drops) { draftDrops_ = app_.drops(); dropField_ = 1; }
 }
@@ -249,7 +251,10 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action == CancelForget) { navigate(Screen::Devices); return; }
     if (action == ConfirmForget) {
-        if (app_.forget(forgetId_)) navigate(Screen::Devices);
+        if (app_.forget(forgetId_)) {
+            modifierMemory_.erase(forgetId_); unitMemory_.erase(forgetId_);
+            navigate(Screen::Devices);
+        }
         else value(message_,app_.message());
         return;
     }
@@ -290,6 +295,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == ConfirmReset) {
         auto old = config_; config_ = {};
         if (store_ && !store_->save(config_)) { config_ = old; value(message_, "Reset could not be saved"); return; }
+        modifierMemory_.clear(); unitMemory_.clear();
         activePreset_ = pendingPreset_ = -1; navigate(Screen::Settings); return;
     }
     if (action == ModeFocus || action == AmountFocus) return;
@@ -316,6 +322,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action == Unload && !held) { app_.unload(); return; }
     if (action == Magic || action == EO || action == Drops) {
+        rememberModifiers();
         weightFocused_ = false; activePreset_ = pendingPreset_ = -1;
         const auto r = app_.report();
         if (action == Magic && std::none_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; })) return;
@@ -635,20 +642,22 @@ void UiController::update() {
     const auto r = app_.report();
     if (int(page_) >= int(Screen::Presets)) { updateExtra(); return; }
     if (page_ == Screen::Main) {
-        largeValue(r.revision ? weightText(r.settings.weight,r.unit) : "--");
-        const bool atMaximum = app_.fresh() && r.maxWeight > 0 && r.settings.weight >= r.maxWeight;
+        const auto preview=app_.weightPreview();
+        const int shownWeight=preview.value_or(r.settings.weight);
+        largeValue(r.revision ? weightText(shownWeight,r.unit) : "--");
+        const bool atMaximum = app_.fresh() && r.maxWeight > 0 && shownWeight >= r.maxWeight;
         const uint32_t maximumColor = limitAccent();
         // Retain a darker unloaded number, even when its hue indicates the limit.
         const uint32_t numberColor = r.loaded ? maximumColor : ((maximumColor & 0xfefefeu) >> 1);
-        color(weight_, !app_.fresh() ? amber : r.loaded ? bright : atMaximum ? numberColor : muted);
+        color(weight_, !app_.fresh() ? amber : preview ? muted : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
-        value(status_, r.twinKnown ? (r.twin ? "Twin: "+r.twinPeerName : "") : "Twin unknown");
+        value(status_, r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
         color(status_, r.twinKnown ? accent() : amber);
         if(r.twinKnown && r.twin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_width(status_,width_*76/100);
         style::set_text_font(status_, &lv_font_montserrat_14,0);
         style::align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
-        updateScale(r.settings.weight, r.maxWeight, "", atMaximum ? maximumColor : accent());
+        updateScale(shownWeight, r.maxWeight, "", atMaximum ? maximumColor : accent());
         for (int i=0; i<2; ++i) {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
             const uint32_t c = accent();
@@ -699,7 +708,8 @@ void UiController::update() {
         if (app_.fresh() && r.telemetryValid && r.restSeconds) summary += "    "+std::to_string(*r.restSeconds/60)+":"+(*r.restSeconds%60 < 10 ? "0" : "")+std::to_string(*r.restSeconds%60);
         value(stats_,summary);
         value(message_, !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
-            r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() : atMaximum ? "MAX" : "");
+            r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
+            preview ? "Setting weight..." : atMaximum ? "MAX" : "");
         color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
         return;
     }
@@ -775,6 +785,28 @@ UiController::UnitSelections& UiController::unitSelection() {
     (draftPercent_ ? memory.percent : memory.absolute)=draftValue_;
     return memory;
 }
+void UiController::rememberModifiers() {
+    if (!app_.fresh() || app_.selectedDevice().empty()) return;
+    const auto r = app_.report();
+    auto& memory = modifierMemory_[app_.selectedDevice()];
+    for (int i = 0; i < 2; ++i) {
+        const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
+        const bool supported = i == 0 ? r.magicSupported[int(r.settings.magicMode)] : r.eccentricSupported;
+        if (supported && m.enabled && m.value > 0) memory[i] = ModifierSelection{m,r.unit};
+    }
+}
+Modifier UiController::editorModifier(bool magic) const {
+    const auto r = app_.report();
+    auto amount = magic ? r.settings.magic : r.settings.eccentric;
+    const auto found = modifierMemory_.find(app_.selectedDevice());
+    if (amount.value > 0 || !app_.fresh() || found == modifierMemory_.end()) return amount;
+    const auto& saved = found->second[magic ? 0 : 1];
+    if (!saved || (saved->amount.percent && !r.percentageSupported) ||
+        (!r.modifierUnitsSelectable && saved->amount.percent != amount.percent)) return amount;
+    amount.percent = saved->amount.percent;
+    amount.value = amount.percent ? saved->amount.value : convertWeightUnits(saved->amount.value,saved->unit,r.unit);
+    return amount; // Enabled flag is still the machine's; only a tap/edit can apply.
+}
 void UiController::edited() {
     editedAt_ = hardware_.nowMs(); editDirty_ = true;
     activePreset_ = pendingPreset_ = -1;
@@ -782,6 +814,7 @@ void UiController::edited() {
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     app_.tick(now);
+    rememberModifiers();
     if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting()) { app_.leave(true); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {
         if (!touchDown_ && !modeGestureUntil_ && !rebuild_ && app_.tryAutomaticSelection()) navigate(Screen::Main);
@@ -802,7 +835,7 @@ void UiController::tick() {
             if(returnAfterEdit_ && accepted) navigate(Screen::Main);
             returnAfterEdit_=false;
         } else if(!editDirty_ && !app_.pending()) {
-            const auto m=page_ == Screen::Magic ? r.settings.magic : r.settings.eccentric;
+            const auto m=editorModifier(page_ == Screen::Magic);
             draftValue_=m.value; draftPercent_=m.percent; draftMode_=r.settings.magicMode;
         }
     }

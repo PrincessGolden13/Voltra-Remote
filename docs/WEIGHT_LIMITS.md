@@ -53,16 +53,27 @@ entitlements, routing or physical compatibility. Device reports take precedence.
 
 ## Implementation boundaries
 
-The mock supplies explicit 230 LB / 104 KG single and 460 LB / 208 KG combined
-reports. Red and Black omit a max report to exercise firmware fallback through
+The mock supplies an explicit 230 LB / 104 KG Green single-unit report. As of the
+user's October 24 request, Yellow/Pink provide explicit synthetic Overdrive
+reports: 250 LB / 113 KG per endpoint and 500 LB / 226 KG combined. The combined
+simulation is a user-selected scenario, not physical Twin routing evidence.
+Red and Black omit a max report to exercise firmware fallback through
 the same resolver. Names are presentation only; limits use version/model
 metadata. Black's 1.8 identity is synthetic, not a device observation.
 
 The physical ControlSession recognizes the observed standalone zero/zero current
 Twin-status profile and uses its reported 230 LB limit for unloaded LB edits.
 Active/unknown Twin states still have no effective limit or control routing.
-Physical loading, KG and modifier changes remain disabled. See
+Physical loading remains disabled; unloaded KG/percentage changes are implemented.
+No physical maximum is raised merely because firmware is 2.x. See
 [physical implementation status](NORMAL_MODE_2026_10_17.md).
+
+CONFIRMED (official release notes, October 24): 2.0 provides 230 LB / 104 KG
+generally; eligible users can request Overdrive beta for 250 LB / 113 KG.
+[Firmware release notes](https://help.beyond-power.com/en/articles/14705052-firmware-release-notes).
+Therefore the generic 2.x fallback remains 230, and a fresh effective device
+limit (including 250 when actually reported) takes precedence. A version string
+alone does not establish Overdrive entitlement or its configured ceiling.
 
 Recipes convert absolute values/stair steps to the nearest tick; envelope
 ceilings and RP reductions round down. Integer-KG recipes migrate once to half-KG
