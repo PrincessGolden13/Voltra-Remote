@@ -705,7 +705,8 @@ void UiController::update() {
         value(presetValue_, activePreset_ >= 0 ? "P"+std::to_string(activePreset_+1) : "P");
         color(presetValue_,activePreset_ >= 0 ? bright : muted);
         std::string summary;
-        if (app_.fresh() && r.telemetryValid && r.completedSets && r.lastSetReps) summary = std::to_string(*r.completedSets)+" | "+std::to_string(*r.lastSetReps);
+        const auto counters=app_.displayCounters();
+        if (counters.completedSets && counters.lastSetReps) summary = std::to_string(*counters.completedSets)+" | "+std::to_string(*counters.lastSetReps);
         if (const auto rest=app_.restSeconds()) summary += "    "+std::to_string(*rest/60)+":"+(*rest%60 < 10 ? "0" : "")+std::to_string(*rest%60);
         value(stats_,summary);
         value(message_, !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :

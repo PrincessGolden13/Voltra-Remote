@@ -71,6 +71,7 @@ private:
     unsigned rawTelemetryHeaders_=0;
     bool telemetrySubscribed_=false, commandFailed_=false;
     bool entryHandled_=false, targetClockPending_=false;
+    bool trainingSeen_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     bool standalone() const;
     bool settingsReady() const;

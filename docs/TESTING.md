@@ -219,3 +219,20 @@ NEXT and MIN labels must agree. RP floors, signed ascending Stairs, manual
 rotary limits, below-floor incoming state, invalid/unknown minimum, presets with
 insufficient base headroom, and explicit mock Twin/native-KG minima are queued.
 Never reinterpret an unexpected mismatch as confirmation or automatic unloading.
+
+Dropset presentation/recovery cases queued (new test code still deferred):
+15/13/11/9 LB with one reported rep per machine segment displays one logical
+set / four reps; multiple reps within each RP segment accumulate into one set;
+duplicate and late completions do not add twice; continuation at 5 LB keeps
+counting with no further automation writes. Confirmed unload preserves the last
+total and starts rest; a second loaded dropset increments the logical set once.
+Weight-induced AA85 closes while active must not start rest. Disable/stop drops
+mid-set without discarding existing totals. Missing/stale telemetry, revisited
+set IDs, disconnect/reconnect and ordinary training outside drops must not
+invent counts. Final minimum readback must settle before exhaustion; at the
+floor/quota, later rep gaps/motion loss must not restart automation. Recovery
+requires fresh non-training mode plus an equally recent unloaded motor; stale,
+unknown or loaded state must retain unload access. Preserve the recovery reason,
+clear pending intent, and never replay resistance commands after reconnect.
+Manual adjustment after exhaustion disables the recipe; it must not silently
+resume drops or leave an active NEXT preview for a dormant executor.

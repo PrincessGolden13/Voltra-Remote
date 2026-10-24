@@ -305,3 +305,31 @@ remain explicit future milestones.
   bytes, SHA256 7C561561E56585244E549509B3AC641ECBDB929598FDB26612F8E69074A0EAC5.
   Simulator binary: 940,176 bytes,
   SHA256 AE88FB0FAE288B38EB435F4FC625D5226A8AF56C3338065C6D01103534268273.
+
+## October 24 grouped dropset counters and session recovery
+
+- Black's capture shows 15 -> 13 -> 11 -> 9 -> 7 -> 5 LB with separate device
+  statistics segments. Local presentation now sums observed reps across those
+  segments into one loaded dropset, including all RP drops. Raw machine state
+  and the event stream used to authorize reductions remain separate.
+- The confirmed floor/RP quota ends automatic execution until unload/rearming.
+  Further reps still count; no further reduction trigger or minimum write is
+  attempted. A subsequent manual dial adjustment switches the recipe off.
+- The same capture shows Black exiting Weight Training unloaded while GATT
+  remained connected; the exact device error is unknown. Recovery now cancels
+  intent and returns to selection after fresh mode-exit/unload evidence, retaining
+  the reason. New numeric write-request diagnostics support future investigation.
+  No automatic re-entry/load/replay is part of recovery.
+- Native, Normal and isolated Simulator builds pass. Existing reference validators
+  pass (203 SDK packets / 593 modifier packets). Existing 360 px Stairs-floor and
+  RP Live renders inspected; the final floor render matches the inspected image.
+  These are build/layout/reference checks, not physical counter/recovery tests.
+  No new test code was created; user verification remains pending.
+- Snapshot: build/guition/2026-10-24-drop-progress. Normal binary: 1,219,152 bytes,
+  SHA256 0598C98840969D85F312DBC446881FF5B13EAC651CDEF8C3729BE160A7FA59E7.
+  Simulator binary: 941,232 bytes,
+  SHA256 0900A3751B7FEE55260CFE7E2F8CDDDBC64277132F185231A6A67CCA9327490C.
+- Installed with recovery/partition bounds and esptool flash-hash verification.
+  Black reconnected on the second link attempt, accepted the remembered remote,
+  and reported fresh 5 LB, unloaded, Weight Training selected, maximum 230 LB.
+  No resistance command was issued by the installation/connection check.

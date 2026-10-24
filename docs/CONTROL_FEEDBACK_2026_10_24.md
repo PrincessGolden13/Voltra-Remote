@@ -67,3 +67,56 @@ Bounded flashing passed recovery/partition and esptool hash verification. Logs
 remain ignored under build/voltra-live/2026-10-24; images/manifests are in
 build/guition/2026-10-24-mountain-controls. Loading, Auto Load triggering, loaded
 changes and automatic real drops remain gated. Real Twin testing stays deferred.
+
+## Later dropset counting and session-exit follow-up
+
+This section supersedes the earlier dropset gating milestone above; subsequent
+user-authorized live work enabled guarded base-only drops on standalone Black.
+
+CONFIRMED (Black capture and user observation): Stairs progressed through
+15 -> 13 -> 11 -> 9 -> 7 -> 5 LB. Each base change closed an AA85 statistics
+segment while workout status remained active (2), and the next moving stream
+used a new set ID with its rep count reset. Showing those raw IDs directly caused
+the remote to lose the cumulative dropset rep count.
+
+The user's explicit dropset exception now has a local presentation model,
+`DropSetProgress`, separate from machine-confirmed `TrainingReport` and from
+the completed-rep events that authorize automatic reductions. It sums the maximum
+reported rep count for each observed moving-stream segment. Duplicate/late
+completion reports can amend an observed segment but cannot create a segment.
+Stairs and all RP drops in one loaded sequence share one logical set; confirmed
+unload finishes that set. RP rest phases preserve the group. The Main summary
+and Live counters use the same totals, which continue at the floor or after
+automation is stopped. Counts reset on disconnect/leave, and ordinary training
+uses the device counters. Segment storage is bounded to 256; an ambiguous
+revisited ID or invalid count hides the local totals instead of inventing reps.
+
+Weight-induced statistics closes do not start the grouped rest clock. An actual
+device rest/non-active phase or confirmed unload can do so; active movement ends
+rest. This remains presentation state and never authorizes a resistance command.
+
+After the last target is confirmed, reaching the profile minimum or RP quota
+latches automatic execution as finished until unload/rearming. The controller
+does not evaluate further reduction triggers, resend the minimum, reassert load,
+or automatically unload. The next-target clamp remains a second guard. A final
+target that is still pending must still receive its normal confirmation.
+An explicit manual dial adjustment also disables an exhausted recipe, so its
+NEXT preview cannot imply another automatic drop will occur.
+
+CONFIRMED (capture): after the first rep at 5 LB, Black reported unloading/off,
+workout summary 6 sets / 6 reps, an unrecognized workout status 5, motor 0, and
+mode 0. GATT still appeared connected, so the old UI remained on an invalid
+training screen. The user did not retain the device's error message. UNVERIFIED:
+the cause/error code, and whether any later radio failure accompanied it. The
+capture does not establish an extra resistance command at the floor.
+
+Recovery now cancels queued intent and disconnects an established training
+session when a fresh non-training mode and unloaded motor are confirmed together
+(the motor observation must be at least as new as the mode observation). Device
+selection retains the reason and permits an explicit reconnect. Unknown/loaded
+state retains the unload target. Unknown workout statuses no longer preserve
+the previous active status. Recovery never automatically loads or re-enters
+training; a new explicit connection follows the existing one-shot setup rules.
+Numeric control-write ID/value/timestamp diagnostics were added for future
+investigation, without logging handshake identities. Physical verification of
+these changes is pending; no device fault was intentionally reproduced.

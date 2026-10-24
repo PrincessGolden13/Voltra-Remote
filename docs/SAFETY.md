@@ -95,3 +95,17 @@ The separate accessory-display register must confirm percentage interpretation
 for this physical profile. The old adaptation register alone is insufficient.
 Unavailable dropset recipes may be edited locally but are stored disabled; their
 presence on screen never authorizes live writes or automatic resistance changes.
+
+Later October 24 dropset follow-up: the profile minimum supersedes the historical
+one-tick base floor above (confirmed Black minimum 5 LB; native 2 KG evidence is
+documented separately). After the final reduction is confirmed, floor/RP-quota
+exhaustion leaves automation dormant until unload/rearming. It does not resend
+the minimum, retry a load, or unload automatically. The user-authorized cumulative
+dropset counters are local presentation only; automatic changes still use raw,
+fresh completed-rep/motion evidence and readback-confirmed settings.
+
+A confirmed unloaded exit from Weight Training now clears pending intent and
+ends the BLE session so the UI can return to device selection with a reason.
+The unloaded motor observation must be at least as recent as the mode observation.
+Loaded/unknown state retains the unload target, and a later connection cannot
+restore or replay any load, drop, or settings intent.

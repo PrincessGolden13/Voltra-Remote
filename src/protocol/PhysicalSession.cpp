@@ -84,6 +84,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     values_.clear();seen_.clear();report_={};firmware_.clear();
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
+    trainingSeen_=false;
     telemetryAt_=unitSwitchAt_=0;commandFailed_=false;intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
     closedSet_.reset();setEndRevision_=setEndedAt_=0;
@@ -173,6 +174,8 @@ bool PhysicalSession::read(std::initializer_list<uint16_t> ids) {
 bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
     Bytes b{1,0};append16(b,id);
     for(int i=0;i<bytes;++i) b.push_back(uint8_t(uint32_t(value)>>(i*8)));
+    // Numeric control trace only; no handshake identity or device address.
+    Serial.printf("%llu VOLTRA write request id=%u value=%d\n",static_cast<unsigned long long>(now_),unsigned(id),value);
     if(!send(0x11,b)) return false;
     waitingWrite_=std::make_pair(id,value);waitingAt_=now_;return true;
 }
@@ -316,7 +319,9 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
                 unsigned(p[2]),*deviceSet_,rep,motionPosition_,motionVelocity_,motionForce_);
         }
     } else if(p.size()==39 && p[0]==0x80 && p[1]==0x25 && p[2]==1 && p[3]==0) {
-        if(p[4]<=4) workoutStatus_=p[4];
+        // Retain unknown values as unknown phases, never the previous active
+        // phase. Readiness accepts only the explicitly recognized states.
+        workoutStatus_=p[4];
         Serial.printf("VOLTRA workout status=%u\n",unsigned(p[4]));
     }
     updateReport();
@@ -341,6 +346,7 @@ void PhysicalSession::updateReport() {
         return;
     }
     report_.unit=*u==0 ? WeightUnit::Pounds : WeightUnit::Kilograms;
+    trainingSeen_=true;
     report_.firmwareVersion=firmware_;
     report_.settings.weight=convertWeightUnits(int(*w),WeightUnit::Pounds,report_.unit);
     const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==14);
@@ -381,7 +387,7 @@ void PhysicalSession::updateReport() {
     // infer a stationary cable or authorize automatic resistance changes.
     report_.telemetryValid=telemetryAt_!=0;
     report_.rep=deviceRep_.value_or(0);report_.setNumber=deviceSet_;
-    report_.setActive=workoutStatus_ ? std::optional<bool>(*workoutStatus_==2) : std::optional<bool>{};
+    report_.setActive=workoutStatus_ && *workoutStatus_<=4 ? std::optional<bool>(*workoutStatus_==2) : std::optional<bool>{};
     report_.repsStarted=deviceRep_ ? std::optional<bool>(*deviceRep_>0) : std::optional<bool>{};
     report_.completedSets=completedSets_;report_.lastSetReps=completedReps_;
     report_.setEndRevision=setEndRevision_;report_.setEndedAtMs=setEndedAt_;
@@ -549,6 +555,16 @@ bool PhysicalSession::enterTrainingOnConnect() {
 }
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
+    // A fault/manual exit can end Weight Training without dropping the GATT
+    // link. Return to selection only after confirmed unload; unknown/loaded
+    // state must retain the immediately accessible unload target. No retry,
+    // automatic mode re-entry, load, or queued settings survives this exit.
+    const auto mode=fresh(workout),motorState=fresh(motor);
+    if(trainingSeen_ && mode && *mode!=1 && motorState && (*motorState==0 || *motorState==4) &&
+       values_[motor].at>=values_[workout].at) {
+        cancelWrites("VOLTRA left Weight Training; reconnect");
+        connectionFailure_=true;transport_.disconnect();return;
+    }
     // Input arrives after the previous protocol tick, possibly after a blocking
     // GATT operation. Start quiet time on this fresh loop instead of backdating it.
     if(target_ && targetClockPending_) {targetAt_=now;targetClockPending_=false;}

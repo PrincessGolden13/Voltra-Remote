@@ -18,9 +18,21 @@ bool TrainingApplication::remembered(const DeviceId& id) const {
 }
 std::optional<int> TrainingApplication::restSeconds() const {
     if(!fresh()) return {};
-    if(const auto deviceTime=report().restSeconds) return deviceTime;
+    if(dropProgress_.active && report().setActive!=false) return {};
+    if(!dropProgress_.visible) if(const auto deviceTime=report().restSeconds) return deviceTime;
     if(!restSince_ || now_<*restSince_) return {};
     return int(std::min<uint64_t>((now_-*restSince_)/1000,359999));
+}
+TrainingApplication::DisplayCounters TrainingApplication::displayCounters() const {
+    const auto r=report();
+    if(!fresh() || !r.telemetryValid) return {};
+    if(!dropProgress_.visible) return {r.setNumber,int(r.rep),r.completedSets,r.lastSetReps};
+    if(!dropProgress_.valid) return {};
+    const int set=dropProgress_.completedSets+(dropProgress_.active ? 1 : 0);
+    const bool resting=dropProgress_.active && r.setActive==false;
+    return {set,dropProgress_.reps,
+        resting ? std::optional<int>(set) : dropProgress_.completedSets>0 ? std::optional<int>(dropProgress_.completedSets) : std::nullopt,
+        resting ? std::optional<int>(dropProgress_.reps) : dropProgress_.completedSets>0 ? std::optional<int>(dropProgress_.lastReps) : std::nullopt};
 }
 bool TrainingApplication::forget(const DeviceId& id) {
     automaticSelection_ = false;
@@ -103,6 +115,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
     restSince_.reset();restSetRevision_=0;
+    dropProgress_={};
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
     pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_ = failure; resetDrops();
@@ -137,7 +150,7 @@ void TrainingApplication::adjustWeight(int delta) {
     if (!settingsAllowed()) { message_ = "Device state unavailable"; return; }
     auto r = report();
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
-    if(running_ || dropTarget_) stopDrops("Drops stopped for manual adjustment");
+    if(running_ || dropTarget_ || dropsExhausted_) stopDrops("Drops stopped for manual adjustment");
     auto s = settingsIntent_.value_or(r.settings);
     const int ceiling=r.loaded ? baseMaximum(r) : r.maxWeight;
     if(ceiling<r.minWeight) {message_="Outside device limits";return;}
@@ -266,7 +279,7 @@ bool TrainingApplication::applyDrops(DropSettings d) {
 }
 void TrainingApplication::toggleDrops() { auto d = drops(); d.enabled = !d.enabled; applyDrops(d); }
 void TrainingApplication::resetDrops() {
-    dropsCancelled_ = false;
+    dropsCancelled_ = dropsExhausted_ = false;
     running_ = movementSeen_ = holdConsumed_ = wasLoaded_ = false;
     holdSince_ = telemetryRevision_ = 0; lastRep_ = 0; dropsCompleted_ = 0; dropTarget_.reset();
     repRevision_=dropSetEndRevision_=0;waitingForDropSet_=false;
@@ -281,12 +294,27 @@ void TrainingApplication::stopDrops(const char* reason) {
 }
 void TrainingApplication::runDrops(const TrainingReport& r) {
     if(!drops().enabled) return;
+    if(fresh() && !r.loaded) { resetDrops(); return; }
+    // A confirmed floor/quota ends automation for this loaded sequence. Reps
+    // still update independently; there is nothing left to validate or send.
+    if(dropsExhausted_) return;
     if(!fresh() || !r.twinKnown || !r.liveWeightSupported || r.minWeight<1 || r.autoLoadArmed) {
         if(wasLoaded_ || dropTarget_) stopDrops("Drops stopped: state unavailable");
         return;
     }
-    if (!r.loaded) { resetDrops(); return; }
     if (dropsCancelled_) return; // A failed unload must never restart automation.
+    const auto d = drops();
+    if (dropTarget_ && !pending()) {
+        if (session_.commandFailed() || !message_.empty() || r.settings.weight != *dropTarget_) {
+            stopDrops("Drop unconfirmed; stopped");return;
+        }
+        dropTarget_.reset(); ++dropsCompleted_;
+    }
+    const bool descending=d.mode==DropMode::RestPause ? d.percent>0 : d.step<0;
+    if(!dropTarget_ && !pending() && ((descending && r.settings.weight<=r.minWeight) ||
+       (d.mode==DropMode::RestPause && dropsCompleted_>=d.drops))) {
+        dropsExhausted_=true;running_=false;holdSince_=0;holdPosition_.reset();return;
+    }
     if (!wasLoaded_) {
         wasLoaded_=true;lastRep_=r.completedRep;repSet_=r.repSet;repRevision_=r.repRevision;
         telemetryRevision_=r.motionRevision;dropSetEndRevision_=r.setEndRevision;
@@ -330,17 +358,11 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         repSet_=r.repSet;lastRep_=r.completedRep;
     }
     if (dropTarget_) {
-        if (pending()) {
-            if(completed) stopDrops("Rep before confirmation; drops stopped");
-            return;
-        }
-        if (session_.commandFailed() || !message_.empty() || r.settings.weight != *dropTarget_) {
-            stopDrops("Drop unconfirmed; stopped");return;
-        }
-        dropTarget_.reset(); ++dropsCompleted_;
+        if(completed) stopDrops("Rep before confirmation; drops stopped");
+        return;
     }
     if(waitingForDropSet_) return;
-    const auto d = drops(); bool trigger = false;
+    bool trigger = false;
     if (d.mode == DropMode::Stairs) {
         trigger=completed && d.step!=0;
     } else {
@@ -376,7 +398,9 @@ void TrainingApplication::tick(uint64_t now) {
     if (scanPending_ && !transport_.scanInProgress()) { scanPending_=false; refreshDiscovery(transport_.discovered()); }
     if (!scanned_ || now - scannedAt_ >= discoveryIntervalMs) scan();
     if (!connected()) {
+        if(!selected_.empty() && !session_.status().empty()) message_=session_.status();
         restSince_.reset();restSetRevision_=0;
+        dropProgress_={};
         if(!selected_.empty()) dropSettings_[selected_].enabled=false;
         connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return;
     }
@@ -384,15 +408,25 @@ void TrainingApplication::tick(uint64_t now) {
     const auto r = report();
     if(!fresh()) restSince_.reset();
     else {
-        // User-approved fallback (Oct 24): only an observed device set-close
-        // starts rest. Taps, load toggles, reconnect and settings never do.
-        if(r.setEndRevision>restSetRevision_) {
+        const bool wasDropActive=dropProgress_.active;
+        dropProgress_.observe(r,drops().enabled,now_);
+        if(dropProgress_.visible) {
+            // Ignore statistics closes caused by changing base. Only a device
+            // rest phase or confirmed unload starts the grouped rest clock.
             restSetRevision_=r.setEndRevision;
-            if(r.setEndedAtMs<=now_) restSince_=r.setEndedAtMs;
+            if(dropProgress_.active && r.setActive!=false) restSince_.reset();
+            else if((wasDropActive || dropProgress_.active) && !restSince_) restSince_=now_;
+        } else {
+            // User-approved fallback (Oct 24): only an observed device set-close
+            // starts rest. Taps, load toggles, reconnect and settings never do.
+            if(r.setEndRevision>restSetRevision_) {
+                restSetRevision_=r.setEndRevision;
+                if(r.setEndedAtMs<=now_) restSince_=r.setEndedAtMs;
+            }
+            // New actual movement in an active set ends the preceding rest period.
+            if(restSince_ && r.loaded && r.setActive==true && r.motionRevision && r.motionAtMs>=*restSince_ && r.moving)
+                restSince_.reset();
         }
-        // New actual movement in an active set ends the preceding rest period.
-        if(restSince_ && r.loaded && r.setActive==true && r.motionRevision && r.motionAtMs>=*restSince_ && r.moving)
-            restSince_.reset();
     }
     // Sessions own their bounded transaction deadlines. Do not clear intent
     // mid-transaction, and do not turn an unrelated report into a successful ACK.

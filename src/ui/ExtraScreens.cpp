@@ -71,12 +71,12 @@ void UiController::buildExtra() {
         lv_obj_set_style_transform_pivot_y(weight_,24,0);
         lv_obj_set_style_transform_scale(weight_,width_*600/480,0);
         nextWeight_ = label(face_,"",width_*68/100,height_*61/100,heading);
-        const auto r=app_.report(); const auto d=app_.drops();
+        const auto counters=app_.displayCounters(); const auto d=app_.drops();
         const int count=d.enabled && d.mode == DropMode::RestPause ? 3 : 2;
         const char* captions[]={"SET","REP","DROPS"};
         for(int i=0;i<count;++i) {
             const int x=width_*(16+i*68/count)/100, w=width_*68/(100*count);
-            auto* caption=label(face_,i==0 && !r.setNumber ? "" : captions[i],w,height_*72/100,medium);
+            auto* caption=label(face_,i==0 && !counters.set ? "" : captions[i],w,height_*72/100,medium);
             style::set_align(caption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(caption,x);
             liveValues_[i]=label(face_,"",w,height_*77/100,width_ < 400 ? &lv_font_montserrat_28 : &lv_font_montserrat_36);
             style::set_align(liveValues_[i],LV_ALIGN_TOP_LEFT); lv_obj_set_x(liveValues_[i],x);
@@ -159,8 +159,9 @@ void UiController::updateExtra() {
             (d.mode==DropMode::Stairs ? d.step<0 : d.percent>0);
         text(nextWeight_,d.enabled ? atFloor ? "MIN "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
             "NEXT "+(known ? weightText(next,r.unit) : "--") : unitName(r.unit));
-        text(liveValues_[0],known && r.setNumber ? std::to_string(*r.setNumber) : "");
-        text(liveValues_[1],known ? std::to_string(r.rep) : "--");
+        const auto counters=app_.displayCounters();
+        text(liveValues_[0],counters.set ? std::to_string(*counters.set) : "");
+        text(liveValues_[1],counters.rep ? std::to_string(*counters.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
         text(message_,known ? app_.message() : "State unknown / tap weight to unload");
     }

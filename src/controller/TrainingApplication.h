@@ -1,6 +1,7 @@
 #pragma once
 #include "VoltraController.h"
 #include "DeviceMemory.h"
+#include "DropSetProgress.h"
 #include "state/RemoteConfiguration.h"
 #include <map>
 namespace voltra {
@@ -22,6 +23,8 @@ public:
     // Presentation clock; prefer machine elapsed time, otherwise use its actual
     // set-close event. Never put locally elapsed seconds into TrainingReport.
     std::optional<int> restSeconds() const;
+    struct DisplayCounters { std::optional<int> set, rep, completedSets, lastSetReps; };
+    DisplayCounters displayCounters() const;
     // Local requested weight for responsive presentation; never machine state.
     std::optional<int> weightPreview() const {
         return pending_ && fresh() && report().unit==weightIntentUnit_ ? weightIntent_ : std::optional<int>{};
@@ -59,6 +62,7 @@ private:
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
     uint64_t restSetRevision_ = 0;
     std::optional<uint64_t> restSince_;
+    DropSetProgress dropProgress_;
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
     bool automaticSelection_ = false;
     bool scanPending_ = false;
@@ -71,7 +75,7 @@ private:
     uint64_t repRevision_ = 0, dropSetEndRevision_ = 0;
     std::optional<int> repSet_, holdPosition_;
     bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;
-    bool dropsCancelled_ = false, waitingForDropSet_ = false;
+    bool dropsCancelled_ = false, waitingForDropSet_ = false, dropsExhausted_ = false;
     int dropsCompleted_ = 0;
     int startingWeight_ = 0;
     bool observedLoaded_ = false;
