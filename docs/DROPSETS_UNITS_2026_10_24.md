@@ -154,6 +154,34 @@ enabled safety preference; no setting changes. Source-documented motor 35 with
 status 11–13 is armed/in progress, 14 loaded. These Auto Load enum paths remain
 unverified on Black and cannot authorize loaded drops (which require motor 1).
 
+## Loaded set transition and coarse dial follow-up
+
+CONFIRMED (Black capture and user): the first Stairs trial stopped with
+"Rep sequence changed". The preceding completed statistics were set 10 / rep 2;
+Black then reported status 2, set 11 / rep 0 with actual movement, followed by
+completed set 11 / rep 1. Its base stayed 10 LB. The controller had copied the
+previous set's completion baseline when drops were armed while still loaded at
+rest, and treated the legitimate next set as a sequence failure.
+
+The controller now waits between confirmed sets, then establishes a zero baseline
+only on a fresh, moving, zero-rep sample for a different reported set in active
+workout state. This changes local automation bookkeeping, not device counters.
+The subsequent completed-return event still triggers the first drop. Missing
+start evidence, within-set gaps/resets, stale telemetry, pending or unconfirmed
+changes still stop automation; no missed drops are replayed. RP movement/hold
+state and its local quota restart only at that observed new set. Physical
+reductions with the fix remain pending user verification.
+
+CONFIRMED (source): the dial's former intermediate 2-tick grid, plus immediately
+falling back to fine steps while slowing, could end a fast stroke off 5/10 marks.
+The intermediate gear now moves one 5-unit grid mark per two detents, followed
+by 5 then 10 per detent at higher speeds. It retains at least the gentle 5-unit
+gear until a 300 ms pause or direction reversal; touch/focus changes also reset
+it. No timer sends a final rounding command. The first coarse change aligns in
+the travel direction; device minimum/maximum clamps remain authoritative. Fine
+precision remains 1 LB / 0.5 KG / 1%, and absolute coarse grids use whole units.
+The prior 120 ms/three-detent ramp and 160 ms rate filter remain tunable policy.
+
 Future regression cases (new tests deferred): selector rejection/reversion;
 EO across unit conversion; mixed presets; duplicate/reset/gapped reps; first
 motion and expiry; slow drift; one drop per hold; movement rearm; busy trigger;

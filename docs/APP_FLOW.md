@@ -1,4 +1,11 @@
 > October 24 feedback supersedes conflicting behavior below:
+> - Drops must distinguish an observed new set from a broken rep sequence even
+>   when the device remains loaded between sets. After a confirmed close/rest,
+>   a fresh moving zero-rep report for a different set establishes its baseline;
+>   completed-rep reports still trigger changes, with no catch-up or replay.
+> - Once a rotary stroke accelerates, retain 5/10-unit grid values through its
+>   slowdown. A 300 ms pause, reversal or new touch selection restores fine
+>   1 LB / 0.5 KG / 1% steps. Device limit clamps can end off the coarse grid.
 > - Between reps and after a set, show the machine-confirmed selected weight,
 >   not its fluctuating idle cable tension. Normal Live shows measured force
 >   only during a fresh machine-reported active rep phase. Keep raw force and

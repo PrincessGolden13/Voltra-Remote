@@ -68,10 +68,10 @@ private:
     std::optional<TrainingSettings> settingsIntent_;
     uint32_t lastRep_ = 0;
     uint64_t telemetryRevision_ = 0, holdSince_ = 0;
-    uint64_t repRevision_ = 0;
+    uint64_t repRevision_ = 0, dropSetEndRevision_ = 0;
     std::optional<int> repSet_, holdPosition_;
     bool running_ = false, movementSeen_ = false, holdConsumed_ = false, wasLoaded_ = false;
-    bool dropsCancelled_ = false;
+    bool dropsCancelled_ = false, waitingForDropSet_ = false;
     int dropsCompleted_ = 0;
     int startingWeight_ = 0;
     bool observedLoaded_ = false;

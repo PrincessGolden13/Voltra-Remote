@@ -266,7 +266,8 @@ void TrainingApplication::resetDrops() {
     dropsCancelled_ = false;
     running_ = movementSeen_ = holdConsumed_ = wasLoaded_ = false;
     holdSince_ = telemetryRevision_ = 0; lastRep_ = 0; dropsCompleted_ = 0; dropTarget_.reset();
-    repRevision_=0;repSet_.reset();holdPosition_.reset();
+    repRevision_=dropSetEndRevision_=0;waitingForDropSet_=false;
+    repSet_.reset();holdPosition_.reset();
 }
 void TrainingApplication::stopDrops(const char* reason) {
     if(dropTarget_) {
@@ -285,15 +286,31 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     if (dropsCancelled_) return; // A failed unload must never restart automation.
     if (!wasLoaded_) {
         wasLoaded_=true;lastRep_=r.completedRep;repSet_=r.repSet;repRevision_=r.repRevision;
-        telemetryRevision_=r.motionRevision;return;
+        telemetryRevision_=r.motionRevision;dropSetEndRevision_=r.setEndRevision;
+        waitingForDropSet_=r.setActive==false;
     }
     constexpr uint64_t motionFreshMs=500, repFreshMs=2000;
     const bool motionFresh=r.motionRevision && now_>=r.motionAtMs && now_-r.motionAtMs<=motionFreshMs;
+    if(r.setEndRevision!=dropSetEndRevision_) {
+        dropSetEndRevision_=r.setEndRevision;waitingForDropSet_=true;
+    }
+    if(waitingForDropSet_) {
+        // Black can finish a set without unloading. Its completed-rep report
+        // still belongs to that old set until the next rep finishes. Rebase
+        // only after observing the new set's actual zero-count moving stream;
+        // a new set number alone must not excuse a gap or replay missed drops.
+        running_=movementSeen_=holdConsumed_=false;holdSince_=0;holdPosition_.reset();
+        if(motionFresh && r.setActive==true && r.moving && r.rep==0 &&
+           r.setNumber && r.setNumber!=repSet_) {
+            if(dropTarget_) {stopDrops("New set before drop confirmation; stopped");return;}
+            repSet_=r.setNumber;lastRep_=0;dropsCompleted_=0;waitingForDropSet_=false;
+        }
+    }
     if(!motionFresh) {
         if(running_) stopDrops("Drops stopped: motion reports lost");
         return; // Wait for first actual sample after loading, never infer a hold.
     }
-    running_=true;
+    running_=!waitingForDropSet_;
     const bool newRep=r.repRevision!=repRevision_;
     bool completed=false;
     if(newRep) {
@@ -315,6 +332,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         }
         dropTarget_.reset(); ++dropsCompleted_;
     }
+    if(waitingForDropSet_) return;
     const auto d = drops(); bool trigger = false;
     if (d.mode == DropMode::Stairs) {
         trigger=completed && d.step!=0;

@@ -250,3 +250,21 @@ remain explicit future milestones.
   SHA256 DCCC3CD41647F5A58AA76289E67E6F1AA74694FFEC117410D392CF27F18CCECE.
   Simulator binary: 937,296 bytes,
   SHA256 C287B896DC9ACCECDA96D9FD07B41DA09F9CCEBA753EE798E4D1B42A78A25290.
+
+## October 24 dropset boundary and dial rounding follow-up
+
+- Captured Black's failing Stairs trial: completed set 10 / rep 2, then active
+  moving set 11 / rep 0 and completed rep 1, with no intervening unload. Drops
+  now establish the next set's baseline from that observed start instead of
+  comparing with the old set. Within-set gaps/resets and missing start evidence
+  still stop execution. Physical reductions require the user's follow-up trial.
+- Coarse rotary gears now all land on 5/10 whole-unit grids and retain the grid
+  through slowdown. Pause/reversal restores fine input. The gentle gear uses
+  two detents per 5-unit step to ease the ramp. Limits still override the grid.
+- Native, Normal and isolated Simulator builds pass. Existing upstream validators
+  pass (203 SDK packets / 593 modifier packets). No new test code was created;
+  these checks do not prove physical drops or rotary feel.
+- Snapshot: build/guition/2026-10-24-drops-rounding. Normal binary: 1,215,360 bytes,
+  SHA256 82C989F11C7CEDD61D9CEF767D01EAABE6ABE4697B34E9122260C4BC028B1EDA.
+  Simulator binary: 937,648 bytes,
+  SHA256 594B196BA120C83218DE4645717B4C612853CDCB5C0DB159064E6698C4CAEEB9.

@@ -191,3 +191,14 @@ before enabling the new one; readback required at every step; EO unchanged;
 changing the device's display interpretation cancels percentage edits. Dropset
 preview/save on an unsupported connection must not arm it, write resistance,
 activate a preset or imply automatic execution is available.
+
+Later October 24 cases (new test code still deferred): arm Stairs while loaded
+at rest with completed set 10 / rep 2, observe active moving set 11 / rep 0,
+then completed rep 1 and request exactly one reduction. Repeat without unloading;
+reject a new set without its observed start, a gap/reset within the same set,
+and a new set while a prior drop is unconfirmed. Duplicate completions do not
+drop twice. Confirm RP's per-set movement/hold/quota reset without idle triggering.
+For rotary input, the later policy supersedes immediate return to fine steps:
+slowing retains a 5-unit grid until pause/reversal/touch reset. Check the gentle
+two-detent cadence, batched clicks, both directions, negative stairs, KG ticks,
+pending previews and off-grid device limits. No delayed write on release.

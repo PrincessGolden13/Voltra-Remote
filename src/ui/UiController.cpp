@@ -597,6 +597,7 @@ void UiController::rotate(int delta) {
         const int current = weight ? app_.weightPreview().value_or(r.settings.weight) : page_ == Screen::Drops ? draftDrops_.step : draftValue_;
         const int wholeUnit = weight || page_ == Screen::Drops || !draftPercent_ ? ticksPerUnit(r.unit) : 1;
         delta = rotaryAdjustment_.delta(delta,current,hardware_.nowMs(),wholeUnit);
+        if(!delta) return; // Coarse cadence may be collecting the next detent.
     }
     if (page_ == Screen::Presets) {
         presetIndex_ = std::clamp(presetIndex_+delta,0,std::min(98,int(config_.presets.size())));
