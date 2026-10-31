@@ -481,3 +481,30 @@ remain explicit future milestones.
   attempt, accepted the remote and returned fresh 15 LB unloaded with controls
   available. No resistance command was issued by installation/verification.
   User verification of repeated first-tap Apply remains pending.
+
+## October 31 RP countdown and Auto Unload limit
+
+- CONFIRMED (user): repeated first-tap Drops Apply works with 540ef06.
+- Live now shows a vertical RP hold countdown after 250 ms, derived from the
+  executor's hold window. Movement, invalid/stale motion, pending drop,
+  rest/unload, floor and quota hide it. No separate UI trigger or device-time
+  claim. Confirmed base/rep presentation and the weight unload target remain.
+- Read-only Auto Unload holding-time parameter 21525 supplies an optional
+  seconds value. Positive values cap RP at delay minus 1 s (maximum 9 s);
+  absent/off preserves 1..9. A 1 s delay leaves RP unavailable. Apply, preset
+  and ongoing execution guards enforce the same policy. No Auto Unload write.
+  See RP_COUNTDOWN_2026_10_31.md for source evidence and scope.
+- CONFIRMED (user): Black's holding time is currently 2 s. Bluetooth correlation
+  is pending installation; expected RP maximum is 1 s.
+- Native, Normal and isolated Simulator builds pass. A C++ LVGL flag-type build
+  error was corrected before these successful builds. Existing validators pass
+  (203 SDK / 593 modifier packets and pinned upstream checks). No new tests.
+- Offline renders inspected at 360/466/480 px: hidden at 200 ms, 75%/50%/10%
+  at 250/500/900 ms of a 1 s hold; hidden after a simulated confirmed drop.
+  A 3 s hold renders half full at 1.5 s. Auto Unload 2 s editor shows max pause
+  1 s; 1 s shows unavailable. These are mock/UI observations, not physical
+  timing or protocol compatibility proof.
+- Snapshot: build/guition/2026-10-31-rp-countdown. Normal: 1,228,080 bytes,
+  SHA256 C2CBE408D5AC936748554698A6C89893B1960887097E43B31CCA0E20B892ECC1.
+  Simulator: 948,736 bytes,
+  SHA256 D16BF2A39B5313D6F2750DA3E0779D136E10B86241145F98F10BC52DB2DA1021.

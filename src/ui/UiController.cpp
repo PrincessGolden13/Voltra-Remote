@@ -379,6 +379,7 @@ void UiController::build() {
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = stats_ = start_ = nextWeight_ = nullptr;
+    holdBar_ = nullptr;
     for (auto& item : settingsValues_) item = nullptr;
     for (auto& item : liveValues_) item = nullptr;
     for (auto& item : unitChoices_) item = nullptr;
@@ -652,7 +653,7 @@ void UiController::rotate(int delta) {
     if (draftDrops_.mode == DropMode::Stairs) draftDrops_.step = std::clamp(draftDrops_.step+delta, -editMaximum(), editMaximum());
     else if (dropField_ == 0) draftDrops_.drops = std::clamp(draftDrops_.drops+delta, 0, 9);
     else if (dropField_ == 1) draftDrops_.percent = std::clamp(draftDrops_.percent+delta, 0, 80);
-    else draftDrops_.holdSeconds = std::clamp(draftDrops_.holdSeconds+delta, 1, 9);
+    else draftDrops_.holdSeconds = std::clamp(draftDrops_.holdSeconds+delta, 1, std::max(1,restPauseHoldMaximum(app_.report())));
 }
 void UiController::update() {
     const auto battery = hardware_.batteryPercent();
@@ -758,18 +759,23 @@ void UiController::update() {
             color(choice_[i], int(draftDrops_.mode) == i ? bright : muted);
         }
         if (draftDrops_.mode == DropMode::RestPause) {
+            const int holdMaximum=restPauseHoldMaximum(r);
+            draftDrops_.holdSeconds=std::clamp(draftDrops_.holdSeconds,1,std::max(1,holdMaximum));
             const int values[] = {draftDrops_.drops, draftDrops_.percent, draftDrops_.holdSeconds};
-            const int maxima[] = {9, 80, 9};
+            const int maxima[] = {9, 80, holdMaximum};
             const char* suffix[] = {"", "%", "s"};
             const char* names[] = {"Drops", "Drop %", "Hold"};
             for (int i=0; i<3; ++i) {
-                value(miniValue_[i], std::to_string(values[i])+suffix[i]);
+                value(miniValue_[i], i==2 && !holdMaximum ? "--" : std::to_string(values[i])+suffix[i]);
                 // All values stay active; the bright outer ring marks rotary focus.
                 glow(tiles_[i], accent(), i == dropField_);
                 lv_arc_set_value(miniArc_[i], percentOf(values[i], maxima[i]));
             }
             value(hint_, names[dropField_]); color(hint_, bright);
             updateScale(values[dropField_], maxima[dropField_], suffix[dropField_], accent());
+            if(app_.fresh() && r.autoUnloadHoldSeconds && *r.autoUnloadHoldSeconds>0 && !r.loaded && !r.autoLoadArmed && app_.message().empty())
+                value(status_,holdMaximum ? "Auto Unload: "+std::to_string(*r.autoUnloadHoldSeconds)+"s / max pause "+std::to_string(holdMaximum)+"s" :
+                    "Auto Unload 1s / RP unavailable");
         } else {
             largeValue((draftDrops_.step > 0 ? "+" : "")+weightText(draftDrops_.step,r.unit)); color(weight_, bright);
             value(unit_, unitName(r.unit)); value(hint_, "After each rep");

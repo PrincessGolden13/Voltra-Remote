@@ -21,6 +21,9 @@ constexpr int autoLoadMotorMode=35, autoLoadWaiting=11, autoLoadComplete=14;
 constexpr uint16_t childLock=20772, otaState=21476, battery=20013;
 constexpr uint16_t mountLock=20642, voidLock=21224;
 constexpr uint16_t fitnessRestTime=21377; // Android da514d2 catalog: uint16 seconds; read only here.
+// Android da514d2: AUTO_UNLOAD_HOLDING_TIME, uint8 0..10. Official Cortex
+// training-control documents seconds and zero=off. Read only, never a write.
+constexpr uint16_t autoUnloadHoldTime=21525;
 // Black, Oct 24: user released/resecured mount, 2 -> 1 -> 2. Keep the
 // successful profile's companion void-lock value exact; its bits are unmapped.
 constexpr int securedMount=2, observedVoidLock=6;
@@ -69,7 +72,7 @@ int width(uint16_t id) {
     case 0x5103: case 0x5106: case 0x538d: case 0x53c7: case 0x53c9: case 0x53c6:
     case 0x5182: case 0x53b6: case 0x52e3: case 0x52ca: case 0x5102: case 0x4ee1:
     case 21007: case 21424: case 21272: case 21273: case 21716: case 20642:
-    case mountain: case accessoryDisplayPercent: return 1;
+    case mountain: case accessoryDisplayPercent: case autoUnloadHoldTime: return 1;
     case 0x3e82: case 0x3e83: case 0x3e86: case 0x3e87: case 0x3e88: case 0x3e89:
     case 0x506a: case 21268: case 21476: case 21534: case 0x53c8: case 20873: case 20874:
     case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377:
@@ -413,6 +416,9 @@ void PhysicalSession::updateReport() {
     }
     report_.magicSupported={modifiers,modifiers,modifiers};report_.eccentricSupported=modifiers;
     report_.autoLoadSupported=fresh(autoLoadEnabled)==1 && fresh(autoLoadSafetyEnabled)==1;
+    report_.autoUnloadHoldSeconds.reset();
+    if(const auto delay=fresh(autoUnloadHoldTime); delay && *delay>=0 && *delay<=10)
+        report_.autoUnloadHoldSeconds=int(*delay);
     // Rep/summary events are sparse, not a motion heartbeat. Keep received
     // counts while the connection's core state is fresh. Never use them to
     // infer a stationary cable or authorize automatic resistance changes.
@@ -576,7 +582,7 @@ void PhysicalSession::pollState(size_t group) {
     case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false),mountain,accessoryDisplayPercent});break;
     case 2:read({childLock,otaState,twin,remoteCoworker,pairedDevice,maxForce});break;
     case 3:read({position,offset,battery,autoLoadEnabled,autoLoadSafetyEnabled});break;
-    case 4:read({autoLoadStatus,mountLock,voidLock,fitnessRestTime});break;
+    case 4:read({autoLoadStatus,mountLock,voidLock,fitnessRestTime,autoUnloadHoldTime});break;
     }
 }
 bool PhysicalSession::enterTrainingOnConnect() {

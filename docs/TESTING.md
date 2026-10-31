@@ -303,3 +303,15 @@ failure if the input task cannot start. Verify single taps on Drops Apply,
 Magic/EO, device selection and presets on the physical panel. The desktop
 window screenshot helper timed out during the pre-change comparison; no native
 interactive pass is claimed from that attempt.
+
+RP countdown/Auto Unload cases queued (new test code deferred): no bar before
+250 ms; 1 s hold shows 75% at 250 ms, half at 500 ms; duration scales to 2..9 s.
+Movement/drift resets elapsed time; stale motion, disconnect, rest/unload,
+pending target, quota/floor, 0%/0 drops and Stairs hide the bar. Continuous hold
+triggers once; new movement rearms. A bar reaching zero cannot send or confirm
+a command. Check 360/466/480 round bounds and the primary unload touch target.
+Unknown/off Auto Unload preserves max 9; 2 -> max 1, 3 -> max 2, 10 -> max 9;
+1 -> no valid RP pause. Reject out-of-range/stale parameter reports. Editor,
+Apply, presets, toggles and externally shortened timers share the same policy;
+no automatic recipe shortening, rearm, resistance load or Auto Unload write.
+Correlate raw parameter 21525 against Black's displayed holding-time setting.

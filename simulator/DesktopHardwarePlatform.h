@@ -21,8 +21,10 @@ public:
     uint16_t width() const override { return size_; }
     uint16_t height() const override { return size_; }
     uint64_t nowMs() const override {
+        if(previewMs_) return *previewMs_;
         return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start_).count();
     }
+    void previewClock(uint64_t ms) { previewMs_=ms; } // Render-only offline timeline.
     void flush(int x, int y, int width, int height, const uint32_t* source) override {
         for (int row = 0; row < height; ++row)
             for (int col = 0; col < width; ++col)
@@ -45,6 +47,7 @@ private:
     TouchPoint touch_;
     int delta_ = 0;
     bool pressed_ = false;
+    std::optional<uint64_t> previewMs_;
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
 };
 }

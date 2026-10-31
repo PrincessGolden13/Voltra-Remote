@@ -28,6 +28,9 @@ struct TrainingReport {
     int minWeight = 0; // Profile's effective base floor in display ticks; zero is unknown.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
+    // Device-confirmed hold-still Auto Unload delay. Zero disables that trigger;
+    // absent means unavailable. The remote never changes this configuration.
+    std::optional<int> autoUnloadHoldSeconds;
     bool twinKnown = false, twin = false, loaded = false, autoLoadArmed = false;
     bool telemetryValid = false, moving = false, held = false;
     uint32_t rep = 0;
@@ -98,4 +101,12 @@ struct DropSettings {
     DropMode mode = DropMode::Stairs;
     int step = -2, drops = 2, percent = 50, holdSeconds = 1;
 };
+// User policy: finish an RP pause at least one second before Auto Unload.
+// Preserve the existing 1..9 s range when the device delay is off/unknown.
+// A one-second Auto Unload leaves no supported RP pause (maximum zero).
+inline int restPauseHoldMaximum(const TrainingReport& r) {
+    constexpr int defaultMaximumSeconds=9, autoUnloadMarginSeconds=1;
+    return r.autoUnloadHoldSeconds && *r.autoUnloadHoldSeconds>0 ?
+        std::clamp(*r.autoUnloadHoldSeconds-autoUnloadMarginSeconds,0,defaultMaximumSeconds) : defaultMaximumSeconds;
+}
 }

@@ -45,6 +45,9 @@ public:
     uint64_t dropConfirmationRevision() const { return dropConfirmationRevision_; }
     std::optional<int> confirmedDropWeight() const { return confirmedDropWeight_; }
     bool dropPending() const { return dropTarget_.has_value(); }
+    // Local presentation of the executor's qualified hold, not device telemetry.
+    // 1000 = full, 0 = empty; absent hides the bar. Never triggers a command.
+    std::optional<int> restPauseRemainingPermille() const;
     Preset currentPreset() const;
     Preset presetForCurrentDevice(Preset) const;
     const std::string& presetCompatibilityError() const { return presetError_; }

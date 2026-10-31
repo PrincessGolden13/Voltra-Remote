@@ -7,6 +7,9 @@ constexpr uint64_t discoveryIntervalMs=5000;
 // Three scan intervals tolerate missed radio packets; never machine readiness.
 constexpr uint64_t discoveryGraceMs=15000;
 constexpr size_t maximumDiscoveredDevices=64;
+constexpr uint64_t motionFreshMs=500;
+constexpr uint64_t restPauseBarDelayMs=250; // User-requested visual threshold.
+const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 }
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
     : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
@@ -244,6 +247,10 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
     if (pending_ || r.loaded || std::abs(p.drops.step) > r.maxWeight) {
         message_ = "Unload / wait before applying preset"; return false;
     }
+    if(p.drops.enabled && p.drops.mode==DropMode::RestPause &&
+       (restPauseHoldMaximum(r)<1 || p.drops.holdSeconds>restPauseHoldMaximum(r))) {
+        presetError_=restPauseLimitError;message_=presetError_;return false;
+    }
     // A preset replaces all modifiers as one request. Preserve its exact values;
     // if needed, lower only the current base to the conservative integer ceiling.
     auto s = r.settings; s.magicMode = p.mode; s.magic = p.magic; s.eccentric = p.eccentric;
@@ -269,10 +276,27 @@ DropSettings TrainingApplication::drops() const {
     if (it != dropSettings_.end()) return it->second;
     auto d = DropSettings{}; d.step *= ticksPerUnit(report().unit); return d;
 }
+std::optional<int> TrainingApplication::restPauseRemainingPermille() const {
+    const auto r=report(); const auto d=drops();
+    if(!fresh() || !r.loaded || !r.telemetryValid || r.autoLoadArmed || !r.held || r.moving ||
+       !d.enabled || d.mode!=DropMode::RestPause || d.percent<=0 || d.drops<=dropsCompleted_ ||
+       d.holdSeconds<1 || d.holdSeconds>restPauseHoldMaximum(r) || !running_ || !movementSeen_ ||
+       holdConsumed_ || dropsCancelled_ || dropsExhausted_ || waitingForDropSet_ || pending() || dropTarget_ ||
+       !holdSince_ || now_<holdSince_ || !r.motionRevision || now_<r.motionAtMs || now_-r.motionAtMs>motionFreshMs)
+        return {};
+    const auto elapsed=now_-holdSince_;
+    if(elapsed<restPauseBarDelayMs) return {};
+    const uint64_t duration=uint64_t(d.holdSeconds)*1000;
+    return int((duration-std::min(elapsed,duration))*1000/duration);
+}
 bool TrainingApplication::applyDrops(DropSettings d) {
     if (!fresh() || selected_.empty()) { message_ = "Device state unavailable"; return false; }
     if(d.enabled && (!report().liveWeightSupported || report().minWeight<1 || report().autoLoadArmed || pending())) {
         message_="Wait for weight controls before arming drops";return false;
+    }
+    if(d.enabled && d.mode==DropMode::RestPause &&
+       (restPauseHoldMaximum(report())<1 || d.holdSeconds>restPauseHoldMaximum(report()))) {
+        message_=restPauseLimitError;return false;
     }
     if(dropTarget_) stopDrops("");
     d.step = std::clamp(d.step, -report().maxWeight, report().maxWeight);
@@ -298,6 +322,11 @@ void TrainingApplication::stopDrops(const char* reason) {
 }
 void TrainingApplication::runDrops(const TrainingReport& r) {
     if(!drops().enabled) return;
+    if(fresh() && drops().mode==DropMode::RestPause && drops().holdSeconds>restPauseHoldMaximum(r)) {
+        // An external timer change must not silently shorten an armed hold or
+        // permit a saved recipe to race Auto Unload. Require a new Apply.
+        stopDrops(restPauseLimitError);return;
+    }
     if(fresh() && !r.loaded) { resetDrops(); return; }
     if(fresh() && r.resting==true) {
         // A genuine device rest ends this set, unlike AA85 emitted by a base
@@ -338,7 +367,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         telemetryRevision_=r.motionRevision;dropSetEndRevision_=r.setEndRevision;
         waitingForDropSet_=r.setActive==false;
     }
-    constexpr uint64_t motionFreshMs=500, repFreshMs=2000;
+    constexpr uint64_t repFreshMs=2000;
     const bool motionFresh=r.motionRevision && now_>=r.motionAtMs && now_-r.motionAtMs<=motionFreshMs;
     if(r.setEndRevision!=dropSetEndRevision_) {
         dropSetEndRevision_=r.setEndRevision;waitingForDropSet_=true;

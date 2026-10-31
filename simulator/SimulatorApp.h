@@ -11,6 +11,7 @@
 namespace voltra {
 struct SimulatorOptions {
     int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0, liveDrops = 0, modifierValue = -1, weightUnit = -1, weightTicks = -1;
+    int holdElapsedMs=-1, holdSeconds=1, autoUnloadSeconds=-1;
     std::string renderPath;
     static SimulatorOptions parse(int argc, char** argv) {
         SimulatorOptions o;
@@ -31,6 +32,9 @@ struct SimulatorOptions {
             else if (option == "--weight-unit") o.weightUnit = number;
             else if (option == "--weight-ticks") o.weightTicks = number;
             else if (option == "--live-drops") o.liveDrops = number;
+            else if (option == "--hold-ms") o.holdElapsedMs=number;
+            else if (option == "--hold-seconds") o.holdSeconds=number;
+            else if (option == "--auto-unload-seconds") o.autoUnloadSeconds=number;
             else throw std::runtime_error("Unknown argument: " + option);
         }
         if ((o.size != 360 && o.size != 466 && o.size != 480) || o.profile < 0 || o.profile > 3)
@@ -43,6 +47,12 @@ struct SimulatorOptions {
             throw std::runtime_error("Unit preview 0 LB / 1 KG requires --render");
         if (o.weightTicks < -1 || o.weightTicks > 10000 || (o.weightTicks >= 0 && o.renderPath.empty()))
             throw std::runtime_error("Weight preview 0-10000 ticks requires --render");
+        if(o.holdElapsedMs < -1 || o.holdElapsedMs > 10000 || o.holdSeconds<1 || o.holdSeconds>9 ||
+           o.autoUnloadSeconds < -1 || o.autoUnloadSeconds>10 ||
+           ((o.holdElapsedMs>=0 || o.holdSeconds!=1 || o.autoUnloadSeconds>=0) && o.renderPath.empty()))
+            throw std::runtime_error("Render-only hold: 0-10000 ms / 1-9 s; Auto Unload: 0-10 s");
+        if(o.holdElapsedMs>=0 && (o.profile!=1 || o.dropMode!=1 || !o.liveDrops))
+            throw std::runtime_error("Hold preview requires loaded profile 1 and enabled RP drops");
         return o;
     }
 };
@@ -61,6 +71,7 @@ struct SimulatorApp {
           application(transport, controller, transport, o.renderPath.empty() ? &memory : nullptr, transport.catalog()),
           ui(hardware, application, o.renderPath.empty() ? &configuration : nullptr) {
         ui.tick();
+        if(!o.renderPath.empty()) hardware.previewClock(hardware.nowMs()+1000);
         if (o.screen != 0) {
             application.select(o.device == 0 ? MockTransport::deviceId :
                 std::string(MockTransport::deviceId) + '-' + std::to_string(o.device));
@@ -68,11 +79,27 @@ struct SimulatorApp {
             if(o.weightUnit >= 0) transport.previewUnit(static_cast<WeightUnit>(o.weightUnit));
             if(o.weightTicks >= 0) transport.previewWeight(o.weightTicks);
             if(o.modifierValue >= 0) transport.previewModifier(o.modifierValue);
+            if(o.autoUnloadSeconds>=0) transport.previewAutoUnload(o.autoUnloadSeconds);
             application.tick(hardware.nowMs());
             if (o.dropMode == 1 || o.liveDrops == 1) {
                 auto drops = application.drops(); drops.mode = o.dropMode ? DropMode::RestPause : DropMode::Stairs;
                 drops.enabled = o.liveDrops == 1;
+                drops.holdSeconds=o.holdSeconds;
                 application.applyDrops(drops);
+            }
+            if(o.holdElapsedMs>=0) {
+                // Exercise the ordinary mock motion -> controller hold path;
+                // no direct UI progress injection and no physical transport.
+                application.tick(hardware.nowMs());
+                hardware.previewClock(hardware.nowMs()+100);
+                transport.completeRep();application.tick(hardware.nowMs());
+                hardware.previewClock(hardware.nowMs()+100);
+                transport.setHeld(true);application.tick(hardware.nowMs());
+                const auto holdStart=hardware.nowMs();
+                for(int elapsed=50;elapsed<=o.holdElapsedMs;elapsed+=50) {
+                    hardware.previewClock(holdStart+elapsed);application.tick(hardware.nowMs());
+                }
+                hardware.previewClock(holdStart+o.holdElapsedMs);application.tick(hardware.nowMs());
             }
             ui.navigate(static_cast<Screen>(o.screen));
             ui.tick();

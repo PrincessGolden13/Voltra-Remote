@@ -33,6 +33,7 @@ public:
     void previewModifier(int value); // Render-only synthetic initial setting.
     void previewUnit(WeightUnit); // Render-only unit-specific limit/layout preview.
     void previewWeight(int ticks); // Render-only base/envelope layout preview.
+    void previewAutoUnload(int seconds); // Synthetic read-only config, not a motor simulation.
     void completeRep();
     void setHeld(bool held);
     void ignoreNextRequest() { ignoreNext_ = true; }

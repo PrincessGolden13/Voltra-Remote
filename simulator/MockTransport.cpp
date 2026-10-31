@@ -57,6 +57,10 @@ void MockTransport::previewWeight(int ticks) {
     r.settings.weight = std::clamp(ticks,0,r.maxWeight);
     sent_ = false;
 }
+void MockTransport::previewAutoUnload(int seconds) {
+    devices_[active_].state.autoUnloadHoldSeconds=seconds;
+    sent_=false;
+}
 std::vector<DeviceEntry> MockTransport::catalog() const {
     std::vector<DeviceEntry> result;
     for(const auto& d : devices_) result.push_back({d.id,d.name,false,d.state.twin ? d.state.twinPeerName : ""});

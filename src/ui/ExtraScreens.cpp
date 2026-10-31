@@ -71,6 +71,20 @@ void UiController::buildExtra() {
         lv_obj_set_style_transform_pivot_y(weight_,24,0);
         lv_obj_set_style_transform_scale(weight_,width_*600/480,0);
         nextWeight_ = label(face_,"",width_*68/100,height_*61/100,heading);
+        // Outside the primary weight touch rectangle, inside the round edge.
+        // Decreasing LVGL bar value lowers the top of its vertical indicator.
+        holdBar_=lv_bar_create(face_);lv_obj_remove_style_all(holdBar_);
+        lv_obj_remove_flag(holdBar_,LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(holdBar_,LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(holdBar_,std::max(6,int(width_*3/100)),height_*26/100);
+        lv_obj_set_pos(holdBar_,width_*90/100,height_*37/100);
+        lv_obj_set_style_radius(holdBar_,LV_RADIUS_CIRCLE,LV_PART_MAIN);
+        lv_obj_set_style_radius(holdBar_,LV_RADIUS_CIRCLE,LV_PART_INDICATOR);
+        style::set_bg_color(holdBar_,lv_color_hex(0x25313d),LV_PART_MAIN);
+        style::set_bg_opa(holdBar_,LV_OPA_COVER,LV_PART_MAIN);
+        style::set_bg_color(holdBar_,lv_color_hex(accent()),LV_PART_INDICATOR);
+        style::set_bg_opa(holdBar_,LV_OPA_COVER,LV_PART_INDICATOR);
+        lv_bar_set_range(holdBar_,0,1000);lv_obj_add_flag(holdBar_,LV_OBJ_FLAG_HIDDEN);
         const auto counters=app_.displayCounters(); const auto d=app_.drops();
         const int count=d.enabled && d.mode == DropMode::RestPause ? 3 : 2;
         const char* captions[]={"SET","REP","DROPS"};
@@ -170,6 +184,11 @@ void UiController::updateExtra() {
         text(liveValues_[1],counters.rep ? std::to_string(*counters.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
         text(message_,known ? app_.dropPending() && app_.message().empty() ? "Setting drop..." : app_.message() : "State unknown / tap weight to unload");
+        const auto remaining=app_.restPauseRemainingPermille();
+        if(remaining) {
+            lv_bar_set_value(holdBar_,*remaining,LV_ANIM_OFF);
+            lv_obj_remove_flag(holdBar_,LV_OBJ_FLAG_HIDDEN);
+        } else lv_obj_add_flag(holdBar_,LV_OBJ_FLAG_HIDDEN);
     }
     if(page_ == Screen::PresetNotice || page_ == Screen::Presets || page_ == Screen::SavePreset || page_ == Screen::OverridePreset) {
         text(message_,r.loaded || r.autoLoadArmed || !app_.fresh() ? "Tap here to unload / cancel" : app_.message());

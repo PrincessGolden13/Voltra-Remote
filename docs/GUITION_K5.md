@@ -168,3 +168,7 @@ The UI clock is refreshed before explicit input reads. Diagnostics include
 capture-to-delivery age, down/up/cancel and recognized actions. Physical
 responsiveness is pending the user's post-install trial; these policies do not
 relax controller readiness checks or repeat a rejected command.
+
+CONFIRMED (October 31 user follow-up): repeated Drops Apply now returns on the
+first tap. The independent sampler resolves the reported double-tap behavior
+in that trial; this does not prove every gesture/timing edge case.

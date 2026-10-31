@@ -1,3 +1,12 @@
+> October 31 RP follow-up: show a vertical draining pause bar on Live only,
+> after at least 250 ms of a qualifying hold. It uses the actual RP hold window,
+> including that first 250 ms, and disappears on movement, invalid telemetry,
+> trigger or exhaustion. Read Auto Unload holding time without changing it;
+> cap RP hold at its positive delay minus one second, retaining 1..9 s when
+> unavailable/off. Auto Unload at 1 s leaves RP unavailable. Presets and an
+> already-armed recipe must respect the same limit. See
+> [implementation and evidence](RP_COUNTDOWN_2026_10_31.md).
+>
 > October 31 follow-up: Auto Load must preserve the selected dropset recipe.
 > During its countdown the tile retains the recipe, with amber values while
 > execution is unavailable; this is not OFF. Completed Auto Load can execute
