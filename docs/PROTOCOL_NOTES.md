@@ -227,6 +227,7 @@ Read-only parameter 21525 / 0x5415 (Android da514d2 uint8, 0..10) is polled
 with existing control state. Official Cortex documents the holding-time setting
 in seconds, zero disabled. Fresh in-range values constrain RP pause locally;
 unknown values retain the user's requested fallback. There is no write path for
-Auto Unload configuration. Black's user-reported setting is 2 s; raw correlation
-is pending. Full source links and evidence boundaries are in
+Auto Unload configuration. CONFIRMED (Black, October 31): fresh read 21525=2
+matches the user's 2 s holding-time setting. Other values/firmware remain
+unverified. Full source links and evidence boundaries are in
 [RP countdown notes](RP_COUNTDOWN_2026_10_31.md).

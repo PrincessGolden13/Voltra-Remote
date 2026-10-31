@@ -21,7 +21,9 @@ CONFIRMED (source): Android reference commit
 as AUTO_UNLOAD_HOLDING_TIME, uint8, range 0..10, default 0. Its CSV unit is
 unspecified. Official Cortex documentation identifies Auto Unload's hold-still
 argument as seconds and zero as disabled. Together these support the read-only
-decoder; mapping to Black's actual setting still needs physical correlation.
+decoder. CONFIRMED (Black, this installed build): the user reported a 2 s
+holding time and the fresh read returned 21525=2 while unloaded. Other values
+and firmware still require physical correlation; no timer setting was changed.
 
 - [Parameter catalog at pinned source](https://github.com/dylanmaniatakes/Beyond-Power-Voltra-Android/blob/da514d2db1a16ebb4ded3156bc8fd200bed1e6eb/app/src/main/assets/voltra/paramInfo.csv)
 - [Official training controls](https://cortex.beyond-power.com/docs/cortex/training-control)

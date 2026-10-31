@@ -495,7 +495,7 @@ remain explicit future milestones.
   and ongoing execution guards enforce the same policy. No Auto Unload write.
   See RP_COUNTDOWN_2026_10_31.md for source evidence and scope.
 - CONFIRMED (user): Black's holding time is currently 2 s. Bluetooth correlation
-  is pending installation; expected RP maximum is 1 s.
+  after installation returned 21525=2; RP maximum resolves to 1 s.
 - Native, Normal and isolated Simulator builds pass. A C++ LVGL flag-type build
   error was corrected before these successful builds. Existing validators pass
   (203 SDK / 593 modifier packets and pinned upstream checks). No new tests.
@@ -508,3 +508,10 @@ remain explicit future milestones.
   SHA256 C2CBE408D5AC936748554698A6C89893B1960887097E43B31CCA0E20B892ECC1.
   Simulator: 948,736 bytes,
   SHA256 D16BF2A39B5313D6F2750DA3E0779D136E10B86241145F98F10BC52DB2DA1021.
+- Installed source b6925de with verified recovery/partition checks and flash
+  hashes. Black connected on the first radio attempt and returned fresh 15 LB
+  unloaded, max 230 LB, Auto Load enabled/safe, status 0, mount 2 / void lock 6,
+  and Auto Unload holding time 2. No resistance or Auto Unload configuration
+  command was issued by installation/verification. Physical countdown and
+  editor behavior await the user's live trial. Ignored capture:
+  build/voltra-live/2026-10-31/rp-countdown-installed.txt.
