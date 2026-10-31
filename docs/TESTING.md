@@ -261,3 +261,13 @@ Load/unload acknowledgements use the normalized mode but all outgoing command
 values remain unchanged. Reconnect, mode entry, base edits and decoder recovery
 must never issue a load. A low-byte-only match cannot bypass locks, cable zero,
 activation, standalone context, or current explicit user intent.
+
+Pending-update cases queued (new test code deferred): fresh OTA_STATUS 0 and
+the captured Black update-ready value 0x0105 allow ordinary control only when
+all other guards pass. Missing/stale status and unrecognized nonzero values
+(including nearby 0x0104/0x0106) must block new intents and cancel a pending
+transaction without retry, replay, load, or rollback. Update-block feedback
+must identify update status rather than require unload. An update-available
+report alone must not create a load or settings command. Preserve explicit
+unload access regardless of update state. Verify unloaded dial changes and
+mode entry with an update waiting, without accepting/installing the update.

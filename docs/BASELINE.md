@@ -392,3 +392,28 @@ remain explicit future milestones.
   SHA256 D96063FCFFAD3BE3C8461CFA9C8097EEA362D36B9F2656C438F0CCDC01986C20.
   Simulator binary: 942,896 bytes,
   SHA256 99AD93317A7C34D8D0E155B8DE588BB039B0269ED507B3B27E87BC2393BE47B7.
+
+## October 31 pending firmware update and unloaded dial controls
+
+- CONFIRMED (user): the earlier display error cleared, but turning the dial
+  produced "Unload / wait for fresh control state". The follow-up capture
+  confirmed a working connection with 42 LB unloaded, 25% IC/EO, 230 LB max and
+  OTA_STATUS=261. The user identified an update ready to install on Black.
+- The prior `OTA_STATUS==0` guard incorrectly blocked that pending-update
+  state. The physical profile now accepts fresh 0 or exactly 0x0105, the
+  user-correlated pending value. Missing/stale status and other nonzero values
+  remain blocked. Feedback now identifies update status when that is the cause.
+  No update command, preference change, force-load or control replay was added.
+- Normal and isolated Simulator builds pass; the Simulator binary is unchanged.
+  Existing validators pass (203 SDK / 593 modifier packets and pinned upstream
+  checks). No new test code was created; pending regression cases are tracked.
+- Snapshot: build/guition/2026-10-31-pending-update. Normal binary: 1,221,312 bytes,
+  SHA256 A39D7C733153FE75762C83EDC5D2F9FB06229EB6AE70D6A8A4A4D9BAB5892F28.
+  Simulator binary: 942,896 bytes,
+  SHA256 99AD93317A7C34D8D0E155B8DE588BB039B0269ED507B3B27E87BC2393BE47B7.
+- Installed with recovery/partition validation and verified flash hashes. After
+  initial radio establishment failures, the connection-only retry succeeded.
+  Black again reported OTA_STATUS=261, base=42 LB and unloaded; the remote's
+  accepted/fresh session cleared its control-state message. The installation
+  check sent no resistance, mode, modifier or update command. Physical dial
+  confirmation with this build is pending the user's follow-up.

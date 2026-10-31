@@ -76,6 +76,8 @@ private:
     bool trainingSeen_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     std::optional<int64_t> freshMotorMode() const;
+    bool updateAllowsControls() const;
+    const char* updateBlockReason() const;
     bool standalone() const;
     bool settingsReady() const;
     bool controlContextReady() const;

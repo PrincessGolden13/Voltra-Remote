@@ -131,3 +131,10 @@ readiness and command confirmation use the same interpretation. Raw flags are
 never copied into outgoing commands, and decoding an unloaded report does not
 itself authorize loading. All existing fresh-state, lock, cable-zero, activation,
 standalone and explicit-action requirements still apply.
+
+October 31 pending-update follow-up: OTA_STATUS is not a Boolean "updating".
+The captured 0x0105 value corresponds to Black's user-confirmed update-ready
+state and no longer blocks training by itself. Only fresh 0 or this exact
+observed value passes; unknown/nonzero alternatives and stale status remain
+blocked with update-specific feedback. This policy never starts or changes an
+update, relaxes another load guard, or retries/replays a cancelled command.

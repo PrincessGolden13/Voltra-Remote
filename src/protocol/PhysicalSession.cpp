@@ -21,6 +21,10 @@ constexpr uint16_t fitnessRestTime=21377; // Android da514d2 catalog: uint16 sec
 // Black, Oct 24: user released/resecured mount, 2 -> 1 -> 2. Keep the
 // successful profile's companion void-lock value exact; its bits are unmapped.
 constexpr int securedMount=2, observedVoidLock=6;
+// Black, Oct 31: OTA_STATUS=0x0105 while the user confirmed an update was
+// ready to install and Weight Training remained open. Pending availability
+// is not an active installation. No other nonzero status is authorized here.
+constexpr int otaIdleStatus=0, otaUpdateAvailableStatus=0x0105;
 constexpr int cableZeroToleranceCm=1; // Integer-cm quantization; source capture 37/38 cm at rest.
 constexpr uint64_t stateFreshMs=2000, writeConfirmationMs=3000;
 // A bounded unloaded transaction can contain several individually confirmed
@@ -115,6 +119,13 @@ std::optional<int64_t> PhysicalSession::freshMotorMode() const {
     const auto raw=fresh(motor);
     return raw ? motorMode(*raw) : std::nullopt;
 }
+bool PhysicalSession::updateAllowsControls() const {
+    const auto state=fresh(otaState);
+    return state==otaIdleStatus || state==otaUpdateAvailableStatus;
+}
+const char* PhysicalSession::updateBlockReason() const {
+    return fresh(otaState) ? "Check VOLTRA update status" : "Reading VOLTRA update status";
+}
 uint16_t PhysicalSession::percentParameter(bool magic) const {
     // Black returns zero in both legacy fields even with active 20% modifiers.
     // Missing modern data is unknown, never a reason to use those legacy zeros.
@@ -143,7 +154,7 @@ bool PhysicalSession::controlContextReady() const {
     const auto u=fresh(unit),maximum=fresh(maxForce);
     return connected_ && accepted_ && standalone() &&
         fresh(workout)==1 && u && (*u==0 || *u==1) && maximum && *maximum>0 &&
-        fresh(base).has_value() && fresh(childLock)==0 && fresh(otaState)==0 && modifiersKnown();
+        fresh(base).has_value() && fresh(childLock)==0 && updateAllowsControls() && modifiersKnown();
 }
 bool PhysicalSession::liveWeightReady() const {
     // The source-validated loaded-idle register path changes base only. Mode 5
@@ -424,7 +435,8 @@ void PhysicalSession::updateReport() {
     report_.liveWeightSupported=settingsReady() || liveWeightReady();
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
     report_.revision=++reportRevision_;
-    if(!busy() && !commandFailed_) status_=settingsReady() || liveWeightReady() ? "" : report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
+    if(!busy() && !commandFailed_) status_=settingsReady() || liveWeightReady() ? "" :
+        !updateAllowsControls() ? updateBlockReason() : report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
 }
 TrainingReport PhysicalSession::trainingReport() const { return report_; }
 SessionReadiness PhysicalSession::readiness() const {
@@ -438,6 +450,7 @@ SessionReadiness PhysicalSession::readiness() const {
         fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock && fresh(autoLoadStatus)==0;
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!standalone()) r.reason="Device connection state unavailable";
+    else if(!updateAllowsControls()) r.reason=updateBlockReason();
     else if(!settingsReady()) r.reason="Control state unavailable";
     else if(fresh(mountLock)!=securedMount) r.reason="Secure VOLTRA mounting lock";
     else if(fresh(voidLock)!=observedVoidLock) r.reason="VOLTRA safety state unavailable";
@@ -452,7 +465,7 @@ TransportResult PhysicalSession::setWeight(uint16_t pounds) {
 TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if((!settingsReady() && !liveWeightReady()) || (waitingWrite_ && waitingWrite_->first==motor)) {
-        status_="Unload / wait for fresh control state";return TransportResult::Unsupported;
+        status_=!updateAllowsControls() ? updateBlockReason() : "Unload / wait for fresh control state";return TransportResult::Unsupported;
     }
     if(report_.loaded) {
         if(!liveWeightReady() || !sameAccessories(settings,report_.settings)) {
@@ -570,7 +583,8 @@ bool PhysicalSession::enterTrainingOnConnect() {
     if(*mode!=0 || (*m!=0 && *m!=4)) {
         entryHandled_=true;status_="Finish current workout on VOLTRA";return false;
     }
-    if(!standalone() || fresh(childLock)!=0 || fresh(otaState)!=0) return false;
+    if(!standalone() || fresh(childLock)!=0) return false;
+    if(!updateAllowsControls()) {status_=updateBlockReason();return false;}
     entryHandled_=true;status_="Opening Weight Training...";
     // Android da514d2 enterWeightTrainingPayload: 20400 uint8 = 1.
     // One attempt per connection, confirmed by mode readback, never retried.
@@ -611,7 +625,7 @@ void PhysicalSession::tick(uint64_t now) {
            (liveIntent_ && !sameAccessories(*liveIntent_,report_.settings)) ||
            fresh(extraMode)!=intentInterpretation_ || fresh(maxForce)!=intentMaximum_ ||
            (!(waitingWrite_ && waitingWrite_->first==accessoryDisplayPercent) && fresh(accessoryDisplayPercent)!=intentDisplay_))) {
-            cancelWrites("Control state changed; request stopped");
+            cancelWrites(!updateAllowsControls() ? updateBlockReason() : "Control state changed; request stopped");
         }
         // Deadline-based group scheduling keeps readiness fresh even while a
         // sequence of settings and readbacks occupies the link. Track requests,

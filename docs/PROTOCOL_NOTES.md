@@ -165,3 +165,26 @@ session reported connected/accepted/fresh, 42 LB and unloaded, then cleared its
 status after the remaining context reads. The check sent no mode, base, modifier
 or motor control command. This verifies decoding/connection recovery, not the
 physical load/unload cycle for prefixed reports.
+
+## October 31 pending firmware update blocking adjustments
+
+CONFIRMED (user): the connection/display error was cleared by the preceding
+build. A subsequent dial attempt showed "Unload / wait for fresh control state"
+and did not change Black's weight. The user confirmed Black had an update ready,
+not an installation in progress, and requires normal training while it is pending.
+
+CONFIRMED (capture): reconnect succeeded and reported 42 LB, motor=256,
+Weight Training=1, 25% IC/EO, child lock=0, standalone state and OTA_STATUS=261
+(0x0105). The other previously checked controls stayed consistent. The remote's
+`fresh(otaState)==0` predicate was the blocker. This was a control-state rejection,
+not a stalled Bluetooth connection; no speculative radio-state changes were made.
+
+INFERRED (Black / current firmware scope): 0x0105 identifies the update-ready
+state observed and described by the user. The physical profile now permits only
+fresh 0 (idle) or this exact captured value. All other nonzero values and missing/
+stale status still block control; do not mask arbitrary OTA bits or treat every
+nonzero value as harmless. No firmware-update command or preference is written.
+Blocked or missing OTA evidence now produces update-specific feedback instead
+of incorrectly asking an already unloaded user to unload. Loading still needs
+every other readiness predicate and a current explicit user action. Automatic
+mode entry and pending-setting validation use the same update-state policy.
