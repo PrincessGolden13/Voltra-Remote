@@ -29,7 +29,7 @@ public:
                 if (x+col >= 0 && y+row >= 0 && x+col < size_ && y+row < size_)
                     pixels_[size_t(y+row)*size_+x+col] = source[size_t(row)*width+col];
     }
-    TouchPoint sample() const override { return touch_; }
+    TouchPoint sample() override { return touch_; }
     void pointer(int x, int y, bool pressed) {
         touch_ = {std::clamp(float(x)/float(size_-1), 0.f, 1.f),
             std::clamp(float(y)/float(size_-1), 0.f, 1.f), pressed};

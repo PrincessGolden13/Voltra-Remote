@@ -13,7 +13,7 @@ private:
     uint16_t width() const override { return 0; }
     uint16_t height() const override { return 0; }
     void flush(int, int, int, int, const uint32_t*) override {}
-    TouchPoint sample() const override { return {}; }
+    TouchPoint sample() override { return {}; }
     int getDelta() override { return 0; }
     bool wasPressed() override { return false; }
 };

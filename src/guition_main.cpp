@@ -75,8 +75,8 @@ void setup() {
 void loop() {
     if(!ui) {delay(100);return;}
     board.poll();
-    // Deliver each sampled press/release before rendering instead of waiting for
-    // LVGL's separate input timer, which can skip a short tap between frames.
+    // Drain the independent hardware sampler before rendering. Short gestures
+    // remain ordered even when BLE work held up the preceding application loop.
     ui->readTouch();
     while(Serial.available()) {
         const char c=Serial.read();

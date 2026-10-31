@@ -36,12 +36,12 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
             b->action == Drops || b->action == ChoosePreset || b->action == Select;
         if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
             b->held = true;
-            std::printf("Touch action=%d hold=1\n",b->action);
+            std::printf("%llu Touch action=%d hold=1\n",static_cast<unsigned long long>(b->ui->hardware_.nowMs()),b->action);
             b->ui->act(b->action, b->id, true);
         } else if (code == LV_EVENT_CLICKED && !b->held) {
             // Ordinary buttons also accept a deliberate slow tap. A handled hold
             // can never issue a second short action when the finger is released.
-            std::printf("Touch action=%d hold=0\n",b->action);
+            std::printf("%llu Touch action=%d hold=0\n",static_cast<unsigned long long>(b->ui->hardware_.nowMs()),b->action);
             b->ui->act(b->action, b->id, false);
         }
     }, LV_EVENT_ALL, bindings_.back().get());
@@ -191,6 +191,14 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
     lv_indev_set_long_press_time(touch_, 650);
     lv_indev_set_read_cb(touch_, [](lv_indev_t* input, lv_indev_data_t* data) {
         auto* s = static_cast<UiController*>(lv_indev_get_user_data(input)); const auto p = s->hardware_.touch().sample();
+        data->continue_reading=s->hardware_.touch().hasPending();
+        if(p.cancelled) {
+            // A lost sample or old-screen gesture is never a synthetic click.
+            s->touchMoved_=true;s->touchDown_=false;s->wakeTouch_=false;
+            lv_indev_wait_release(input);
+            data->point={int(p.x*(s->width_-1)),int(p.y*(s->height_-1))};
+            data->state=LV_INDEV_STATE_RELEASED;return;
+        }
         if (p.pressed) {
             s->activityAt_ = s->hardware_.nowMs();
             if (s->sleeping_) { s->sleeping_ = false; s->wakeTouch_ = true; }
@@ -220,7 +228,10 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
     lastTickMs_ = hardware_.nowMs();
 }
 UiController::~UiController() { lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
-void UiController::readTouch() { lv_indev_read(touch_); }
+void UiController::readTouch() {
+    const auto now=hardware_.nowMs();lv_tick_inc(uint32_t(now-lastTickMs_));lastTickMs_=now;
+    lv_indev_read(touch_);
+}
 void UiController::navigate(Screen page) {
     modeGestureUntil_ = 0;
     if (page == Screen::ForgetDevice && forgetId_.empty()) { forgetId_=app_.selectedDevice();forgetName_=app_.name(); }
@@ -343,7 +354,12 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (held) return;
     if (action == Apply) {
-        if (page_ == Screen::Drops) { draftDrops_.enabled = true; if(!app_.applyDrops(draftDrops_)) return; }
+        if (page_ == Screen::Drops) {
+            draftDrops_.enabled = true;
+            if(!app_.applyDrops(draftDrops_)) {
+                std::printf("Drops Apply refused: %s\n",app_.message().c_str());return;
+            }
+        }
         else app_.applyModifier(page_ == Screen::Magic, draftMode_, draftValue_, draftPercent_);
         navigate(Screen::Main);
     } else if (action >= ModeIC && action <= ModeMTN) {
@@ -357,6 +373,7 @@ void UiController::act(int action, const std::string& id, bool held) {
 void UiController::build() {
     scaleSignature_.clear();
     if (touchDown_) lv_indev_wait_release(touch_);
+    hardware_.touch().discardPending();
     if (face_) lv_obj_delete(face_);
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;

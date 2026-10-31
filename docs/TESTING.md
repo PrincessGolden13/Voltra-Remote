@@ -289,3 +289,17 @@ adjacent modifier targets stay separate, and caption/circle gap taps register.
 Touch diagnostics now distinguish recognized actions from drag cancellation;
 responsiveness on the physical panel remains a human observation, not a build
 or packet-validator result.
+
+Buffered-touch cases queued (new test code deferred): a complete 80 ms tap
+inside a 150-250 ms transport stall delivers down then up and exactly one action;
+retain intermediate swipe excursions even if the finger returns to its start.
+Stationary long holds remain holds, not repeated taps; queued short taps never
+become long presses. A screen change discards old input and a held release does
+not act on the new screen. Stale (>350 ms) input, overflow, invalid coordinates
+and an I2C error while pressed cancel without a CLICKED action; fresh input only
+resumes after a real release. Check wake-only touches, both picker swipe guards,
+Apply refusal feedback, unload during pending BLE work, and initialization
+failure if the input task cannot start. Verify single taps on Drops Apply,
+Magic/EO, device selection and presets on the physical panel. The desktop
+window screenshot helper timed out during the pre-change comparison; no native
+interactive pass is claimed from that attempt.

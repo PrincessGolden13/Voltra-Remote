@@ -215,3 +215,8 @@ without clearing the selected recipe. The tile represents local selection
 independently from live-write readiness. This supersedes the earlier exclusion
 of all Auto Load states from drops; Black's completed Auto Load drop behavior
 still requires a human-initiated physical trial.
+
+CONFIRMED (user follow-up, b0d08b5): enabling drops, using Auto Load, doing a
+rep and unloading worked. This verifies that interaction on Black; no capture
+of the entire trial was retained, so do not claim additional status enum values
+or broader firmware/Twin compatibility from this observation.

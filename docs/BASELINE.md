@@ -453,3 +453,31 @@ remain explicit future milestones.
   Black accepted the remembered remote and returned 15 LB unloaded, 230 LB max,
   Auto Load enabled/safe, status 0, mount 2 / void lock 6. No motor, base or
   modifier write was issued by this connection check.
+
+## October 31 independent touch capture
+
+- CONFIRMED (user): Auto Load with drops now works, but Drops Apply and other
+  controls still sometimes need a second tap. The unloaded diagnostic trial
+  logged one recognized Apply and successful local activation, no refusal.
+  INFERRED cause: a short gesture can fall inside main-loop BLE/render work;
+  increasing the movement tolerance alone cannot recover an unsampled tap.
+- K5 now captures input independently in a board-local task, using a bounded
+  queue consumed by the shared UI. No application/BLE/LVGL calls run on that
+  task. Press/release/movement order is retained; stale (>350 ms), overflow or
+  invalid input cancels rather than clicks. Screen changes discard old input
+  and suppress held fingers until release. Explicit input reads refresh the
+  UI clock; new diagnostics report delivery age and Apply refusals.
+- Native, Normal and isolated Simulator builds pass. Existing packet/upstream
+  validators pass (203 SDK / 593 modifier packets and pinned upstream checks).
+  Existing 360 px Drops render inspected. No new test code was created. The
+  desktop interaction comparison was unavailable because window screenshot
+  capture timed out; no interactive native or physical touch pass is claimed.
+- Snapshot: build/guition/2026-10-31-buffered-touch. Normal: 1,225,296 bytes,
+  SHA256 8AB3ACF766DCA5B789E71C03A7AC31FECBCBA48640852B99722C8F4BBA867462.
+  Simulator: 946,128 bytes,
+  SHA256 2CB6D857572C3CCF9CB12D4B578E602850A58E060708B76A7A875C2A776BB3DA.
+- Installed with verified recovery/partition bounds and flash hashes. Boot
+  confirmed the buffered sampler started. Black connected on the first radio
+  attempt, accepted the remote and returned fresh 15 LB unloaded with controls
+  available. No resistance command was issued by installation/verification.
+  User verification of repeated first-tap Apply remains pending.

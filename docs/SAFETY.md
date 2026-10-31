@@ -148,3 +148,11 @@ only fresh completed reps or a new qualified RP hold trigger a base edit after
 confirmed loading. Disconnect still disarms drops. No motor reassertion, force,
 retry or preference write is introduced. Selecting Auto Load explicitly resets
 old drop execution state so an earlier set/hold cannot trigger in the new set.
+
+Buffered touch capture remains input only. The K5 task cannot call application,
+LVGL or BLE code. Samples older than 350 ms, overflow and invalid/I2C input
+cancel the gesture; they cannot synthesize release clicks. Screen rebuilds
+discard queued input and require an already-held finger to release, preventing
+old-screen taps from becoming new-screen load actions. Existing long-press
+suppression, wake-only first touch, swipe cancellation and all command guards
+still apply. There is no retry/automatic submission of refused Apply actions.

@@ -55,8 +55,13 @@ bool Board::begin() {
     pinMode(encoderA,INPUT_PULLUP);pinMode(encoderB,INPUT_PULLUP);pinMode(pressPin,INPUT_PULLUP);
     encoderState_=(digitalRead(encoderA)<<1)|digitalRead(encoderB);
     attachInterruptArg(encoderA,encoderInterrupt,this,CHANGE);attachInterruptArg(encoderB,encoderInterrupt,this,CHANGE);
+    // This task owns Wire after initialization. It publishes input only; LVGL,
+    // the application and BLE remain exclusively on the application loop.
+    if(xTaskCreatePinnedToCore(touchTask,"touch",4096,this,2,&touchTask_,ARDUINO_RUNNING_CORE)!=pdPASS) {
+        Serial.println("Touch sampler could not start; init stopped");return false;
+    }
     ready_=true;ledcWrite(0,700);
-    Serial.println("Display initialized; touch ACK; encoder inputs active.");return true;
+    Serial.println("Display initialized; buffered touch sampler active; encoder inputs active.");return true;
 }
 void IRAM_ATTR Board::encoderInterrupt(void* context) {
     auto* b=static_cast<Board*>(context);
@@ -89,15 +94,63 @@ void Board::poll() {
     const uint32_t now=millis();const bool down=digitalRead(pressPin)==LOW;
     if(down!=pressCandidate_) {pressCandidate_=down;pressChanged_=now;}
     if(now-pressChanged_>=30 && down!=pressStable_) {pressStable_=down;if(down) {pressed_=true;Serial.println("Press");}}
-    if(now-lastTouch_<8) return;lastTouch_=now;
+}
+void Board::touchTask(void* context) {
+    auto* board=static_cast<Board*>(context);
+    for(;;) {board->pollTouch();vTaskDelay(pdMS_TO_TICKS(touchPollMs));}
+}
+void Board::cancelTouchLocked(uint64_t now) {
+    touchBlocked_=true;
+    touchCurrent_.point.pressed=false;touchCurrent_.point.cancelled=true;touchCurrent_.at=now;
+    touchHead_=0;touchCount_=1;touchQueue_[0]=touchCurrent_;
+}
+void Board::publishTouchLocked(const CapturedTouch& sample) {
+    const auto& a=touchCurrent_.point;const auto& b=sample.point;
+    const bool changed=a.pressed!=b.pressed || a.cancelled!=b.cancelled || a.x!=b.x || a.y!=b.y;
+    touchCurrent_=sample;
+    if(!changed) return;
+    if(touchCount_==touchQueueCapacity) {cancelTouchLocked(sample.at);return;}
+    touchQueue_[(touchHead_+touchCount_)%touchQueueCapacity]=sample;++touchCount_;
+}
+void Board::pollTouch() {
     Wire.beginTransmission(0x15);Wire.write(0x02);
-    if(Wire.endTransmission(false)!=0 || Wire.requestFrom(uint8_t(0x15),uint8_t(5))!=5) {touchPoint_.pressed=false;return;}
-    uint8_t data[5];for(auto& byte:data) byte=Wire.read();
+    const bool readOk=Wire.endTransmission(false)==0 && Wire.requestFrom(uint8_t(0x15),uint8_t(5))==5;
+    uint8_t data[5]{};if(readOk) for(auto& byte:data) byte=Wire.read();
     const int x=((data[1]&15)<<8)|data[2],y=((data[3]&15)<<8)|data[4];
-    const bool touched=(data[0]&15)>0 && x<resolution && y<resolution;
-    if(touched && !touchPoint_.pressed) Serial.printf("Touch %d,%d\n",x,y);
-    if(touched) touchPoint_={x/float(resolution-1),y/float(resolution-1),true};
-    else touchPoint_.pressed=false;
+    const bool down=(data[0]&15)>0;
+    portENTER_CRITICAL(&touchMux_);
+    const auto now=nowMs();
+    if(!readOk || (down && (x>=resolution || y>=resolution))) cancelTouchLocked(now);
+    else if(touchBlocked_ && down) touchCurrent_.at=now;
+    else {
+        touchBlocked_=false;
+        auto point=touchCurrent_.point;point.pressed=down;point.cancelled=false;
+        if(down) {point.x=x/float(resolution-1);point.y=y/float(resolution-1);}
+        publishTouchLocked({point,now});
+    }
+    portEXIT_CRITICAL(&touchMux_);
+}
+TouchPoint Board::sample() {
+    portENTER_CRITICAL(&touchMux_);
+    const auto now=nowMs();
+    const auto oldest=touchCount_ ? touchQueue_[touchHead_].at : touchCurrent_.at;
+    if(now>=oldest && now-oldest>maximumTouchAgeMs) cancelTouchLocked(now);
+    auto captured=touchCurrent_;
+    if(touchCount_) {captured=touchQueue_[touchHead_];touchHead_=(touchHead_+1)%touchQueueCapacity;--touchCount_;}
+    portEXIT_CRITICAL(&touchMux_);
+    const auto point=captured.point;
+    if(point.pressed!=deliveredTouch_.pressed || point.cancelled!=deliveredTouch_.cancelled)
+        Serial.printf("%llu Touch %s %d,%d ageMs=%llu\n",static_cast<unsigned long long>(now),
+            point.cancelled ? "cancel" : point.pressed ? "down" : "up",
+            int(point.x*(resolution-1)),int(point.y*(resolution-1)),static_cast<unsigned long long>(now-captured.at));
+    deliveredTouch_=point;
+    return point;
+}
+bool Board::hasPending() const {
+    portENTER_CRITICAL(&touchMux_);const bool pending=touchCount_!=0;portEXIT_CRITICAL(&touchMux_);return pending;
+}
+void Board::discardPending() {
+    portENTER_CRITICAL(&touchMux_);cancelTouchLocked(nowMs());portEXIT_CRITICAL(&touchMux_);
 }
 void Board::flush(int x,int y,int w,int h,const uint32_t* source) {
     if(!ready_ || x<0 || y<0 || w<=0 || h<=0 || x+w>resolution || y+h>resolution) return;

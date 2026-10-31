@@ -144,3 +144,27 @@ the hardware release needs the real transport, VOLTRA service filtering,
 connection/handshake, device-reported capabilities, and saved recent devices.
 This build continues using the six synthetic devices and initializes no radio.
 Discovery/connection must never itself issue a load command.
+
+## October 31 touch capture independent of Bluetooth
+
+CONFIRMED (user): the larger drift tolerance did not remove the need to tap
+Apply twice. The requested unloaded trial logged one recognized Apply action
+and successful local dropset activation, with no application refusal. INFERRED:
+the missing gesture was lost before the controller; main-loop sampling could
+miss an entire short tap during synchronous BLE writes/display transfer.
+
+The K5 now samples CST816 in a dedicated priority-2 task on the Arduino core,
+with a 4096-byte stack and 8 ms delay between reads. It owns Wire after board
+initialization and never calls LVGL/application/BLE. A protected fixed queue
+preserves up to 64 changed normalized samples in order. Unchanged contact still
+refreshes its timestamp. The application drains samples via TouchInput and
+LVGL continue_reading; board-specific task/GPIO/I2C details stay in Board.
+
+Tunable input policy: samples older than 350 ms, queue overflow, I2C failure or
+invalid pressed coordinates cancel the whole gesture and require release.
+Cancellation is explicit, never a fake clickable release. Rebuilding a screen
+discards queued old-screen input and suppresses a held contact until release.
+The UI clock is refreshed before explicit input reads. Diagnostics include
+capture-to-delivery age, down/up/cancel and recognized actions. Physical
+responsiveness is pending the user's post-install trial; these policies do not
+relax controller readiness checks or repeat a rejected command.
