@@ -231,3 +231,21 @@ Auto Unload configuration. CONFIRMED (Black, October 31): fresh read 21525=2
 matches the user's 2 s holding-time setting. Other values/firmware remain
 unverified. Full source links and evidence boundaries are in
 [RP countdown notes](RP_COUNTDOWN_2026_10_31.md).
+
+## October 31 loaded amounts and dropset completion
+
+CONFIRMED (source): the pinned kirby6365 client at
+8e1ea1cb752acd3108c61f1a502b63978a172832 writes loaded accessory amounts through
+the ordinary chain/EO registers. This profile now permits those transactions
+in its already-supported motor 1 / completed Auto Load 35/14 context. Its
+motor-mode-5 reassertion is not implemented. Curve/display-unit changes remain
+unloaded-only; decreases precede increases and each register requires readback.
+Readback validation allows the confirmed pre-edit, intended or current in-flight
+amount while preserving curve/unit/context invariants. No new packet format.
+
+CONFIRMED (Black capture scope): workout phase 4 precedes actual unload at set
+end. Expose it as optional setEnding alongside phase 3/rest; only a fresh report
+can finish the local grouped dropset. AA85 while phase 2 remains active is a
+weight segment, not permission to restore. End-of-set restoration issues at
+most one unload, then an unloaded base transaction after fresh confirmation.
+See TRAINING_WIFI_2026_10_31.md for evidence links and physical trial limits.

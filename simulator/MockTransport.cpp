@@ -14,6 +14,7 @@ MockTransport::MockTransport() {
         r.settings.weight = i == 3 ? 46 : 50;
         r.magicSupported = {true,true,i != 4};
         r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
+        r.liveModifierAmountsSupported = true;
         r.twinKnown = true; r.twin = i == 1 || i == 2;
         // Explicit synthetic combined floor, not a physical Twin inference.
         r.minWeight = r.twin ? 10 : voltraISingleMinimum(r.unit);
@@ -178,6 +179,8 @@ SessionReadiness MockTransport::readiness() const {
 bool MockTransport::consumeIgnored() { const bool ignored = ignoreNext_; ignoreNext_ = false; return ignored; }
 TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     const auto r = trainingReport();
+    if(r.loaded && (s.magicMode!=r.settings.magicMode || s.magic.percent!=r.settings.magic.percent || s.eccentric.percent!=r.settings.eccentric.percent))
+        return TransportResult::Unsupported;
     if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
         r.minWeight < 1 || s.weight < r.minWeight || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && (s.magic.value < 1 || !r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||

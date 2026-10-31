@@ -12,6 +12,8 @@ namespace voltra {
 struct SimulatorOptions {
     int size = 480, profile = 0, screen = 0, device = 0, dropMode = 0, liveDrops = 0, modifierValue = -1, weightUnit = -1, weightTicks = -1;
     int holdElapsedMs=-1, holdSeconds=1, autoUnloadSeconds=-1;
+    int wifiSetupPreview=0;
+    int previewReps=0,finishSet=0;
     std::string renderPath;
     static SimulatorOptions parse(int argc, char** argv) {
         SimulatorOptions o;
@@ -35,6 +37,9 @@ struct SimulatorOptions {
             else if (option == "--hold-ms") o.holdElapsedMs=number;
             else if (option == "--hold-seconds") o.holdSeconds=number;
             else if (option == "--auto-unload-seconds") o.autoUnloadSeconds=number;
+            else if (option == "--wifi-setup") o.wifiSetupPreview=number;
+            else if (option == "--reps") o.previewReps=number;
+            else if (option == "--finish-set") o.finishSet=number;
             else throw std::runtime_error("Unknown argument: " + option);
         }
         if ((o.size != 360 && o.size != 466 && o.size != 480) || o.profile < 0 || o.profile > 3)
@@ -53,10 +58,22 @@ struct SimulatorOptions {
             throw std::runtime_error("Render-only hold: 0-10000 ms / 1-9 s; Auto Unload: 0-10 s");
         if(o.holdElapsedMs>=0 && (o.profile!=1 || o.dropMode!=1 || !o.liveDrops))
             throw std::runtime_error("Hold preview requires loaded profile 1 and enabled RP drops");
+        if(o.wifiSetupPreview<0 || o.wifiSetupPreview>1 || (o.wifiSetupPreview && o.renderPath.empty()))
+            throw std::runtime_error("Wi-Fi preview 0/1 requires --render");
+        if(o.previewReps<0 || o.previewReps>30 || o.finishSet<0 || o.finishSet>1 ||
+           ((o.previewReps || o.finishSet) && (o.renderPath.empty() || o.profile!=1)))
+            throw std::runtime_error("Rep/finish previews require --render and loaded profile 1");
         return o;
     }
 };
 
+class PreviewWifiSetup final : public WifiSetup {
+public:
+    WifiSetupStatus status() const override {return {true,false,false,"","","VOLTRA-Setup-DEMO","DEMO234567","Connect your phone to setup Wi-Fi"};}
+    bool start() override {return false;}
+    void stop() override {}
+    void tick(bool) override {}
+};
 struct SimulatorApp {
     DesktopHardwarePlatform hardware;
     MockTransport transport;
@@ -64,12 +81,13 @@ struct SimulatorApp {
     DesktopDeviceMemory memory;
     DesktopConfigurationStore configuration;
     TrainingApplication application;
+    PreviewWifiSetup wifiPreview;
     UiController ui;
     SimulatorApp(const SimulatorOptions& o, const std::filesystem::path& memoryPath)
         : hardware(uint16_t(o.size)), controller(transport, {}, &transport), memory(memoryPath),
           configuration(memoryPath.parent_path() / "remote-settings.txt"),
           application(transport, controller, transport, o.renderPath.empty() ? &memory : nullptr, transport.catalog()),
-          ui(hardware, application, o.renderPath.empty() ? &configuration : nullptr) {
+          ui(hardware, application, o.renderPath.empty() ? &configuration : nullptr,nullptr,o.wifiSetupPreview ? &wifiPreview : nullptr) {
         ui.tick();
         if(!o.renderPath.empty()) hardware.previewClock(hardware.nowMs()+1000);
         if (o.screen != 0) {
@@ -87,6 +105,13 @@ struct SimulatorApp {
                 drops.holdSeconds=o.holdSeconds;
                 application.applyDrops(drops);
             }
+            if(o.previewReps) {
+                application.tick(hardware.nowMs());
+                for(int rep=0;rep<o.previewReps;++rep) {
+                    hardware.previewClock(hardware.nowMs()+100);transport.completeRep();application.tick(hardware.nowMs());
+                    hardware.previewClock(hardware.nowMs()+100);application.tick(hardware.nowMs());
+                }
+            }
             if(o.holdElapsedMs>=0) {
                 // Exercise the ordinary mock motion -> controller hold path;
                 // no direct UI progress injection and no physical transport.
@@ -100,6 +125,15 @@ struct SimulatorApp {
                     hardware.previewClock(holdStart+elapsed);application.tick(hardware.nowMs());
                 }
                 hardware.previewClock(holdStart+o.holdElapsedMs);application.tick(hardware.nowMs());
+            }
+            if(o.finishSet) {
+                // Offline preview of an explicit end/unload and the ordinary
+                // controller's confirmed-unloaded base restore. No test fixture
+                // packets or physical transport are introduced.
+                application.unload();
+                for(int tick=0;tick<20;++tick) {
+                    hardware.previewClock(hardware.nowMs()+100);application.tick(hardware.nowMs());
+                }
             }
             ui.navigate(static_cast<Screen>(o.screen));
             ui.tick();

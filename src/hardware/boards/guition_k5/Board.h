@@ -33,7 +33,7 @@ private:
     static constexpr size_t touchQueueCapacity=64;
     spi_device_handle_t spi_=nullptr;
     uint8_t* pixels_=nullptr;
-    struct CapturedTouch { TouchPoint point; uint64_t at=0; };
+    struct CapturedTouch { TouchPoint point; uint64_t at=0; uint8_t cancelReason=0; };
     CapturedTouch touchCurrent_;
     std::array<CapturedTouch,touchQueueCapacity> touchQueue_{};
     size_t touchHead_=0,touchCount_=0;
@@ -52,7 +52,7 @@ private:
     static void touchTask(void*);
     void pollTouch();
     void publishTouchLocked(const CapturedTouch&);
-    void cancelTouchLocked(uint64_t);
+    void cancelTouchLocked(uint64_t,uint8_t reason=0);
     bool transfer(uint8_t reg,const void*,size_t,bool quad=false);
     uint16_t width() const override { return resolution; }
     uint16_t height() const override { return resolution; }

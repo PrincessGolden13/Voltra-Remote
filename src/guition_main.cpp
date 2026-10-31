@@ -9,6 +9,7 @@
 #else
 #include "ble/NimBleTransport.h"
 #include "protocol/PhysicalSession.h"
+#include "network/Esp32WifiSetup.h"
 #include <esp_system.h>
 #if __has_include("LocalConfig.h")
 #include "LocalConfig.h" // Ignored, local-only diagnostic identities; never Git.
@@ -34,6 +35,7 @@ std::array<uint8_t,16> clientIdentity() {
     return identity;
 }
 voltra::PhysicalSession* physicalSession=nullptr;
+voltra::Esp32WifiSetup wifi;
 #endif
 voltra::guition::ConfigurationStore configuration;
 voltra::guition::DeviceStore devices(bootMode.simulated());
@@ -65,7 +67,11 @@ void setup() {
 #else
         std::vector<voltra::DeviceEntry>{},true);
 #endif
+#ifdef VOLTRA_SIMULATOR
     ui=new voltra::UiController(board,*application,&configuration,&bootMode);
+#else
+    wifi.begin();ui=new voltra::UiController(board,*application,&configuration,&bootMode,&wifi);
+#endif
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");
 #else

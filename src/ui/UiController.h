@@ -3,6 +3,7 @@
 #include "controller/RuntimeMode.h"
 #include "hardware/interfaces/HardwarePlatform.h"
 #include "RotaryAdjustment.h"
+#include "network/WifiSetup.h"
 #include <lvgl.h>
 #include <memory>
 #include <vector>
@@ -12,7 +13,7 @@ namespace voltra {
 enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice };
 class UiController {
 public:
-    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr);
+    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr, WifiSetup* = nullptr);
     ~UiController();
     void tick();
     void readTouch();
@@ -22,6 +23,7 @@ private:
     HardwarePlatform& hardware_;
     TrainingApplication& app_;
     RuntimeMode* runtime_ = nullptr;
+    WifiSetup* wifi_ = nullptr;
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;
     DeviceId forgetId_;
@@ -81,6 +83,7 @@ private:
     Preset saveDraft_;
     lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
     lv_obj_t* holdBar_ = nullptr;
+    lv_obj_t *wifiBody_=nullptr,*wifiButton_=nullptr;
     lv_obj_t* settingsValues_[4]{};
     lv_obj_t* liveValues_[3]{};
     uint32_t accent() const;

@@ -31,7 +31,10 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
         auto* b = static_cast<Binding*>(lv_event_get_user_data(e));
         const auto code = lv_event_get_code(e);
         if (code == LV_EVENT_PRESSED) b->held = false;
-        if (b->ui->touchMoved_) return;
+        if (b->ui->touchMoved_) {
+            if(code==LV_EVENT_RELEASED) std::printf("Touch cancelled by movement: action=%d\n",b->action);
+            return;
+        }
         const bool supportsHold = b->action == Weight || b->action == Magic || b->action == EO ||
             b->action == Drops || b->action == ChoosePreset || b->action == Select;
         if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
@@ -174,7 +177,7 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
 
 }
 
-UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime) : hardware_(h), app_(app), runtime_(runtime), store_(store) {
+UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime, WifiSetup* wifi) : hardware_(h), app_(app), runtime_(runtime), wifi_(wifi), store_(store) {
     if (store_) config_ = store_->load();
     if (!h.capabilities().coreInputsValid()) throw std::runtime_error("Unsupported display/input target");
     lv_init(); width_ = h.display().width(); height_ = h.display().height();
@@ -307,7 +310,13 @@ void UiController::act(int action, const std::string& id, bool held) {
         navigate(Screen::Main); return;
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
-    if (action == CloseSettings) { saveConfiguration(); navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return; }
+    if (action == CloseSettings) { if(page_==Screen::Wifi && wifi_) wifi_->stop();saveConfiguration(); navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return; }
+    if(action==WifiSetupToggle) {
+        if(wifi_ && !app_.connected() && !app_.connecting()) {
+            if(wifi_->status().setupActive) wifi_->stop();else wifi_->start();
+        }
+        return;
+    }
     if (action >= ThemeField && action <= SleepField) { settingsField_ = action-ThemeField; return; }
     if (action >= OpenWifi && action <= OpenReset) {
         navigate(action == OpenWifi ? Screen::Wifi : action == OpenUpdates ? Screen::Updates : action == OpenAbout ? Screen::About : Screen::Reset); return;
@@ -322,7 +331,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == BackMain) {
         if (editMaximum() == 0) { navigate(Screen::Main); return; }
         if(editDirty_) { returnAfterEdit_ = true; editedAt_ = 0; }
-        else if(!app_.report().loaded) { edited(); returnAfterEdit_=true; editedAt_=0; }
+        else if(!app_.report().loaded || app_.report().liveModifierAmountsSupported) { edited(); returnAfterEdit_=true; editedAt_=0; }
         else navigate(Screen::Main);
         return;
     }
@@ -380,6 +389,7 @@ void UiController::build() {
     center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
+    wifiBody_=wifiButton_=nullptr;
     for (auto& item : settingsValues_) item = nullptr;
     for (auto& item : liveValues_) item = nullptr;
     for (auto& item : unitChoices_) item = nullptr;
@@ -542,10 +552,15 @@ void UiController::build() {
             lv_obj_set_x(choice_[index],width_*(1+i*21)/100); bind(choice_[index],ModeIC+index);
         }
     } else if (page_ == Screen::Drops) {
-        lv_obj_set_y(title_,height_*19/100); lv_obj_set_y(status_,height_*35/100);
+        lv_obj_set_y(title_,height_*19/100);
+        // Separate mode selection from the status/unload target. Captured taps
+        // just below the old 7%-high mode button reached unload instead.
+        lv_obj_set_y(status_,height_*74/100);
+        style::set_text_font(status_,small,0);
         for (int i=0; i<2; ++i) {
-            choice_[i] = button(face_, i == 0 ? "Stairs" : "RP", width_*(25+i*25)/100, height_*27/100,
-                width_*25/100, height_*7/100, i == 0 ? Stairs : RP);
+            choice_[i] = button(face_, i == 0 ? "Stairs" : "RP", width_*(24+i*28)/100, height_*26/100,
+                width_*24/100, height_*9/100, i == 0 ? Stairs : RP);
+            lv_obj_set_ext_click_area(choice_[i],std::max(4,width_/60));
         }
         if (rp) {
             for (int i=0; i<3; ++i) {
@@ -559,7 +574,7 @@ void UiController::build() {
                     width_ < 400 ? &lv_font_montserrat_28 : &lv_font_montserrat_36);
                 color(miniValue_[i], bright);
             }
-            hint_ = label(face_, "", width_*55/100, height_*70/100, &lv_font_montserrat_18);
+            hint_ = label(face_, "", width_*55/100, height_*67/100, &lv_font_montserrat_18);
         } else {
             lv_obj_set_y(center_, height_*39/100); bind(center_,Apply); bind(weight_,Apply);
         }
@@ -590,7 +605,8 @@ void UiController::build() {
     }
     const int applyY = page_ == Screen::Magic ? 85 : page_ == Screen::Eccentric ? 78 : 81;
     const int applyH = page_ == Screen::Magic ? 7 : 10;
-    auto* apply = button(face_, "Apply", width_*30/100, height_*applyY/100, width_*40/100, height_*applyH/100, Apply);
+    auto* apply = button(face_, "Apply", width_*26/100, height_*applyY/100, width_*48/100, height_*applyH/100, Apply);
+    lv_obj_set_ext_click_area(apply,std::max(4,width_/50));
     glow(apply, accent(), true);
     style::set_text_font(lv_obj_get_child(apply, 0), medium, 0);
     for (auto* legend : scaleLabels_) lv_obj_move_foreground(legend);
@@ -635,10 +651,15 @@ void UiController::rotate(int delta) {
     }
     if (page_ == Screen::Settings) {
         if (settingsField_ == 0) config_.theme = (config_.theme + delta%9 + 9)%9;
-        if (settingsField_ == 1) config_.restAlertSeconds = std::clamp(config_.restAlertSeconds+delta,0,3599);
+        // Keep encoder sensitivity; each detent selects the next 5-second mark.
+        // Existing saved values migrate only on the user's next adjustment.
+        if (settingsField_ == 1) config_.restAlertSeconds = std::clamp(
+            (delta>0 ? config_.restAlertSeconds/5 : (config_.restAlertSeconds+4)/5)*5+delta*5,0,3595);
         if (settingsField_ == 2) config_.dimMinutes = std::clamp(config_.dimMinutes+delta,0,120);
         if (settingsField_ == 3) config_.sleepMinutes = std::clamp(config_.sleepMinutes+delta,0,120);
-        saveConfiguration(); next_ = page_; rebuild_ = true; return;
+        saveConfiguration();
+        if(settingsField_==0) {next_=page_;rebuild_=true;}
+        return;
     }
     if (page_ == Screen::Live) { app_.adjustWeight(delta); return; }
     if (page_ == Screen::Devices || int(page_) >= int(Screen::Presets) || !app_.fresh()) return;
@@ -749,8 +770,12 @@ void UiController::update() {
         return;
     }
     value(status_, !app_.fresh() ? "Unknown / tap to unload" :
+        !app_.message().empty() ? app_.message() :
         r.loaded ? weightText(r.settings.weight,r.unit)+" "+unitName(r.unit)+" / tap to unload" :
         r.autoLoadArmed ? "Auto Load / tap to cancel" : app_.message());
+    if(app_.fresh() && !r.loaded && !r.autoLoadArmed && !app_.pending())
+        lv_obj_remove_flag(status_,LV_OBJ_FLAG_CLICKABLE);
+    else lv_obj_add_flag(status_,LV_OBJ_FLAG_CLICKABLE);
     if (page_ == Screen::Drops) {
         if (app_.fresh() && !r.loaded && !r.autoLoadArmed && !r.liveWeightSupported)
             value(status_,"Preview only / drops unavailable");
@@ -856,6 +881,7 @@ void UiController::edited() {
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     app_.tick(now);
+    if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());
     if(app_.dropConfirmationRevision()!=dropCueRevision_) {
         dropCueRevision_=app_.dropConfirmationRevision();
         if(app_.fresh() && app_.confirmedDropWeight()) {

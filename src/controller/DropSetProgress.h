@@ -40,7 +40,7 @@ public:
         // An old completion retained across a new load cannot start a segment.
         if (newRep && r.repSet && segments_.count(*r.repSet) && now >= r.repAtMs && now-r.repAtMs <= 2000)
             add(*r.repSet, r.completedRep);
-        if (!r.loaded || r.resting==true) {
+        if (!r.loaded || r.resting==true || r.setEnding==true) {
             active = false;
             if (reps > 0) { ++completedSets; lastReps = reps; }
         }

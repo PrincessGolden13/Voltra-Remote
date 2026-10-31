@@ -515,3 +515,34 @@ remain explicit future milestones.
   command was issued by installation/verification. Physical countdown and
   editor behavior await the user's live trial. Ignored capture:
   build/voltra-live/2026-10-31/rp-countdown-installed.txt.
+
+## October 31 training follow-ups and phone Wi-Fi setup
+
+- CONFIRMED (user): RP countdown and Auto Unload editor limit work on Black.
+  User clarified dropset completion must unload and restore the original base,
+  and only the configured rest-alert duration needs cross-device persistence.
+- Implemented one-shot confirmed-unloaded base restoration for Stairs/RP,
+  loaded modifier amounts (same curve/units), 5 s global rest-alert adjustment,
+  and a password-protected phone Wi-Fi portal isolated from training/simulator.
+  See TRAINING_WIFI_2026_10_31.md for evidence and remaining physical limits.
+- CONFIRMED (capture): a tap above Stairs missed; another below it reached the
+  overlapping unload status. Four captured Apply actions succeeded. Separated
+  the status target, enlarged mode/Apply targets and kept cancellation logs.
+  This does not prove every occasional missed Apply is resolved.
+- Native, Normal and isolated Simulator final builds pass. Existing validators
+  pass (203 SDK / 593 modifier packets and pinned upstream checks). No new
+  automated test code. Final normal build uses 1,661,225 bytes of application
+  flash and 56,036 bytes static RAM, inside the verified partition limits.
+- Offline simulator renders: four Stairs reps at 50 produce 42, then explicit
+  mock unload restores 50 with 1 set / 4 reps; RP 15 -> 7 restores 15 unloaded.
+  These use the real application over mock reports, not physical packets.
+  Automatic phase-3/4 unloading and loaded modifier edits remain physical
+  trial items. Wi-Fi/Apply pages inspected at 360/466/480; final 360 Drops page
+  separates mode/status/Apply. Native interactive capture timed out twice;
+  only headless renders are claimed. Static browser portal inspected; phone
+  connection, captive detection and credential persistence remain unverified.
+- Snapshot: build/guition/2026-10-31-training-wifi. Normal: 1,661,584 bytes,
+  SHA256 96896FBCEBCA5C862859D9E64CDB903B72BF9D47012F65AA46042B1ABD7EB8F9.
+  Simulator: 953,120 bytes,
+  SHA256 E3D210206E9E378C429D2505ABBD6F1F46561C2A2897C2285E233FB53D2EFB88.
+  Installation and passive reconnection check are recorded separately below.

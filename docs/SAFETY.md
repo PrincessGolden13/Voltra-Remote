@@ -156,3 +156,22 @@ discard queued input and require an already-held finger to release, preventing
 old-screen taps from becoming new-screen load actions. Existing long-press
 suppression, wake-only first touch, swipe cancellation and all command guards
 still apply. There is no retry/automatic submission of refused Apply actions.
+
+October 31 later user authorization supersedes the earlier no-restore policy:
+a genuinely completed dropset now unloads once and restores its observed
+starting base only after confirmed unload. Weight-induced statistics segments
+do not trigger it. Phase 3/rest, phase 4/ending or confirmed unload finish the
+logical set. Restore is connection-local, bounded to 8 s, preserves confirmed
+accessories and refuses an incompatible envelope. Disconnect/unit changes,
+failure or explicit cancellation stop it. It never loads or replays at boot.
+
+Loaded Magic/EO amount changes use the existing guarded register transaction
+without a motor write or load reassertion. Curve and unit changes still require
+unload. Device readback, state freshness, locks, standalone context and envelope
+checks remain required. Physical compatibility of loaded amount writes awaits
+the user's trial; source evidence alone is not a physical pass.
+
+Wi-Fi provisioning is available only while disconnected from VOLTRA. The radio
+and setup server stop during a connection/connection attempt. The bounded local
+portal has no motor or firmware-upload endpoint. Credentials remain in separate
+local NVS; simulator builds exclude physical Wi-Fi entirely.

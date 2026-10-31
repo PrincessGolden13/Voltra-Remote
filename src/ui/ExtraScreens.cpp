@@ -149,9 +149,12 @@ void UiController::buildExtra() {
         label(face_,"Erase themes, preferences\nand saved presets?\nRecent devices are kept.",width_*73/100,height_*36/100,medium);
         action("CANCEL",26,62,48,12,CloseSettings);
         auto* erase=action("Erase remote settings",27,79,46,8,ConfirmReset); glow(erase,accent(),false);
+    } else if(page_ == Screen::Wifi) {
+        wifiBody_=label(face_,"",width_*76/100,height_*28/100,medium);
+        if(wifi_) wifiButton_=action("SET UP WI-FI",23,78,54,10,WifiSetupToggle);
+        status_=label(face_,"",width_*78/100,height_*69/100);
     } else {
-        std::string body = page_ == Screen::Wifi ? "Phone setup\n\nWi-Fi setup is not available\non this target yet." :
-            page_ == Screen::Updates ? "Check for updates\n\nNo firmware update service\nis configured for this target.\n\nNo update installed." :
+        std::string body = page_ == Screen::Updates ? "Check for updates\n\nNo firmware update service\nis configured for this target.\n\nNo update installed." :
             std::string("VOLTRA Remote 0.3.0\n")+(runtime_ && !runtime_->simulated() ? "Normal / Bluetooth" : "Simulator")+"\n" __DATE__ "\n\n"+std::to_string(width_)+" x "+std::to_string(height_)+"\nShared LVGL application";
         label(face_,body,width_*74/100,height_*33/100,medium);
     }
@@ -159,6 +162,18 @@ void UiController::buildExtra() {
 }
 void UiController::updateExtra() {
     const auto r=app_.report();
+    if(page_==Screen::Wifi) {
+        if(!wifi_) text(wifiBody_,"Phone setup is available\nin Normal mode on\nthe physical remote.");
+        else {
+            const auto w=wifi_->status();
+            text(wifiBody_,w.setupActive ? "Join Wi-Fi:\n"+w.setupNetwork+"\nPassword: "+w.setupPassword+"\n\nOpen 192.168.4.1\non your phone" :
+                w.connected ? "Connected to\n"+w.network+"\n\n"+w.address :
+                w.saved ? "Saved Wi-Fi\n"+w.network+"\n\nUse your phone to change\nthis remote's network." :
+                    "Use your phone to connect\nthis remote to Wi-Fi.\n\nChoose a 2.4 GHz network.\nCredentials stay on the remote.");
+            text(status_,w.message);
+            text(lv_obj_get_child(wifiButton_,0),w.setupActive ? "STOP SETUP" : "SET UP WI-FI");
+        }
+    }
     if(page_ == Screen::Live) {
         const auto d=app_.drops();
         text(status_,r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");

@@ -315,3 +315,24 @@ Unknown/off Auto Unload preserves max 9; 2 -> max 1, 3 -> max 2, 10 -> max 9;
 Apply, presets, toggles and externally shortened timers share the same policy;
 no automatic recipe shortening, rearm, resistance load or Auto Unload write.
 Correlate raw parameter 21525 against Black's displayed holding-time setting.
+
+Later October 31 cases queued (new test code deferred): Stairs and RP restore
+the original base only at actual workout rest/unload, after settled unloaded
+state; segment closes must not restore. Unload once, base once, never load.
+Verify next set's base and grouped counters, unchanged accessories, floor/quota,
+external unload, failed unload, stale state, different units/device, disconnect,
+manual override, incompatible envelope and cancellation/timeout without replay.
+Loaded amount writes must preserve base and the other accessory, accept only
+current/in-flight/requested amounts, and never reassert motor mode. Reject curve
+and unit switching while loaded, mode 5, unknown locks/Twin and stale controls.
+Persist one global rest-alert setting across device changes, reboot and mode
+switch; ±detents advance 5 s on-grid, bounded at off and 59:55.
+
+Wi-Fi cases: protected AP, captive/manual page, hidden/duplicate/long/escaped
+SSIDs, open/WPA2 networks, bad password and join timeout, candidate-save failure,
+power loss before/after save, saved reconnect, AP expiry, browser partial bodies,
+duplicate/oversized fields, invalid token, non-AP client refusal and no secret
+logs. Wi-Fi/HTTP must stop during VOLTRA connection, without a resistance action.
+Physical phone join and network persistence require human observation. Review
+360/466/480 setup/Apply layouts. Diagnose occasional Apply with press/release,
+cancel reason and app refusal rather than claiming every lost touch is fixed.

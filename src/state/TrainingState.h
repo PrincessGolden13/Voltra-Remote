@@ -21,6 +21,7 @@ struct TrainingReport {
     std::optional<bool> repsStarted;
     std::optional<bool> setActive; // Actual device workout phase, not a local timer.
     std::optional<bool> resting; // Confirmed between-set rest, distinct from a weight-induced statistics close.
+    std::optional<bool> setEnding; // Device workout phase 4: actual finish, not a statistics segment close.
     std::optional<bool> repActive; // Fresh device rep phase; idle tension is not selected weight.
     bool percentageSupported = false, modifierUnitsSelectable = false;
     bool sharedModifierUnits = false; // Device selects one interpretation for both accessories.
@@ -28,6 +29,7 @@ struct TrainingReport {
     int minWeight = 0; // Profile's effective base floor in display ticks; zero is unknown.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
+    bool liveModifierAmountsSupported = false; // Same curve and units; never a load/reassertion.
     // Device-confirmed hold-still Auto Unload delay. Zero disables that trigger;
     // absent means unavailable. The remote never changes this configuration.
     std::optional<int> autoUnloadHoldSeconds;

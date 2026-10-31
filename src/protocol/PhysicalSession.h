@@ -66,6 +66,7 @@ private:
     std::optional<int> repSet_;
     bool intentLoaded_=false;
     std::optional<TrainingSettings> liveIntent_;
+    std::optional<TrainingSettings> liveBefore_;
     std::optional<int> workoutStatus_;
     unsigned telemetryHeaders_=0, telemetrySetup_=0;
     std::array<bool,256> telemetryTypes_{};
@@ -82,6 +83,7 @@ private:
     bool settingsReady() const;
     bool controlContextReady() const;
     bool liveWeightReady() const;
+    bool liveAccessoriesExpected() const;
     bool modifiersKnown() const;
     uint16_t percentParameter(bool magic) const;
     void prepareWrites(const TrainingSettings&);

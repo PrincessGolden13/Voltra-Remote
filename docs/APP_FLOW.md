@@ -1,3 +1,13 @@
+> October 31 later follow-up: after a real dropset ends, unload and restore its
+> original starting base (50 -> 20 ends unloaded at 50). Never reload. Restore
+> only after confirmed unload, within the current connection/unit/limits, and
+> never from a weight-induced statistics segment close. User clarified that
+> only the rest-alert duration needs persistence, not elapsed rest time; retain
+> remote-wide storage and use 5 s dial steps. Wi-Fi phone setup is now requested.
+> Loaded Magic/EO amount edits may use verified loaded register paths; curve
+> and unit switches still require unload under current protocol evidence.
+> See [follow-up implementation](TRAINING_WIFI_2026_10_31.md).
+>
 > October 31 RP follow-up: show a vertical draining pause bar on Live only,
 > after at least 250 ms of a qualifying hold. It uses the actual RP hold window,
 > including that first 250 ms, and disappears on movement, invalid telemetry,

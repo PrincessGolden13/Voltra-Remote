@@ -84,10 +84,6 @@ int width(uint16_t id) {
     }
 }
 uint16_t u16(const Bytes& b,size_t i) { return uint16_t(b[i])|uint16_t(b[i+1])<<8; }
-bool sameAccessories(const TrainingSettings& a,const TrainingSettings& b) {
-    const auto same=[](Modifier x,Modifier y) {return x.enabled==y.enabled && x.percent==y.percent && (!x.enabled || x.value==y.value);};
-    return a.magicMode==b.magicMode && same(a.magic,b.magic) && same(a.eccentric,b.eccentric);
-}
 }
 PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_t,16>& identity,
                                  std::optional<std::array<uint8_t,6>> helloIdentity)
@@ -174,8 +170,21 @@ bool PhysicalSession::liveWeightReady() const {
 void PhysicalSession::cancelWrites(const char* reason) {
     waitingWrite_.reset();writes_.clear();target_.reset();status_=reason;
     targetClockPending_=targetImmediate_=false;
-    liveIntent_.reset();
+    liveIntent_.reset();liveBefore_.reset();
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();unitSwitchAt_=0;commandFailed_=*reason!=0;
+}
+bool PhysicalSession::liveAccessoriesExpected() const {
+    if(!liveIntent_ || !liveBefore_) return true;
+    const auto& r=report_.settings;
+    const auto expected=[&](Modifier actual,Modifier before,Modifier target,bool magic) {
+        const auto same=[](Modifier a,Modifier b) {return a.percent==b.percent && a.enabled==b.enabled && (!a.enabled || a.value==b.value);};
+        const auto id=actual.percent ? percentParameter(magic) : magic ? chains : eccentric;
+        const bool inFlight=waitingWrite_ && waitingWrite_->first==id && fresh(id)==waitingWrite_->second && actual.percent==before.percent;
+        return same(actual,before) || same(actual,target) || inFlight;
+    };
+    return r.magicMode==liveBefore_->magicMode &&
+        expected(r.magic,liveBefore_->magic,liveIntent_->magic,true) &&
+        expected(r.eccentric,liveBefore_->eccentric,liveIntent_->eccentric,false);
 }
 bool PhysicalSession::standalone() const {
     // October 18: the user confirmed standalone while BOTH current coworker
@@ -291,6 +300,7 @@ void PhysicalSession::apply(const Frame& f) {
             (id==eccentric || id==0x3e83) ? int16_t(value) : int64_t(value);
     }
     if(at!=p.size()) return;
+    bool acknowledgedMagic=false,acknowledgedEccentric=false;
     for(const auto& pair:decoded) {
         const auto previous=values_.find(pair.first);
         const bool changed=previous==values_.end() || previous->second.value!=pair.second;
@@ -310,11 +320,17 @@ void PhysicalSession::apply(const Frame& f) {
                 autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
             if(unloaded || loaded || autoArmed || observed==waitingWrite_->second) {
                 if(pair.first==accessoryDisplayPercent) unitSwitchAt_=now_;
+                acknowledgedMagic=acknowledgedMagic || pair.first==chains || pair.first==percentParameter(true);
+                acknowledgedEccentric=acknowledgedEccentric || pair.first==eccentric || pair.first==percentParameter(false);
                 waitingWrite_.reset();
             }
         }
     }
     updateReport();
+    if(liveBefore_) {
+        if(acknowledgedMagic) liveBefore_->magic=report_.settings.magic;
+        if(acknowledgedEccentric) liveBefore_->eccentric=report_.settings.eccentric;
+    }
 }
 void PhysicalSession::applyTelemetry(const Frame& f) {
     const auto& p=f.payload;
@@ -426,6 +442,7 @@ void PhysicalSession::updateReport() {
     report_.rep=deviceRep_.value_or(0);report_.setNumber=deviceSet_;
     report_.setActive=workoutStatus_ && *workoutStatus_<=4 ? std::optional<bool>(*workoutStatus_==2) : std::optional<bool>{};
     report_.resting=workoutStatus_ && *workoutStatus_<=4 ? std::optional<bool>(*workoutStatus_==3) : std::optional<bool>{};
+    report_.setEnding=workoutStatus_ && *workoutStatus_<=4 ? std::optional<bool>(*workoutStatus_==4) : std::optional<bool>{};
     report_.repsStarted=deviceRep_ ? std::optional<bool>(*deviceRep_>0) : std::optional<bool>{};
     report_.completedSets=completedSets_;report_.lastSetReps=completedReps_;
     report_.setEndRevision=setEndRevision_;report_.setEndedAtMs=setEndedAt_;
@@ -445,6 +462,10 @@ void PhysicalSession::updateReport() {
     // requires fresh actual motion and ordinary or completed Auto Load state;
     // never enables loading itself or changes Auto Load settings.
     report_.liveWeightSupported=settingsReady() || liveWeightReady();
+    // kirby 8e1ea1c writes accessory amounts using the same parameter path
+    // while loaded. Accept only the already-supported motor 1 / Auto Load 35/14;
+    // curve/unit switches and motor reassertion remain excluded.
+    report_.liveModifierAmountsSupported=report_.liveWeightSupported;
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
     report_.revision=++reportRevision_;
     if(!busy() && !commandFailed_) status_=settingsReady() || liveWeightReady() ? "" :
@@ -480,8 +501,9 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
         status_=!updateAllowsControls() ? updateBlockReason() : "Unload / wait for fresh control state";return TransportResult::Unsupported;
     }
     if(report_.loaded) {
-        if(!liveWeightReady() || !sameAccessories(settings,report_.settings)) {
-            status_="Unload before changing modifiers";return TransportResult::Unsupported;
+        if(!liveWeightReady() || settings.magicMode!=report_.settings.magicMode ||
+           settings.magic.percent!=report_.settings.magic.percent || settings.eccentric.percent!=report_.settings.eccentric.percent) {
+            status_="Unload to switch curve or units";return TransportResult::Unsupported;
         }
     }
     const int mode=int(settings.magicMode);
@@ -507,6 +529,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     intentUnit_=report_.unit;intentInterpretation_=fresh(extraMode);intentMaximum_=fresh(maxForce);
     intentLoaded_=report_.loaded;
     liveIntent_=intentLoaded_ ? std::optional<TrainingSettings>(settings) : std::optional<TrainingSettings>{};
+    liveBefore_=intentLoaded_ ? std::optional<TrainingSettings>(report_.settings) : std::optional<TrainingSettings>{};
     if(!intentDisplay_) intentDisplay_=fresh(accessoryDisplayPercent);
     return TransportResult::Accepted;
 }
@@ -522,7 +545,6 @@ void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     const auto add=[&](uint16_t id,int value,int bytes) {writes_.push_back({id,value,bytes});};
     const int pounds=convertWeightUnits(s.weight,report_.unit,WeightUnit::Pounds);
     const int oldBase=int(*fresh(base)); // settingsReady checked before planning.
-    if(intentLoaded_) {if(pounds!=oldBase) add(base,pounds,2);return;}
     // Monotone envelope ordering: reductions first, then increases. An unchanged
     // modifier is never cleared/restored. Changing IC must not disturb EO.
     if(pounds<oldBase) add(base,pounds,2);
@@ -540,10 +562,12 @@ void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     const int mountainCurve=s.magicMode==MagicMode::Mountain ? 1 : 0;
     // Clear the previous special curve before enabling another. Never enable
     // both switches, and never touch EO just because the chain style changed.
-    if(!direction && fresh(inverse)!=0) add(inverse,0,1);
-    if(!mountainCurve && fresh(mountain)!=0) add(mountain,0,1);
-    if(direction && fresh(inverse)!=1) add(inverse,1,1);
-    if(mountainCurve && fresh(mountain)!=1) add(mountain,1,1);
+    if(!intentLoaded_) {
+        if(!direction && fresh(inverse)!=0) add(inverse,0,1);
+        if(!mountainCurve && fresh(mountain)!=0) add(mountain,0,1);
+        if(direction && fresh(inverse)!=1) add(inverse,1,1);
+        if(mountainCurve && fresh(mountain)!=1) add(mountain,1,1);
+    }
     if(pounds>oldBase) add(base,pounds,2);
     modifiers(false);
 }
@@ -634,7 +658,7 @@ void PhysicalSession::tick(uint64_t now) {
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {
         if(busy() && intentUnit_ && (!(intentLoaded_ ? liveWeightReady() : settingsReady()) || report_.unit!=*intentUnit_ ||
-           (liveIntent_ && !sameAccessories(*liveIntent_,report_.settings)) ||
+           !liveAccessoriesExpected() ||
            fresh(extraMode)!=intentInterpretation_ || fresh(maxForce)!=intentMaximum_ ||
            (!(waitingWrite_ && waitingWrite_->first==accessoryDisplayPercent) && fresh(accessoryDisplayPercent)!=intentDisplay_))) {
             cancelWrites(!updateAllowsControls() ? updateBlockReason() : "Control state changed; request stopped");
@@ -671,7 +695,7 @@ void PhysicalSession::tick(uint64_t now) {
         if(waitingWrite_) {
             read({waitingWrite_->first});return;
         }
-        if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();}
+        if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();liveBefore_.reset();}
         if(!telemetrySubscribed_) {
             Bytes payload{1,0};
             if(telemetrySetup_++==0) {

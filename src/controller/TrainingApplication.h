@@ -30,7 +30,7 @@ public:
         return pending_ && fresh() && report().unit==weightIntentUnit_ ? weightIntent_ : std::optional<int>{};
     }
     bool fresh() const;
-    bool pending() const { return pending_ || session_.busy(); }
+    bool pending() const { return pending_ || session_.busy() || dropRestore_.has_value(); }
     const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
     void adjustWeight(int delta);
     void toggleWeight();
@@ -88,6 +88,12 @@ private:
     int startingWeight_ = 0;
     bool observedLoaded_ = false;
     std::optional<Preset> presetIntent_;
+    struct DropStart { int weight; WeightUnit unit; };
+    struct DropRestore { DropStart start; uint64_t at; bool weightSent=false; };
+    std::optional<DropStart> dropStart_;
+    std::optional<DropRestore> dropRestore_;
+    void beginDropRestore(const TrainingReport&);
+    void runDropRestore();
     void sent(TransportResult);
     bool settingsAllowed() const;
     bool sendSettings(TrainingSettings);

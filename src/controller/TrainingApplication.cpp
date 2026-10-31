@@ -120,6 +120,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     restSince_.reset();restSetRevision_=0;
     dropProgress_={};
     confirmedDropWeight_.reset();
+    dropStart_.reset();dropRestore_.reset();
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
     pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_ = failure; resetDrops();
@@ -150,10 +151,12 @@ bool TrainingApplication::sendSettings(TrainingSettings s) {
     return result == TransportResult::Accepted;
 }
 void TrainingApplication::adjustWeight(int delta) {
+    if(dropRestore_) {message_="Restoring starting weight; please wait";return;}
     if (presetIntent_) { message_ = "Awaiting preset confirmation"; return; }
     if (!settingsAllowed()) { message_ = "Device state unavailable"; return; }
     auto r = report();
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
+    dropStart_.reset(); // A subsequent manual base choice supersedes restoration.
     if(running_ || dropTarget_ || dropsExhausted_) stopDrops("Drops stopped for manual adjustment");
     auto s = settingsIntent_.value_or(r.settings);
     const int ceiling=r.loaded ? baseMaximum(r) : r.maxWeight;
@@ -178,7 +181,7 @@ void TrainingApplication::toggleWeight() {
         unload(); return;
     }
     const auto e = session_.readiness();
-    if (pending_ || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
+    if (pending() || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = r.minWeight>0 && r.settings.weight < r.minWeight ? "Set at least "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
             !e.reason.empty() ? e.reason : "Device not ready"; return;
     }
@@ -189,6 +192,7 @@ void TrainingApplication::unload() {
     // Always a cancel/unload, even before a pending load is reported. Never
     // route an editor's unload target through a toggle that could load instead.
     presetIntent_.reset(); settingsIntent_.reset(); resetDrops(); dropsCancelled_ = true;
+    dropRestore_.reset(); // Explicit unload cancels any already queued restore.
     requestedLoad_ = false; weightIntent_.reset();
     sent(session_.setLoaded(false));
 }
@@ -205,9 +209,9 @@ void TrainingApplication::autoLoad() {
 }
 void TrainingApplication::toggleModifier(bool magic) {
     const auto r = report();
-    if (presetIntent_ || (pending_ && !settingsIntent_) || r.loaded ||
+    if (dropRestore_ || presetIntent_ || (pending_ && (!settingsIntent_ || r.loaded)) || (r.loaded && !r.liveModifierAmountsSupported) ||
         !(magic ? r.magicSupported[int(r.settings.magicMode)] : r.eccentricSupported)) {
-        message_ = r.loaded ? "Unload before changing mode" : "Awaiting device"; return;
+        message_ = r.loaded ? "Wait for modifier controls" : "Awaiting device"; return;
     }
     auto s = settingsIntent_.value_or(r.settings); auto& m = magic ? s.magic : s.eccentric;
     m.enabled = !m.enabled;
@@ -244,7 +248,7 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
             (r.firmwareVersion.empty() ? "unknown" : r.firmwareVersion);
         message_ = presetError_; return false;
     }
-    if (pending_ || r.loaded || std::abs(p.drops.step) > r.maxWeight) {
+    if (pending() || r.loaded || std::abs(p.drops.step) > r.maxWeight) {
         message_ = "Unload / wait before applying preset"; return false;
     }
     if(p.drops.enabled && p.drops.mode==DropMode::RestPause &&
@@ -261,8 +265,11 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
 }
 bool TrainingApplication::applyModifier(bool magic, MagicMode mode, int value, bool percent) {
     const auto r = report();
-    if (presetIntent_ || (pending_ && !settingsIntent_) || r.loaded || !(magic ? r.magicSupported[int(mode)] : r.eccentricSupported)) {
-        message_ = r.loaded ? "Unload before applying" : "Awaiting device"; return false;
+    if (dropRestore_ || presetIntent_ || (pending_ && (!settingsIntent_ || r.loaded)) || (r.loaded && !r.liveModifierAmountsSupported) || !(magic ? r.magicSupported[int(mode)] : r.eccentricSupported)) {
+        message_ = r.loaded ? "Wait for modifier controls" : "Awaiting device"; return false;
+    }
+    if(r.loaded && ((magic && mode!=r.settings.magicMode) || percent!=(magic ? r.settings.magic.percent : r.settings.eccentric.percent))) {
+        message_="Unload to switch curve or units";return false;
     }
     if (value < 1) { message_ = "No headroom for modifier"; return false; }
     auto s = settingsIntent_.value_or(r.settings); auto& m = magic ? s.magic : s.eccentric;
@@ -303,6 +310,7 @@ bool TrainingApplication::applyDrops(DropSettings d) {
     d.drops = std::clamp(d.drops, 0, 9); d.percent = std::clamp(d.percent, 0, 80);
     d.holdSeconds = std::clamp(d.holdSeconds, 1, 9);
     dropSettings_[selected_] = d; resetDrops();
+    if(!d.enabled) dropStart_.reset();
     message_.clear();return true;
 }
 void TrainingApplication::toggleDrops() { auto d = drops(); d.enabled = !d.enabled; applyDrops(d); }
@@ -319,6 +327,44 @@ void TrainingApplication::stopDrops(const char* reason) {
     }
     if(!selected_.empty()) dropSettings_[selected_].enabled=false;
     running_=false;dropsCancelled_=true;holdSince_=0;holdPosition_.reset();message_=reason;
+}
+void TrainingApplication::beginDropRestore(const TrainingReport& r) {
+    if(!dropStart_) return;
+    const auto start=*dropStart_;dropStart_.reset();
+    // Only this observed workout's genuine rest/unload can initiate restoration.
+    // It is never persisted, replayed after reconnect or caused by a segment close.
+    if(!drops().enabled || r.unit!=start.unit || start.weight<r.minWeight) return;
+    session_.cancelTraining();pending_=false;settingsIntent_.reset();weightIntent_.reset();
+    resetDrops();dropsCancelled_=true;
+    dropRestore_=DropRestore{start,now_,false};
+    if(r.loaded) {
+        const auto result=session_.setLoaded(false);sent(result);
+        if(result!=TransportResult::Accepted) {dropRestore_.reset();message_="End-of-set unload failed; weight not restored";}
+    }
+}
+void TrainingApplication::runDropRestore() {
+    if(!dropRestore_) return;
+    constexpr uint64_t restoreDeadlineMs=8000;
+    if(now_-dropRestore_->at>restoreDeadlineMs || session_.commandFailed()) {
+        session_.cancelTraining();pending_=false;settingsIntent_.reset();weightIntent_.reset();
+        dropRestore_.reset();message_="Starting weight not restored; check VOLTRA";return;
+    }
+    if(pending_ || session_.busy() || !fresh()) return;
+    const auto r=report();
+    if(r.loaded || r.autoLoadArmed || r.unit!=dropRestore_->start.unit) {
+        dropRestore_.reset();message_="State changed; starting weight not restored";return;
+    }
+    if(!r.liveWeightSupported) return; // Wait for settled unloaded control state.
+    if(dropRestore_->weightSent) {
+        const bool confirmed=r.settings.weight==dropRestore_->start.weight && message_.empty();
+        dropRestore_.reset();message_=confirmed ? "" : "Starting weight not confirmed";return;
+    }
+    // Copy the current confirmed accessories. Restore only base, while unloaded,
+    // and refuse an original weight that no longer fits the current limits.
+    auto s=r.settings;s.weight=dropRestore_->start.weight;
+    if(s.weight==r.settings.weight) {dropRestore_.reset();return;}
+    if(!sendSettings(s)) {dropRestore_.reset();message_="Starting weight no longer available";return;}
+    dropRestore_->weightSent=true;
 }
 void TrainingApplication::runDrops(const TrainingReport& r) {
     if(!drops().enabled) return;
@@ -461,6 +507,7 @@ void TrainingApplication::tick(uint64_t now) {
         restSince_.reset();restSetRevision_=0;
         dropProgress_={};
         confirmedDropWeight_.reset();
+        dropStart_.reset();dropRestore_.reset();
         if(!selected_.empty()) dropSettings_[selected_].enabled=false;
         connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return;
     }
@@ -470,7 +517,10 @@ void TrainingApplication::tick(uint64_t now) {
     else {
         const bool wasDropActive=dropProgress_.active;
         dropProgress_.observe(r,drops().enabled,now_);
-        if(!wasDropActive && dropProgress_.active) startingWeight_=r.settings.weight;
+        if(!wasDropActive && dropProgress_.active) {
+            startingWeight_=r.settings.weight;
+            if(!dropRestore_) dropStart_=DropStart{r.settings.weight,r.unit};
+        }
         if(dropProgress_.visible) {
             // Ignore statistics closes caused by changing base. Only a device
             // rest phase or confirmed unload starts the grouped rest clock.
@@ -488,6 +538,7 @@ void TrainingApplication::tick(uint64_t now) {
             if(restSince_ && r.loaded && r.setActive==true && r.motionRevision && r.motionAtMs>=*restSince_ && r.moving)
                 restSince_.reset();
         }
+        if(wasDropActive && !dropProgress_.active && dropProgress_.reps>0) beginDropRestore(r);
     }
     // Sessions own their bounded transaction deadlines. Do not clear intent
     // mid-transaction, and do not turn an unrelated report into a successful ACK.
@@ -514,6 +565,7 @@ void TrainingApplication::tick(uint64_t now) {
         if(!pending_) message_.clear(); // A confirmed external load resolves a prior load refusal.
     }
     if (fresh()) observedLoaded_ = r.loaded;
-    runDrops(r);
+    runDropRestore();
+    if(!dropRestore_) runDrops(r);
 }
 }

@@ -11,6 +11,7 @@ HardwareCapabilities Board::capabilities() const {
     c.touchAvailable=c.rotaryAvailable=c.rotaryPressAvailable=ready_;
 #ifdef VOLTRA_PHYSICAL
     c.bluetoothAvailable=true;
+    c.wifiAvailable=true;
 #endif
     return c;
 }
@@ -99,9 +100,10 @@ void Board::touchTask(void* context) {
     auto* board=static_cast<Board*>(context);
     for(;;) {board->pollTouch();vTaskDelay(pdMS_TO_TICKS(touchPollMs));}
 }
-void Board::cancelTouchLocked(uint64_t now) {
+void Board::cancelTouchLocked(uint64_t now,uint8_t reason) {
     touchBlocked_=true;
     touchCurrent_.point.pressed=false;touchCurrent_.point.cancelled=true;touchCurrent_.at=now;
+    touchCurrent_.cancelReason=reason; // 0 screen, 1 stale, 2 read/coordinate, 3 overflow.
     touchHead_=0;touchCount_=1;touchQueue_[0]=touchCurrent_;
 }
 void Board::publishTouchLocked(const CapturedTouch& sample) {
@@ -109,7 +111,7 @@ void Board::publishTouchLocked(const CapturedTouch& sample) {
     const bool changed=a.pressed!=b.pressed || a.cancelled!=b.cancelled || a.x!=b.x || a.y!=b.y;
     touchCurrent_=sample;
     if(!changed) return;
-    if(touchCount_==touchQueueCapacity) {cancelTouchLocked(sample.at);return;}
+    if(touchCount_==touchQueueCapacity) {cancelTouchLocked(sample.at,3);return;}
     touchQueue_[(touchHead_+touchCount_)%touchQueueCapacity]=sample;++touchCount_;
 }
 void Board::pollTouch() {
@@ -120,7 +122,7 @@ void Board::pollTouch() {
     const bool down=(data[0]&15)>0;
     portENTER_CRITICAL(&touchMux_);
     const auto now=nowMs();
-    if(!readOk || (down && (x>=resolution || y>=resolution))) cancelTouchLocked(now);
+    if(!readOk || (down && (x>=resolution || y>=resolution))) cancelTouchLocked(now,2);
     else if(touchBlocked_ && down) touchCurrent_.at=now;
     else {
         touchBlocked_=false;
@@ -134,15 +136,15 @@ TouchPoint Board::sample() {
     portENTER_CRITICAL(&touchMux_);
     const auto now=nowMs();
     const auto oldest=touchCount_ ? touchQueue_[touchHead_].at : touchCurrent_.at;
-    if(now>=oldest && now-oldest>maximumTouchAgeMs) cancelTouchLocked(now);
+    if(now>=oldest && now-oldest>maximumTouchAgeMs) cancelTouchLocked(now,1);
     auto captured=touchCurrent_;
     if(touchCount_) {captured=touchQueue_[touchHead_];touchHead_=(touchHead_+1)%touchQueueCapacity;--touchCount_;}
     portEXIT_CRITICAL(&touchMux_);
     const auto point=captured.point;
     if(point.pressed!=deliveredTouch_.pressed || point.cancelled!=deliveredTouch_.cancelled)
-        Serial.printf("%llu Touch %s %d,%d ageMs=%llu\n",static_cast<unsigned long long>(now),
+        Serial.printf("%llu Touch %s %d,%d ageMs=%llu reason=%u\n",static_cast<unsigned long long>(now),
             point.cancelled ? "cancel" : point.pressed ? "down" : "up",
-            int(point.x*(resolution-1)),int(point.y*(resolution-1)),static_cast<unsigned long long>(now-captured.at));
+            int(point.x*(resolution-1)),int(point.y*(resolution-1)),static_cast<unsigned long long>(now-captured.at),unsigned(captured.cancelReason));
     deliveredTouch_=point;
     return point;
 }
