@@ -415,5 +415,8 @@ remain explicit future milestones.
   initial radio establishment failures, the connection-only retry succeeded.
   Black again reported OTA_STATUS=261, base=42 LB and unloaded; the remote's
   accepted/fresh session cleared its control-state message. The installation
-  check sent no resistance, mode, modifier or update command. Physical dial
-  confirmation with this build is pending the user's follow-up.
+  check sent no resistance, mode, modifier or update command.
+- CONFIRMED (user follow-up): with Black unloaded and its update still pending,
+  slow dial adjustments and the return adjustment followed on both screens
+  without the error. This verifies unloaded base editing on this build; loading,
+  RP and other OTA states are outside this particular check.

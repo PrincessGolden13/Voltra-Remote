@@ -188,3 +188,9 @@ Blocked or missing OTA evidence now produces update-specific feedback instead
 of incorrectly asking an already unloaded user to unload. Loading still needs
 every other readiness predicate and a current explicit user action. Automatic
 mode entry and pending-setting validation use the same update-state policy.
+
+CONFIRMED (user follow-up, build 857d4c6): slow unloaded dial changes and the
+return adjustment followed on both Black and the remote without the message,
+while the update remained pending. This validates unloaded base editing in the
+observed pending-update state; it does not establish additional OTA enum values
+or verify physical loading/RP.
