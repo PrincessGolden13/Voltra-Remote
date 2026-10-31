@@ -557,3 +557,8 @@ remain explicit future milestones.
   Physical end-of-set restoration, loaded amount edits, phone join/persistence
   and repeated first-tap behavior remain pending user observation. Ignored log:
   build/voltra-live/2026-10-31/training-wifi-installed.txt.
+- CONFIRMED (user follow-up, October 31): the tested dropset ended unloaded at
+  its original starting weight, and Drops -> Apply responded on the first tap
+  ("yep - good"). Scope is that trial on Black; the user did not specify the
+  dropset mode or number of attempts. Loaded modifier edits, global rest-alert
+  persistence and phone Wi-Fi setup still await physical verification.
