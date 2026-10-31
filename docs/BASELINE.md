@@ -547,8 +547,9 @@ remain explicit future milestones.
   SHA256 E3D210206E9E378C429D2505ABBD6F1F46561C2A2897C2285E233FB53D2EFB88.
   Installation and passive reconnection check are recorded separately below.
 - Installed source 6a2c162 with verified recovery/partition boundaries and flash
-  hashes. Black reconnected and accepted the remembered remote on the first
-  attempt: fresh 70 LB unloaded, control path available, Auto Unload 2 s.
+  hashes. The first BLE establishment returned 574; the existing bounded retry
+  connected on attempt 2. Black accepted the remembered remote and reported
+  fresh 70 LB unloaded, control path available, Auto Unload 2 s.
   No motor/base/modifier write was issued by the installation connection check.
   The new Wi-Fi namespace was absent on first boot (expected NVS NOT_FOUND);
   no new crash/reboot appeared during connection. The existing core-dump image
