@@ -448,3 +448,8 @@ remain explicit future milestones.
   SHA256 7730C79155F6DB979049A0FD54ADA19C476FBB5E4A7A833ED370D4BE7C03124B.
 - Installed with recovery/partition checks and verified flash hashes. Physical
   Auto Load/drops and single-tap checks are pending human observation.
+- Post-install connection verification hit the pre-existing BLE establishment
+  failure (574); one remote-only restart and connection-only retry recovered.
+  Black accepted the remembered remote and returned 15 LB unloaded, 230 LB max,
+  Auto Load enabled/safe, status 0, mount 2 / void lock 6. No motor, base or
+  modifier write was issued by this connection check.
