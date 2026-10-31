@@ -133,3 +133,35 @@ increases; IC direction changes do not clear EO. The 100 ms quiet interval
 coalesces unsent explicit edits, with fresh reports and bounded confirmation
 still required. Physical tap/rotary behavior is user-tested, not an automated
 motor test. See LIVE_CONNECTION_2026_10_18.md for observed scope and limitations.
+
+## October 31 motor report variant on connection
+
+CONFIRMED (Black capture): after reconnect, GATT and application acceptance
+succeeded, Weight Training was 1, base was 42 LB, and motor parameter 16009
+consistently returned 256 (0x0100). IC and EO each reported 2500 / 25%, with
+maximum 230 LB and standalone state. The old whole-word motor comparison
+rejected 256, cleared TrainingReport, and displayed "Unknown motor state / tap
+to unload" despite the working connection. This observed failure was not the
+mode-exit recovery path and did not require a new mode-entry or load command.
+
+CONFIRMED (source): pinned Android da514d2db1a16ebb4ded3156bc8fd200bed1e6eb,
+VoltraControlFrames.kt normalizedFitnessMode masks the low byte; pinned kirby
+8e1ea1cb752acd3108c61f1a502b63978a172832, voltra_protocol.h uses the same low-byte
+interpretation for loaded and Auto Load states. Raw reports remain retained.
+The physical session now normalizes the known high-byte 0/1 family consistently
+for presentation, readiness, command confirmation, mode entry and exit recovery.
+It still rejects unknown low-byte modes and any other upper bits. Outgoing
+motor commands remain the documented plain command values, never echoed raw
+reports. Freshness, locks, cable-zero, explicit-load and standalone guards remain.
+
+INFERRED: the low-byte interpretation applies to Black's 0x0100 unloaded report,
+based on those independent implementations and the captured context. UNVERIFIED:
+the meaning of the upper byte and physical loading with the flagged variants.
+No automatic motor operation is used to validate this change. The source-backed
+interpretation is not a claim that every possible upper-byte value is supported.
+
+CONFIRMED (post-install capture): Black again returned raw motor=256; the revised
+session reported connected/accepted/fresh, 42 LB and unloaded, then cleared its
+status after the remaining context reads. The check sent no mode, base, modifier
+or motor control command. This verifies decoding/connection recovery, not the
+physical load/unload cycle for prefixed reports.

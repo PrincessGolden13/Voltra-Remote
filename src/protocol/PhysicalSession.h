@@ -75,6 +75,7 @@ private:
     bool targetImmediate_=false;
     bool trainingSeen_=false;
     std::optional<int64_t> fresh(uint16_t) const;
+    std::optional<int64_t> freshMotorMode() const;
     bool standalone() const;
     bool settingsReady() const;
     bool controlContextReady() const;

@@ -367,3 +367,28 @@ remain explicit future milestones.
   was not detected in the initial post-install scan window. The connection-only
   diagnostic did not issue any load or resistance command. Physical retest is
   pending; the read-only capture is retained locally.
+
+## October 31 motor report variant on connection
+
+- CONFIRMED (capture): Black accepted the BLE/application session and reported
+  Weight Training, 42 LB, motor=256, 25% IC/EO and maximum 230 LB. Whole-word
+  comparison of the motor register made the prior build clear its training
+  report and show an unknown-state error despite the working connection.
+- The physical decoder now uses the low-byte mode for the supported high-byte
+  0/1 variants, following the pinned Android/ESP32 references. Raw uint16 values
+  remain in diagnostics. Unknown upper bits or modes remain blocked. Readiness,
+  load/unload confirmation, mode entry and exit use this same interpretation;
+  outgoing commands and required explicit-load guards are unchanged.
+- Normal and isolated Simulator builds pass; the Simulator binary is unchanged.
+  Existing validators pass (203 SDK / 593 modifier packets and pinned upstream
+  checks). No new test code was created; regression cases are tracked in TESTING.
+- Installed with recovery/partition checks and verified flash hashes. Black
+  connected on the second radio attempt, accepted the remembered remote and
+  again returned raw motor=256. The updated application reported connected=1,
+  accepted=1, fresh=1, weightTicks=42, loaded=0, with the error cleared. No load,
+  base, accessory or mode write was needed for this connection verification.
+  Physical loading with the prefixed motor states remains untested.
+- Snapshot: build/guition/2026-10-31-motor-mode. Normal binary: 1,221,120 bytes,
+  SHA256 D96063FCFFAD3BE3C8461CFA9C8097EEA362D36B9F2656C438F0CCDC01986C20.
+  Simulator binary: 942,896 bytes,
+  SHA256 99AD93317A7C34D8D0E155B8DE588BB039B0269ED507B3B27E87BC2393BE47B7.

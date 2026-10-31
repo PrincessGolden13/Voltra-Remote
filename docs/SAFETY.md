@@ -121,3 +121,13 @@ guard. The expedited base-only path retains those guards and never changes
 Magic/EO units or values, retries loading, or forces immediate cable engagement.
 The visual target cue follows readback, not GATT success, and does not establish
 that measured force has changed during an unfinished rep.
+
+October 31: the motor register is retained as the full reported uint16, but
+the supported 0x00xx / 0x01xx variants share a low-byte mode decoder, matching
+the pinned Android and ESP32 references. Black's 0x0100 report previously
+invalidated an otherwise accepted Weight Training connection. Other upper bits
+and unknown modes remain blocked; no generic truncation is used. Presentation,
+readiness and command confirmation use the same interpretation. Raw flags are
+never copied into outgoing commands, and decoding an unloaded report does not
+itself authorize loading. All existing fresh-state, lock, cable-zero, activation,
+standalone and explicit-action requirements still apply.

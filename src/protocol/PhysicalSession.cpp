@@ -46,6 +46,15 @@ constexpr uint32_t fitnessNotificationMask=0;
 // deadline is ~5 s from radio connection; a 3 s post-HELLO wait plus full GATT
 // discovery exceeded it on this remote. Keep every bootstrap step nonblocking.
 constexpr uint64_t helloSettleMs=90, initPacingMs=90, readPacingMs=90;
+// Android da514d2 normalizedFitnessMode and kirby 8e1ea1c use the low
+// byte of the uint16 motor report. Black reported 0x0100 on Oct 31 while
+// in Weight Training. Accept only the observed high-byte variant (0 or 1),
+// not arbitrary upper bits. Keep the full raw value in values_/diagnostics.
+std::optional<int64_t> motorMode(int64_t raw) {
+    constexpr int64_t supportedReportBits=0x01ff, modeMask=0x00ff;
+    if(raw<0 || (raw & ~supportedReportBits)!=0) return {};
+    return raw & modeMask;
+}
 // Only catalogued widths. Unknown/truncated reports are rejected atomically.
 int width(uint16_t id) {
     switch(id) {
@@ -102,6 +111,10 @@ std::optional<int64_t> PhysicalSession::fresh(uint16_t id) const {
     if(it==values_.end() || now_<it->second.at || now_-it->second.at>stateFreshMs) return {};
     return it->second.value;
 }
+std::optional<int64_t> PhysicalSession::freshMotorMode() const {
+    const auto raw=fresh(motor);
+    return raw ? motorMode(*raw) : std::nullopt;
+}
 uint16_t PhysicalSession::percentParameter(bool magic) const {
     // Black returns zero in both legacy fields even with active 20% modifiers.
     // Missing modern data is unknown, never a reason to use those legacy zeros.
@@ -123,7 +136,7 @@ bool PhysicalSession::modifiersKnown() const {
     return true;
 }
 bool PhysicalSession::settingsReady() const {
-    const auto m=fresh(motor);
+    const auto m=freshMotorMode();
     return controlContextReady() && m && (*m==0 || *m==4) && (!workoutStatus_ || *workoutStatus_==0);
 }
 bool PhysicalSession::controlContextReady() const {
@@ -136,7 +149,7 @@ bool PhysicalSession::liveWeightReady() const {
     // The source-validated loaded-idle register path changes base only. Mode 5
     // needs a load reassertion in another remote's capture; do not do that here.
     return controlContextReady() && fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock &&
-        fresh(motor)==1 && (!workoutStatus_ || *workoutStatus_==2 || *workoutStatus_==3) &&
+        freshMotorMode()==1 && (!workoutStatus_ || *workoutStatus_==2 || *workoutStatus_==3) &&
         (fresh(accessoryDisplayPercent)==0 || (*fresh(chainsPercent)%100==0 && *fresh(eccentricPercent)%100==0));
 }
 void PhysicalSession::cancelWrites(const char* reason) {
@@ -270,12 +283,13 @@ void PhysicalSession::apply(const Frame& f) {
            (pair.first==motor || (f.command==0x0f && now_-waitingAt_>=settingsSettleMs))) {
             // Motor writes and readbacks have different enums on current devices:
             // explicit unload command 4 is confirmed by unloaded readback 0.
-            const bool unloaded=pair.first==motor && waitingWrite_->second==4 && pair.second==0;
-            const bool loaded=pair.first==motor && waitingWrite_->second==5 && pair.second==1;
+            const auto observed=pair.first==motor ? motorMode(pair.second) : std::optional<int64_t>(pair.second);
+            const bool unloaded=pair.first==motor && waitingWrite_->second==4 && observed==0;
+            const bool loaded=pair.first==motor && waitingWrite_->second==5 && observed==1;
             const auto autoState=fresh(autoLoadStatus);
-            const bool autoArmed=pair.first==motor && waitingWrite_->second==38 && pair.second==35 &&
+            const bool autoArmed=pair.first==motor && waitingWrite_->second==38 && observed==35 &&
                 autoState && *autoState>=11 && *autoState<=14;
-            if(unloaded || loaded || autoArmed || waitingWrite_->second==pair.second) {
+            if(unloaded || loaded || autoArmed || observed==waitingWrite_->second) {
                 if(pair.first==accessoryDisplayPercent) unitSwitchAt_=now_;
                 waitingWrite_.reset();
             }
@@ -328,14 +342,14 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     updateReport();
 }
 void PhysicalSession::updateReport() {
-    const auto w=fresh(base),m=fresh(motor),mode=fresh(workout),u=fresh(unit);
-    if(!w || !m || !mode || !u || (*u!=0 && *u!=1)) {report_={};return;}
+    const auto w=fresh(base),rawMotor=fresh(motor),m=freshMotorMode(),mode=fresh(workout),u=fresh(unit);
+    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) {report_={};return;}
     // Ryan dff6227 documents readback 0/1, distinct from write commands 4/5.
     // The October 18 unloaded capture reports 0. Retain recognized legacy
     // report values, but never turn an unknown value into an unloaded state.
     const auto autoState=fresh(autoLoadStatus);
-    const bool knownAuto=*m==35 && autoState && *autoState>=11 && *autoState<=14;
-    if(*mode!=1 || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
+    const bool knownAuto=m==35 && autoState && *autoState>=11 && *autoState<=14;
+    if(*mode!=1 || !m || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
         // A newly unknown/non-training mode must invalidate the previous report
         // immediately. The weight target then remains an unconditional unload,
         // rather than treating an unrecognized motor state as confirmed unloaded.
@@ -420,7 +434,7 @@ SessionReadiness PhysicalSession::readiness() const {
     const auto cable=fresh(position),zero=fresh(offset);
     r.cableZero=cable && zero && std::abs(*cable-*zero)<=cableZeroToleranceCm;
     r.twinSafe=standalone();r.minWeightLbs=5;
-    r.ready=accepted_ && activated_ && settingsReady() && fresh(motor)==0 && cable && zero &&
+    r.ready=accepted_ && activated_ && settingsReady() && freshMotorMode()==0 && cable && zero &&
         fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock && fresh(autoLoadStatus)==0;
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!standalone()) r.reason="Device connection state unavailable";
@@ -548,7 +562,7 @@ void PhysicalSession::pollState(size_t group) {
 }
 bool PhysicalSession::enterTrainingOnConnect() {
     if(entryHandled_ || busy()) return false;
-    const auto mode=fresh(workout),m=fresh(motor);
+    const auto mode=fresh(workout),m=freshMotorMode();
     if(!mode || !m) return false;
     if(*mode==1) {entryHandled_=true;return false;}
     // User-authorized connection setup: enter from the idle home screen only.
@@ -569,7 +583,7 @@ void PhysicalSession::tick(uint64_t now) {
     // link. Return to selection only after confirmed unload; unknown/loaded
     // state must retain the immediately accessible unload target. No retry,
     // automatic mode re-entry, load, or queued settings survives this exit.
-    const auto mode=fresh(workout),motorState=fresh(motor);
+    const auto mode=fresh(workout),motorState=freshMotorMode();
     if(trainingSeen_ && mode && *mode!=1 && motorState && (*motorState==0 || *motorState==4) &&
        values_[motor].at>=values_[workout].at) {
         cancelWrites("VOLTRA left Weight Training; reconnect");

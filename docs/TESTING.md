@@ -250,3 +250,14 @@ including delayed/mismatched accessory reports. Loaded drops skip rotary quiet
 time but preserve readback/deadline checks. Cue occurs once per settled target,
 never on GATT success, mismatched target, timeout or reconnect. It must not imply
 measured force has already changed. Hardware sound/vibration remains unverified.
+
+October 31 motor-report cases queued (new test code deferred): preserve raw
+16009=0x0100 while interpreting its mode as unloaded; read fresh base/modifiers
+without a false connection error. Check 0x0101 / 0x0105 loaded, 0x0104 unloaded
+command echo, and prefixed Auto Load states against the same additional status
+guards as their plain values. Unknown upper bits (e.g. 0x0200), unknown low-byte
+modes, and stale reports must not establish readiness or acknowledge a command.
+Load/unload acknowledgements use the normalized mode but all outgoing command
+values remain unchanged. Reconnect, mode entry, base edits and decoder recovery
+must never issue a load. A low-byte-only match cannot bypass locks, cable zero,
+activation, standalone context, or current explicit user intent.
