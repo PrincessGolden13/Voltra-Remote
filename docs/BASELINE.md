@@ -546,3 +546,13 @@ remain explicit future milestones.
   Simulator: 953,120 bytes,
   SHA256 E3D210206E9E378C429D2505ABBD6F1F46561C2A2897C2285E233FB53D2EFB88.
   Installation and passive reconnection check are recorded separately below.
+- Installed source 6a2c162 with verified recovery/partition boundaries and flash
+  hashes. Black reconnected and accepted the remembered remote on the first
+  attempt: fresh 70 LB unloaded, control path available, Auto Unload 2 s.
+  No motor/base/modifier write was issued by the installation connection check.
+  The new Wi-Fi namespace was absent on first boot (expected NVS NOT_FOUND);
+  no new crash/reboot appeared during connection. The existing core-dump image
+  size warning still appears at boot and is not evidence of a crash this run.
+  Physical end-of-set restoration, loaded amount edits, phone join/persistence
+  and repeated first-tap behavior remain pending user observation. Ignored log:
+  build/voltra-live/2026-10-31/training-wifi-installed.txt.
