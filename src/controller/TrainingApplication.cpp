@@ -195,6 +195,9 @@ void TrainingApplication::autoLoad() {
         message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; return;
     }
     const auto result = session_.triggerAutoLoad();
+    // A new explicit Auto Load starts a new execution sequence, preserving the
+    // selected local recipe. Countdown reports cannot inherit an old set/hold.
+    if(result == TransportResult::Accepted) resetDrops();
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
 }
 void TrainingApplication::toggleModifier(bool magic) {

@@ -138,3 +138,13 @@ state and no longer blocks training by itself. Only fresh 0 or this exact
 observed value passes; unknown/nonzero alternatives and stale status remain
 blocked with update-specific feedback. This policy never starts or changes an
 update, relaxes another load guard, or retries/replays a cancelled command.
+
+October 31 Auto Load/drops follow-up: the source-backed completed Auto Load
+state (fresh motor 35 / status 14) can use the existing base-only loaded edit
+path. Waiting/countdown/engaging statuses 11-13 cannot. All context, lock,
+standalone, motion, envelope and confirmation guards are retained. Preserving
+the local recipe through countdown does not authorize a drop during countdown;
+only fresh completed reps or a new qualified RP hold trigger a base edit after
+confirmed loading. Disconnect still disarms drops. No motor reassertion, force,
+retry or preference write is introduced. Selecting Auto Load explicitly resets
+old drop execution state so an earlier set/hold cannot trigger in the new set.

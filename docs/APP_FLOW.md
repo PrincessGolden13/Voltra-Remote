@@ -1,3 +1,10 @@
+> October 31 follow-up: Auto Load must preserve the selected dropset recipe.
+> During its countdown the tile retains the recipe, with amber values while
+> execution is unavailable; this is not OFF. Completed Auto Load can execute
+> drops through the same guarded base-only path as ordinary loaded training.
+> Ordinary control taps allow 5% of the short display side in finger drift;
+> device/preset pickers retain their stricter 2.5% swipe cancellation threshold.
+>
 > October 24 feedback supersedes conflicting behavior below:
 > - Group device weight-change segments into one dropset, but finish it on an
 >   actual device between-set rest as well as unload. The next moving set gets

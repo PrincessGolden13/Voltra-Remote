@@ -271,3 +271,21 @@ must identify update status rather than require unload. An update-available
 report alone must not create a load or settings command. Preserve explicit
 unload access regardless of update state. Verify unloaded dial changes and
 mode entry with an update waiting, without accepting/installing the update.
+
+October 31 Auto Load/drops and touch cases queued (new test code deferred):
+preserve an enabled Stairs/RP recipe through 35/11 -> 12 -> 13 -> 14, with no
+drop during waiting/countdown/engagement. At 14 require fresh motion and the
+normal completed-rep/qualified-hold trigger, write base only, preserve Magic/EO,
+then await settled readback. Verify multiple drops, floor/quota, cancel/unload,
+stale or unknown Auto Load status, unsupported motor variants, locks and Twin
+loss; never reassert load or retry a drop. A new explicit Auto Load must clear
+old hold/rep/quota state while retaining the recipe. Disconnect must still disarm.
+During countdown the tile shows recipe values in amber, can be disabled by tap,
+and must not falsely claim OFF. An unavailable new recipe still cannot be armed.
+At 360 px, control taps drifting 10-18 px remain taps; >18 px cancels. Device/
+preset pickers retain >9 px cancellation and >45 px horizontal paging. Verify
+long press issues one action, release does not toggle, wake tap only wakes,
+adjacent modifier targets stay separate, and caption/circle gap taps register.
+Touch diagnostics now distinguish recognized actions from drag cancellation;
+responsiveness on the physical panel remains a human observation, not a build
+or packet-validator result.

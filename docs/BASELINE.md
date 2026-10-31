@@ -420,3 +420,31 @@ remain explicit future milestones.
   slow dial adjustments and the return adjustment followed on both screens
   without the error. This verifies unloaded base editing on this build; loading,
   RP and other OTA states are outside this particular check.
+
+## October 31 dropsets after Auto Load and control taps
+
+- CONFIRMED (source): the existing live-edit guard only accepted motor 1,
+  despite decoding completed Auto Load (35/14) as loaded. The pinned kirby
+  capture documents that Auto Load stays in motor 35 after loading. The
+  guarded base-only path now accepts fresh 35/14 as well; 11-13 cannot run
+  drops. No motor reassertion, safety bypass, retry or Auto Load setting write.
+- The local dropset recipe stays selected through countdown. A new accepted
+  explicit Auto Load clears execution counters/holds, not the recipe. Main
+  retains its values and uses amber while live execution is unavailable;
+  tapping an enabled recipe disables it even during countdown.
+- Control taps now tolerate drift up to 5% of the short display side (18 px
+  on K5), instead of 2.5%/9 px. Device/preset pickers retain strict swipe
+  rejection. Small modifier hit-area extensions fill caption/circle gaps
+  without overlapping neighboring tiles. Diagnostics distinguish recognized
+  touch actions from drag cancellation; session logs include recipe/Auto Load/
+  live-edit state. Physical touch improvement remains UNVERIFIED.
+- Native, Normal and isolated Simulator builds pass. Existing validators pass
+  (203 SDK / 593 modifier packets and pinned upstream checks). Existing 360 px
+  main-screen Stairs/RP renders inspected. No new test code was created.
+  These checks do not verify physical drops after Auto Load or touch behavior.
+- Snapshot: build/guition/2026-10-31-autoload-touch. Normal: 1,222,192 bytes,
+  SHA256 81388D609427FE8743102D9E42022BE17E69CB6F30D44DAA4DF761552BA0E57C.
+  Simulator: 943,024 bytes,
+  SHA256 7730C79155F6DB979049A0FD54ADA19C476FBB5E4A7A833ED370D4BE7C03124B.
+- Installed with recovery/partition checks and verified flash hashes. Physical
+  Auto Load/drops and single-tap checks are pending human observation.

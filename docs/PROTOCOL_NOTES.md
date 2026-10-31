@@ -194,3 +194,24 @@ return adjustment followed on both Black and the remote without the message,
 while the update remained pending. This validates unloaded base editing in the
 observed pending-update state; it does not establish additional OTA enum values
 or verify physical loading/RP.
+
+## October 31 Auto Load with dropsets
+
+CONFIRMED (source): kirby6365/voltra_remote at
+8e1ea1cb752acd3108c61f1a502b63978a172832, docs/PROTOCOL.md Auto load section,
+captures motor 35 persisting after loading; 21447=11 waits for the cable,
+12 counts down, 13 engages, 14 is loaded. Its voltra_client.cpp sends a base
+register edit in this state; the separate motor reassertion branch applies to
+mode 5, not mode 35. Our profile already decoded 35/14 as loaded but incorrectly
+required motor 1 for all live edits. The UI also displayed OFF whenever this
+temporary readiness predicate was false, irrespective of the local recipe.
+
+The loaded base-only predicate now also accepts fresh motor 35 plus status 14.
+Modes 35/11-13 remain in progress and cannot run drops. Existing context, locks,
+standalone, limits, accessory preservation, actual motion and readback guards
+remain in force. No extra motor write, safety bypass or Auto Load setting is
+added. A successfully requested Auto Load resets old execution counters/holds
+without clearing the selected recipe. The tile represents local selection
+independently from live-write readiness. This supersedes the earlier exclusion
+of all Auto Load states from drops; Black's completed Auto Load drop behavior
+still requires a human-initiated physical trial.

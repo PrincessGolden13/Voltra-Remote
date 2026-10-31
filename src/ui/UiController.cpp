@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cmath>
+#include <cstdio>
 namespace voltra {
 namespace {
 constexpr uint32_t bg = 0x04080b, bright = 0xf5f8ff, muted = 0x59677d;
@@ -35,10 +36,12 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
             b->action == Drops || b->action == ChoosePreset || b->action == Select;
         if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
             b->held = true;
+            std::printf("Touch action=%d hold=1\n",b->action);
             b->ui->act(b->action, b->id, true);
         } else if (code == LV_EVENT_CLICKED && !b->held) {
             // Ordinary buttons also accept a deliberate slow tap. A handled hold
             // can never issue a second short action when the finger is released.
+            std::printf("Touch action=%d hold=0\n",b->action);
             b->ui->act(b->action, b->id, false);
         }
     }, LV_EVENT_ALL, bindings_.back().get());
@@ -194,11 +197,16 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         }
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
         if(p.pressed && !s->touchDown_) { s->touchStartX_=x; s->touchStartY_=y; s->touchMoved_=false; s->modeGestureUntil_=0; }
-        // Include the release position: a fast swipe may have no intermediate
-        // sample on a busy embedded frame, but must still never apply a preset.
-        if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > s->width_/40 || std::abs(y-s->touchStartY_) > s->height_/40)) s->touchMoved_=true;
+        // Allow normal finger drift on controls (5% of the short display side:
+        // 18 px on K5). Paged pickers keep the stricter 2.5% swipe rejection so
+        // a short attempted swipe cannot select a device or apply a preset.
+        // Include release position, even if a busy frame skipped the movement.
+        const bool paged=s->page_==Screen::Devices || s->page_==Screen::Presets;
+        const int tapSlop=std::max(1,std::min(s->width_,s->height_)/(paged ? 40 : 20));
+        if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > tapSlop || std::abs(y-s->touchStartY_) > tapSlop)) s->touchMoved_=true;
         if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_) {
             const int dx=x-s->touchStartX_, dy=y-s->touchStartY_;
+            std::printf("Touch drag page=%d dx=%d dy=%d\n",int(s->page_),dx,dy);
             if(std::abs(dx) > s->width_/8 && std::abs(dx) > std::abs(dy)) {
                 if(s->page_ == Screen::Devices) s->act(dx<0 ? NextDevices : PreviousDevices,"",false);
                 if(s->page_ == Screen::Presets) s->rotate(dx<0 ? 1 : -1);
@@ -328,7 +336,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         const auto r = app_.report();
         if (action == Magic && std::none_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; })) return;
         if (action == EO && !r.eccentricSupported) return;
-        const bool enabled = action == Magic ? r.settings.magic.enabled : action == EO ? r.settings.eccentric.enabled : app_.drops().enabled && r.liveWeightSupported;
+        const bool enabled = action == Magic ? r.settings.magic.enabled : action == EO ? r.settings.eccentric.enabled : app_.drops().enabled;
         if (held || !enabled) navigate(action == Magic ? Screen::Magic : action == EO ? Screen::Eccentric : Screen::Drops);
         else if (action == Drops) app_.toggleDrops(); else app_.toggleModifier(action == Magic);
         return;
@@ -468,16 +476,20 @@ void UiController::build() {
             const int size = width_*19/100;
             tiles_[i] = disc(face_, width_*(9+i*21)/100, height_*61/100, size, accent(), false);
             bind(tiles_[i], i == 0 ? Magic : i == 1 ? EO : Drops);
+            // Extend into the small gaps without crossing adjacent tile targets.
+            lv_obj_set_ext_click_area(tiles_[i],width_/120);
             if (i < 2) miniArc_[i] = arc(tiles_[i], size*92/100, accent());
             miniValue_[i] = label(tiles_[i], "", size*96/100, size*32/100, medium);
             if (i == 0) {
                 modeLabels_[0] = label(face_, "", size, height_*55/100, medium); style::set_align(modeLabels_[0],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[0],width_*9/100);
                 bind(modeLabels_[0],Magic);
+                lv_obj_set_ext_click_area(modeLabels_[0],width_/120);
 
-            } else if (i == 1) { modeLabels_[2] = label(face_, "EO", size, height_*55/100, medium); bind(modeLabels_[2],EO); }
+            } else if (i == 1) { modeLabels_[2] = label(face_, "EO", size, height_*55/100, medium); bind(modeLabels_[2],EO); lv_obj_set_ext_click_area(modeLabels_[2],width_/120); }
             if(i == 1) { style::set_align(modeLabels_[2],LV_ALIGN_TOP_LEFT); lv_obj_set_x(modeLabels_[2],width_*30/100); }
             if(i == 2) {
                 dropTitle_ = label(face_, "", size, height_*55/100, medium); bind(dropTitle_,Drops);
+                lv_obj_set_ext_click_area(dropTitle_,width_/120);
                 style::set_align(dropTitle_,LV_ALIGN_TOP_LEFT); lv_obj_set_x(dropTitle_,width_*51/100);
                 for (int step=0; step<3; ++step) {
                     auto* bar = lv_obj_create(face_); lv_obj_remove_style_all(bar);
@@ -679,20 +691,23 @@ void UiController::update() {
             else lv_obj_add_flag(tiles_[i], LV_OBJ_FLAG_HIDDEN);
         }
         const auto d = app_.drops();
-        const bool dropsActive = d.enabled && r.liveWeightSupported;
-        color(tiles_[2], dropsActive ? bright : muted);
+        // Recipe selection is local intent, independent of countdown/readiness.
+        // Keep its values visible; amber distinguishes waiting from executable.
+        const bool dropsActive = d.enabled;
+        const uint32_t dropColor=dropsActive ? (r.liveWeightSupported ? bright : amber) : muted;
+        color(tiles_[2], dropColor);
         for (auto* step : stairs_) {
             if (d.mode == DropMode::RestPause) lv_obj_add_flag(step, LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(step, LV_OBJ_FLAG_HIDDEN);
             style::set_bg_color(step, lv_color_hex(dropsActive ? accent() : muted), 0);
         }
         value(dropTitle_, d.mode == DropMode::RestPause ? LV_SYMBOL_PAUSE " " LV_SYMBOL_DOWN : "");
-        value(miniValue_[2], !r.liveWeightSupported ? "OFF" : d.mode == DropMode::Stairs ? weightText(d.step,r.unit)+unitName(r.unit) :
+        value(miniValue_[2], d.mode == DropMode::Stairs ? weightText(d.step,r.unit)+unitName(r.unit) :
             std::to_string(d.drops)+"\n"+std::to_string(d.percent)+"%\n"+std::to_string(d.holdSeconds)+"s");
         style::set_text_font(miniValue_[2],width_ < 400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18,0);
         style::set_text_line_space(miniValue_[2],0,0);
         style::center(miniValue_[2]);
-        color(miniValue_[2], dropsActive ? bright : muted);
+        color(miniValue_[2], dropColor);
         glow(tiles_[2], accent(), dropsActive);
         // Prefer the explicitly selected/saved slot when duplicate recipes exist.
         if (!app_.fresh() || activePreset_ < 0 || activePreset_ >= int(config_.presets.size()) ||

@@ -106,6 +106,9 @@ void loop() {
             " connected="+std::to_string(application->connected())+" accepted="+std::to_string(physicalSession->accepted())+
             " fresh="+std::to_string(application->fresh())+" weightTicks="+std::to_string(report.revision ? report.settings.weight : -1)+
             " loaded="+std::to_string(report.revision ? int(report.loaded) : -1)+
+            " autoArmed="+std::to_string(report.autoLoadArmed)+
+            " drops="+std::to_string(application->drops().enabled)+
+            " liveWeight="+std::to_string(report.liveWeightSupported)+
             " status="+application->message();
         if(summary!=previousDiagnostics) {Serial.println(summary.c_str());previousDiagnostics=summary;}
     }

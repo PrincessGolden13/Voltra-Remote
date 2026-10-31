@@ -15,6 +15,9 @@ constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentri
 constexpr uint16_t mountain=0x556f, accessoryDisplayPercent=0x5569;
 constexpr uint16_t legacyChainsPercent=20873, legacyEccentricPercent=20874;
 constexpr uint16_t autoLoadEnabled=21272, autoLoadSafetyEnabled=21389, autoLoadStatus=21447;
+// kirby 8e1ea1c captured Auto Load remaining in mode 35 after completion.
+// Status 13 is still engaging; only 14 permits the loaded base-register path.
+constexpr int autoLoadMotorMode=35, autoLoadWaiting=11, autoLoadComplete=14;
 constexpr uint16_t childLock=20772, otaState=21476, battery=20013;
 constexpr uint16_t mountLock=20642, voidLock=21224;
 constexpr uint16_t fitnessRestTime=21377; // Android da514d2 catalog: uint16 seconds; read only here.
@@ -159,8 +162,10 @@ bool PhysicalSession::controlContextReady() const {
 bool PhysicalSession::liveWeightReady() const {
     // The source-validated loaded-idle register path changes base only. Mode 5
     // needs a load reassertion in another remote's capture; do not do that here.
+    const auto m=freshMotorMode();
+    const bool loaded=m==1 || (m==autoLoadMotorMode && fresh(autoLoadStatus)==autoLoadComplete);
     return controlContextReady() && fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock &&
-        freshMotorMode()==1 && (!workoutStatus_ || *workoutStatus_==2 || *workoutStatus_==3) &&
+        loaded && (!workoutStatus_ || *workoutStatus_==2 || *workoutStatus_==3) &&
         (fresh(accessoryDisplayPercent)==0 || (*fresh(chainsPercent)%100==0 && *fresh(eccentricPercent)%100==0));
 }
 void PhysicalSession::cancelWrites(const char* reason) {
@@ -298,8 +303,8 @@ void PhysicalSession::apply(const Frame& f) {
             const bool unloaded=pair.first==motor && waitingWrite_->second==4 && observed==0;
             const bool loaded=pair.first==motor && waitingWrite_->second==5 && observed==1;
             const auto autoState=fresh(autoLoadStatus);
-            const bool autoArmed=pair.first==motor && waitingWrite_->second==38 && observed==35 &&
-                autoState && *autoState>=11 && *autoState<=14;
+            const bool autoArmed=pair.first==motor && waitingWrite_->second==38 && observed==autoLoadMotorMode &&
+                autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
             if(unloaded || loaded || autoArmed || observed==waitingWrite_->second) {
                 if(pair.first==accessoryDisplayPercent) unitSwitchAt_=now_;
                 waitingWrite_.reset();
@@ -359,7 +364,7 @@ void PhysicalSession::updateReport() {
     // The October 18 unloaded capture reports 0. Retain recognized legacy
     // report values, but never turn an unknown value into an unloaded state.
     const auto autoState=fresh(autoLoadStatus);
-    const bool knownAuto=m==35 && autoState && *autoState>=11 && *autoState<=14;
+    const bool knownAuto=m==autoLoadMotorMode && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
     if(*mode!=1 || !m || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
         // A newly unknown/non-training mode must invalidate the previous report
         // immediately. The weight target then remains an unconditional unload,
@@ -375,12 +380,12 @@ void PhysicalSession::updateReport() {
     trainingSeen_=true;
     report_.firmwareVersion=firmware_;
     report_.settings.weight=convertWeightUnits(int(*w),WeightUnit::Pounds,report_.unit);
-    const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==14);
+    const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==autoLoadComplete);
     if(loaded && !report_.loaded) {
         deviceSet_.reset();deviceRep_.reset();repSet_.reset();completedRep_=0;
         repAt_=motionAt_=0;motionRevision_=repRevision_=0;
     }
-    report_.loaded=loaded;report_.autoLoadArmed=*m==38 || (knownAuto && *autoState!=14);
+    report_.loaded=loaded;report_.autoLoadArmed=*m==38 || (knownAuto && *autoState!=autoLoadComplete);
     // This profile recognizes only verified absence, never active Twin roles,
     // peer readiness, combined limits or routing.
     report_.twinKnown=standalone();report_.twin=false;
@@ -431,7 +436,8 @@ void PhysicalSession::updateReport() {
     // Rest-time register semantics have not been verified on this firmware.
     report_.restSeconds.reset();
     // Capability describes the source-backed base-register path. Execution also
-    // requires fresh actual motion and motor 1; never enables loading itself.
+    // requires fresh actual motion and ordinary or completed Auto Load state;
+    // never enables loading itself or changes Auto Load settings.
     report_.liveWeightSupported=settingsReady() || liveWeightReady();
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
     report_.revision=++reportRevision_;
