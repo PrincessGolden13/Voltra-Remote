@@ -166,12 +166,12 @@ void UiController::updateExtra() {
         if(!wifi_) text(wifiBody_,"Phone setup is available\nin Normal mode on\nthe physical remote.");
         else {
             const auto w=wifi_->status();
-            text(wifiBody_,w.setupActive ? "Join Wi-Fi:\n"+w.setupNetwork+"\n(no password)\nPage PIN: "+w.setupPin+"\n\n192.168.4.1" :
+            text(wifiBody_,w.setupActive ? "Join on your phone:\n"+w.setupNetwork+"\nNo password\n\nOpen 192.168.4.1\nChoose your home Wi-Fi" :
                 w.connected ? "Connected to\n"+w.network+"\n\n"+w.address :
                 w.saved ? "Saved Wi-Fi\n"+w.network+"\n\nUse your phone to change\nthis remote's network." :
                     "Use your phone to connect\nthis remote to Wi-Fi.\n\nChoose a 2.4 GHz network.\nCredentials stay on the remote.");
             text(status_,w.message);
-            text(lv_obj_get_child(wifiButton_,0),w.setupActive ? "STOP SETUP" : "SET UP WI-FI");
+            text(lv_obj_get_child(wifiButton_,0),w.setupActive ? "STOP SETUP" : "RESTART SETUP");
         }
     }
     if(page_ == Screen::Live) {

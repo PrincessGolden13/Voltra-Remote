@@ -1,3 +1,9 @@
+> November 2 later Wi-Fi feedback supersedes the PIN flow: Settings -> Wi-Fi
+> immediately opens the temporary hotspot and instructions. No hotspot password
+> or page PIN. The phone shows a network dropdown, Refresh, and a separate
+> hidden-network entry option; only the chosen home network's password is needed.
+> The browser cannot transfer saved phone Wi-Fi credentials to the remote.
+>
 > November 2 Wi-Fi follow-up: replace the long temporary hotspot password with
 > an open setup AP and a four-digit page PIN (WPA2 cannot use four characters).
 > The remote labels both steps. Phone setup must accept IPv4 clients reported

@@ -591,3 +591,27 @@ remain explicit future milestones.
   command was sent by the passive capture. Phone HTML/PIN submission and
   home-network save still await user confirmation. Portal diagnostics are in
   ignored build/voltra-live/2026-11-02/wifi-portal-installed.txt.
+
+## November 2 network picker and direct setup
+
+- CONFIRMED (user): the corrected phone page works and joining the open AP
+  works. The name field appeared to require manual entry; the user requested
+  a network list, immediate setup from Settings -> Wi-Fi, and no page PIN.
+  This feedback does not establish home-network save or reboot persistence.
+- Replaced the datalist with a select populated from device scans, Refresh,
+  scan/empty/failure messages and explicit hidden-network name entry. Keep a
+  selected name across refreshes. Scans run in the main loop, bounded and
+  separate from credential joins. Connection success is shown only after
+  the submission response is accepted. No automatic phone credential access.
+- Settings -> Wi-Fi now explicitly starts the temporary AP. No password or
+  PIN is required to join/use setup. AP socket/session-token checks, expiry,
+  successful credential storage and BLE/training separation remain.
+- Native, Normal and isolated Simulator builds pass; diff whitespace check
+  passes. No new automated tests. Browser preview with two synthetic SSIDs
+  verified dropdown selection, optional hidden entry and no PIN. No connection
+  was submitted from the preview. Remote instructions inspected at 360/466/480.
+  Physical initial scan, Refresh and network join still await the user's trial.
+- Snapshot: build/guition/2026-11-02-wifi-picker. Normal: 1,667,328 bytes,
+  SHA256 A32E8B46182AB9D2FC6F92284FCC043BFD7F2B10A1602BD1551808A3100B6A91.
+  Simulator: 952,976 bytes,
+  SHA256 4D358688AF09DC00427B4796D257C434CA89FF0398283036A12F459928F85F9D.

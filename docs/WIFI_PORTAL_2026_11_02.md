@@ -1,5 +1,29 @@
 # Phone setup repair and short PIN
 
+Later same-day feedback supersedes the PIN flow below: the user confirmed the
+form now works and explicitly removed the optional PIN. Settings -> Wi-Fi now
+starts setup immediately, and the phone has a native select control populated
+from scanned 2.4 GHz SSIDs, a Refresh button, and an explicit hidden-network
+fallback. The old datalist looked like mandatory manual entry in the phone's
+captive browser. The field is replaced rather than relying on suggestions.
+
+GET /networks now reports names plus scanning/failed state. POST /scan accepts
+the current session token and queues an async scan; the HTTP task never calls
+radio APIs. At most one scan runs, bounded to 15 s (the bundled Wi-Fi library
+also has its own timeout). A credential submission during refresh waits for
+the scan to settle before joining. Scans log counts only, never SSIDs/passwords.
+The page preserves selected names, shows a scan message, and checks connection
+success only after its configuration POST has been accepted. Physical scan,
+refresh, join and save still require the user's trial.
+
+No website API supplies the phone's saved Wi-Fi password. The Network
+Information API reports connection characteristics, not credentials or SSID;
+the remote therefore scans with its own radio and asks for the selected
+network's password once. This does not add a companion phone app or cloud flow.
+[Browser API reference](https://developer.mozilla.org/en-US/docs/Web/API/NetworkInformation).
+
+The sections below document the earlier same-day implementation and evidence.
+
 CONFIRMED (user): joining the original hotspot worked. Both the phone's
 automatic captive window and direct 192.168.4.1 displayed only `{}`; the
 browser offered to save document.json. Home-network provisioning did not work.

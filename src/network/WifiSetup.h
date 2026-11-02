@@ -3,7 +3,7 @@
 namespace voltra {
 struct WifiSetupStatus {
     bool setupActive=false, connected=false, saved=false;
-    std::string network, address, setupNetwork, setupPin, message;
+    std::string network, address, setupNetwork, message;
 };
 // Remote networking only. No VOLTRA/controller access, no credentials in UI
 // configuration, and no dependency on any board GPIO or Bluetooth transport.

@@ -5,6 +5,7 @@
 #include <Preferences.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <esp_wifi.h>
 #include <algorithm>
 #include <cstring>
 #include <vector>
@@ -14,6 +15,7 @@
 namespace voltra {
 namespace {
 constexpr uint64_t setupTimeoutMs=300000,connectTimeoutMs=20000,successCloseMs=15000;
+constexpr uint64_t scanTimeoutMs=15000; // Bound an async scan before accepting credentials.
 // Same fixed IPv4 address/subnet advertised by the setup AP and captive DNS.
 constexpr uint32_t setupAddress=0xc0a80401u,setupNetmask=0xffffff00u;
 uint64_t nowMs(){return uint64_t(esp_timer_get_time())/1000;}
@@ -105,34 +107,34 @@ bool Esp32WifiSetup::start() {
     if(server_) return true;
     if(connecting_) {WiFi.disconnect(false,false);Lock lock(mutex_);connecting_=false;view_.connected=false;}
     attempted_=true; // Editing must not race an automatic saved-network attempt.
-    // User requested four digits. WPA2 requires >=8 characters, so use an
-    // open temporary AP and check a four-digit PIN on the setup form instead.
-    const std::string ap="VOLTRA-Setup-"+randomText(4),pin=std::to_string(1000+esp_random()%9000);
+    // User requested an open temporary AP with no additional page PIN.
+    const std::string ap="VOLTRA-Setup-"+randomText(4);
     WiFi.mode(WIFI_AP_STA);
     const IPAddress ip(192,168,4,1);
     if(!WiFi.softAPConfig(ip,ip,IPAddress(255,255,255,0)) || !WiFi.softAP(ap.c_str(),nullptr,1,0,2)) {
         Lock lock(mutex_);view_.message="Could not start setup Wi-Fi";return false;
     }
-    {Lock lock(mutex_);token_=randomText(24);networks_="[]";view_.setupPin=pin;}
+    {Lock lock(mutex_);token_=randomText(24);networks_="[]";scanRequested_=true;scanning_=scanFailed_=false;}
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=6144;config.max_open_sockets=3;
     config.recv_wait_timeout=1;config.send_wait_timeout=1;config.lru_purge_enable=true;
     if(httpd_start(&server_,&config)!=ESP_OK) {WiFi.softAPdisconnect(false);Lock lock(mutex_);view_.message="Could not open setup page";return false;}
     const httpd_uri_t routes[]={ {"/",HTTP_GET,page,this},{"/networks",HTTP_GET,networks,this},
-        {"/status",HTTP_GET,statusPage,this},{"/configure",HTTP_POST,configure,this} };
+        {"/scan",HTTP_POST,rescan,this},{"/status",HTTP_GET,statusPage,this},{"/configure",HTTP_POST,configure,this} };
     for(const auto& route:routes) if(httpd_register_uri_handler(server_,&route)!=ESP_OK) {stop();return false;}
     httpd_register_err_handler(server_,HTTPD_404_NOT_FOUND,captive);
-    dns_.start(53,"*",ip);WiFi.scanNetworks(true);
+    dns_.start(53,"*",ip);
     setupAt_=nowMs();finishAt_=0;
-    std::printf("Wi-Fi portal: temporary open AP started; four-digit page PIN required\n");
+    std::printf("Wi-Fi portal: temporary open AP started; no password or PIN\n");
     Lock lock(mutex_);view_.setupActive=true;view_.setupNetwork=ap;
     view_.message="Connect your phone to setup Wi-Fi";return true;
 }
 void Esp32WifiSetup::stop() {
     // Stop the HTTP task before taking its shared-data mutex.
     if(server_) {httpd_stop(server_);server_=nullptr;}
-    dns_.stop();WiFi.scanDelete();WiFi.softAPdisconnect(false);finishAt_=0;
+    dns_.stop();if(scanning_) esp_wifi_scan_stop();WiFi.scanDelete();WiFi.softAPdisconnect(false);finishAt_=0;
     if(!mutex_) return;
-    Lock lock(mutex_);view_.setupActive=false;view_.setupNetwork.clear();view_.setupPin.clear();
+    Lock lock(mutex_);view_.setupActive=false;view_.setupNetwork.clear();
+    scanRequested_=scanning_=scanFailed_=false;
     submitted_=false;submittedPassword_.clear();token_.clear();
 }
 void Esp32WifiSetup::tick(bool radioAvailable) {
@@ -144,24 +146,42 @@ void Esp32WifiSetup::tick(bool radioAvailable) {
         Lock lock(mutex_);connecting_=false;candidateActive_=false;attempted_=false;
         view_.connected=false;view_.message="Wi-Fi paused during VOLTRA use";return;
     }
-    if(!attempted_ && saved_.ssid[0]) connect(saved_,false);
+    if(!server_ && !attempted_ && saved_.ssid[0]) connect(saved_,false);
     if(server_) {
         dns_.processNextRequest();
-        const int count=WiFi.scanComplete();
-        if(count>=0) {
+        bool startScan=false;
+        {Lock lock(mutex_);if(scanRequested_ && !scanning_ && !connecting_ && !submitted_) {
+            scanRequested_=false;scanning_=true;scanFailed_=false;startScan=true;
+        }}
+        if(startScan) {
+            WiFi.scanDelete();scanAt_=nowMs();
+            if(WiFi.scanNetworks(true)==WIFI_SCAN_FAILED) {
+                Lock lock(mutex_);scanning_=false;scanFailed_=true;
+                std::printf("Wi-Fi portal: scan could not start\n");
+            }
+        }
+        const int count=scanning_ ? WiFi.scanComplete() : WIFI_SCAN_RUNNING;
+        if(scanning_ && count>=0) {
             std::string list="[";std::vector<std::string> seen;
             for(int i=0;i<count && seen.size()<24;++i) {
                 const std::string ssid=WiFi.SSID(i).c_str();
                 if(ssid.empty() || std::find(seen.begin(),seen.end(),ssid)!=seen.end()) continue;
                 if(!seen.empty()) list+=',';list+=json(ssid);seen.push_back(ssid);
             }
-            list+=']';{Lock lock(mutex_);networks_=list;}WiFi.scanDelete();
+            list+=']';{Lock lock(mutex_);networks_=list;scanning_=false;scanFailed_=false;}WiFi.scanDelete();
+            std::printf("Wi-Fi portal: scan complete, %u named networks\n",unsigned(seen.size()));
+        } else if(scanning_ && (count==WIFI_SCAN_FAILED || nowMs()-scanAt_>=scanTimeoutMs)) {
+            esp_wifi_scan_stop();WiFi.scanDelete();
+            Lock lock(mutex_);scanning_=false;scanFailed_=true;
+            std::printf("Wi-Fi portal: scan failed or timed out\n");
         }
         bool submit=false;Credentials submitted;
-        {Lock lock(mutex_);if(submitted_) {
+        // Wi-Fi scanning and joining cannot run together. A user can select
+        // an old result during refresh; keep that submission until scan ends.
+        {Lock lock(mutex_);if(submitted_ && !scanning_) {
             std::copy(submittedSsid_.begin(),submittedSsid_.end(),submitted.ssid);
             std::copy(submittedPassword_.begin(),submittedPassword_.end(),submitted.password);
-            submitted_=false;submittedPassword_.clear();submit=true;
+            submitted_=false;connecting_=true;submittedPassword_.clear();submit=true;
         }}
         if(submit) {setupAt_=nowMs();finishAt_=0;connect(submitted,true);}
         if(nowMs()-setupAt_>=setupTimeoutMs || (finishAt_ && nowMs()>=finishAt_)) stop();
@@ -199,7 +219,30 @@ esp_err_t Esp32WifiSetup::page(httpd_req_t* req) {
 esp_err_t Esp32WifiSetup::networks(httpd_req_t* req) {
     if(!setupClient(req)) return wrongNetwork(req);
     auto* self=static_cast<Esp32WifiSetup*>(req->user_ctx);std::string body;
-    {Lock lock(self->mutex_);body=self->networks_;}return reply(req,body);
+    {Lock lock(self->mutex_);body="{\"networks\":"+self->networks_+
+        ",\"scanning\":"+(self->scanning_ || self->scanRequested_ ? "true" : "false")+
+        ",\"failed\":"+(self->scanFailed_ ? "true" : "false")+"}";}
+    return reply(req,body);
+}
+esp_err_t Esp32WifiSetup::rescan(httpd_req_t* req) {
+    if(!setupClient(req)) return wrongNetwork(req);
+    auto* self=static_cast<Esp32WifiSetup*>(req->user_ctx);
+    if(req->content_len<1 || req->content_len>64)
+        return reply(req,"{\"message\":\"Reopen the setup page.\"}","application/json","400 Bad Request");
+    std::string body(req->content_len,'\0');size_t received=0;
+    while(received<body.size()) {
+        const int n=httpd_req_recv(req,body.data()+received,body.size()-received);
+        if(n<=0) return reply(req,"{\"message\":\"Please refresh again.\"}","application/json","400 Bad Request");
+        received+=size_t(n);
+    }
+    {Lock lock(self->mutex_);
+        if(!self->view_.setupActive || self->token_.empty() || body!="token="+self->token_)
+            return reply(req,"{\"message\":\"Setup expired. Reopen the setup page.\"}","application/json","400 Bad Request");
+        if(self->connecting_ || self->submitted_)
+            return reply(req,"{\"message\":\"Wait for the Wi-Fi connection check.\"}","application/json","409 Conflict");
+        if(!self->scanning_) self->scanRequested_=true;
+    }
+    return reply(req,"{\"message\":\"Scanning for networks…\"}");
 }
 esp_err_t Esp32WifiSetup::statusPage(httpd_req_t* req) {
     if(!setupClient(req)) return wrongNetwork(req);
@@ -216,7 +259,7 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
     if(req->content_len<1 || req->content_len>512) return reject("Invalid setup request.");
     std::string body(req->content_len,'\0');size_t received=0;
     while(received<body.size()) {int n=httpd_req_recv(req,body.data()+received,body.size()-received);if(n<=0)return reject("Please submit again.");received+=size_t(n);}
-    std::string ssid,password,token,pin;size_t pos=0;bool haveSsid=false,havePassword=false,haveToken=false,havePin=false;
+    std::string ssid,password,token;size_t pos=0;bool haveSsid=false,havePassword=false,haveToken=false;
     while(pos<body.size()) {
         const auto end=body.find('&',pos),eq=body.find('=',pos);const auto limit=end==std::string::npos ? body.size() : end;
         if(eq==std::string::npos || eq>=limit) return reject("Invalid form.");
@@ -224,7 +267,6 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
         if(key=="ssid" && !haveSsid) {ssid=value;haveSsid=true;}
         else if(key=="password" && !havePassword) {password=value;havePassword=true;}
         else if(key=="token" && !haveToken) {token=value;haveToken=true;}
-        else if(key=="pin" && !havePin) {pin=value;havePin=true;}
         else return reject("Invalid form.");
         pos=limit+1;
     }
@@ -233,9 +275,8 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
         return reject("Use a Wi-Fi name up to 32 bytes and an 8–63 character password, or leave it empty for an open network.");
     {Lock lock(self->mutex_);
         if(!haveToken || token!=self->token_ || token.empty() || !self->view_.setupActive) return reject("Setup expired. Reopen the setup page.");
-        if(!havePin || pin.size()!=4 || pin!=self->view_.setupPin) return reject("Enter the four-digit PIN shown on your remote.");
         if(self->submitted_ || self->connecting_) return reject("A connection is already being checked.");
-        self->submittedSsid_=ssid;self->submittedPassword_=password;self->submitted_=true;
+        self->submittedSsid_=ssid;self->submittedPassword_=password;self->submitted_=true;self->scanRequested_=false;
         self->view_.connected=false;self->view_.message="Connecting…";
     }
     return reply(req,"{\"message\":\"Connecting. Stay on the setup Wi-Fi.\"}");

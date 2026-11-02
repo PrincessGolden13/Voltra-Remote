@@ -183,3 +183,10 @@ temporary credential and accepted reduced Wi-Fi security. Existing five-minute
 expiry, AP-only route checks, session token, bounded form and no-secret-logging
 policies remain. Socket checks accept IPv4 and IPv4-mapped IPv6, verify the
 destination is the AP address, and reject native IPv6/other interfaces.
+
+Later November 2 user instruction removes the page PIN as well. Opening Wi-Fi
+from Settings is the explicit action that starts this temporary open portal;
+there is no automatic setup on boot/reconnect. A session token and AP socket
+checks remain, with no extra credential for the user. Refresh requests queue
+bounded async scans on the main loop; submitted home credentials wait for any
+current scan to finish/fail before joining. BLE/training isolation is unchanged.

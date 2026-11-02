@@ -319,7 +319,9 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action >= ThemeField && action <= SleepField) { settingsField_ = action-ThemeField; return; }
     if (action >= OpenWifi && action <= OpenReset) {
-        navigate(action == OpenWifi ? Screen::Wifi : action == OpenUpdates ? Screen::Updates : action == OpenAbout ? Screen::About : Screen::Reset); return;
+        navigate(action == OpenWifi ? Screen::Wifi : action == OpenUpdates ? Screen::Updates : action == OpenAbout ? Screen::About : Screen::Reset);
+        if(action==OpenWifi && wifi_ && !app_.connected() && !app_.connecting()) wifi_->start();
+        return;
     }
     if (action == ConfirmReset) {
         auto old = config_; config_ = {};

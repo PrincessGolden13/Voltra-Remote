@@ -347,3 +347,13 @@ the remote, not prefilled in HTML or logged. Reject absent/wrong/expired PIN,
 duplicate fields and stale token without changing stored credentials. Verify
 phone join, correct-PIN submission, failed home-network password, success/save,
 reboot persistence and timeouts. Check 360/466/480 remote PIN instructions.
+
+Later November 2 supersedes PIN cases: no PIN/password on setup AP/page.
+One Settings -> Wi-Fi tap starts the portal. Back/Stop/expiry close it; restart
+is explicit. A select control lists unique scanned SSIDs with a manual hidden
+network fallback. Refresh reports scanning/failure/empty results and retains
+the selection without rebuilding unchanged options. Check duplicate/escaped
+names, failed initial scan, refresh while scanning, expired token, and submission
+during refresh: joining must wait, with no false "Connected and saved" from a
+previous saved-network report. No phone credential harvesting or mock physical
+scan pass. Native/browser previews use synthetic names and never join a network.

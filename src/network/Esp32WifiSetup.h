@@ -22,12 +22,14 @@ private:
     WifiSetupStatus view_;
     std::string token_,networks_="[]",submittedSsid_,submittedPassword_;
     bool submitted_=false,connecting_=false,candidateActive_=false,radioAvailable_=true,attempted_=false;
-    uint64_t setupAt_=0,connectAt_=0,finishAt_=0;
+    bool scanRequested_=false,scanning_=false,scanFailed_=false;
+    uint64_t setupAt_=0,connectAt_=0,finishAt_=0,scanAt_=0;
     httpd_handle_t server_=nullptr;
     DNSServer dns_;
     void connect(const Credentials&,bool candidate);
     static esp_err_t page(httpd_req_t*);
     static esp_err_t networks(httpd_req_t*);
+    static esp_err_t rescan(httpd_req_t*);
     static esp_err_t statusPage(httpd_req_t*);
     static esp_err_t configure(httpd_req_t*);
     static esp_err_t captive(httpd_req_t*,httpd_err_code_t);
