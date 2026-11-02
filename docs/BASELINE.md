@@ -615,3 +615,8 @@ remain explicit future milestones.
   SHA256 A32E8B46182AB9D2FC6F92284FCC043BFD7F2B10A1602BD1551808A3100B6A91.
   Simulator: 952,976 bytes,
   SHA256 4D358688AF09DC00427B4796D257C434CA89FF0398283036A12F459928F85F9D.
+- Installed source ebc0ce7 on COM3 with verified recovery/partition bounds and
+  flash hashes. Normal UI and discovery started. The installation capture is
+  passive; no connection or resistance command was sent. Phone scan/list,
+  direct-start behavior and successful home-network save remain pending the
+  user's trial. Ignored log: build/voltra-live/2026-11-02/wifi-picker-installed.txt.
