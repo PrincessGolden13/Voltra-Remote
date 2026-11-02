@@ -620,3 +620,8 @@ remain explicit future milestones.
   passive; no connection or resistance command was sent. Phone scan/list,
   direct-start behavior and successful home-network save remain pending the
   user's trial. Ignored log: build/voltra-live/2026-11-02/wifi-picker-installed.txt.
+- CONFIRMED (user follow-up, November 2): Settings -> Wi-Fi starts setup in
+  one tap, the phone lists the home network without a PIN prompt, and selecting
+  it and entering its password reaches "Connected and saved" ("yep, worked
+  great now"). Scope is this phone/remote trial. Refresh, hidden networks and
+  reconnection after a remote power cycle were not separately confirmed.
