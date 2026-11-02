@@ -586,3 +586,8 @@ remain explicit future milestones.
   SHA256 BBC28DA74F1F896723DCC41E1EEA8ECB6796C7C1DA95A0B6E40BE77B64E7A2D1.
   Simulator: 953,104 bytes,
   SHA256 6C0E3ACBA34454F2F61F817446C4AA9E67B25856737F03D96BA1201828230CD7.
+- Installed source 11b4d59 on COM3 with verified recovery/partition bounds and
+  flash hashes. Normal boot and discovery are running; no connection or motor
+  command was sent by the passive capture. Phone HTML/PIN submission and
+  home-network save still await user confirmation. Portal diagnostics are in
+  ignored build/voltra-live/2026-11-02/wifi-portal-installed.txt.
