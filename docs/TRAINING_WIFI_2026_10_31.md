@@ -65,6 +65,10 @@ Apply miss has been reproduced or resolved. Diagnostic logging remains enabled.
 
 ## Phone Wi-Fi setup
 
+Historical October 31 flow below. November 2 replaces its hotspot password
+with an open AP / four-digit page PIN and corrects socket address validation;
+see [repair and evidence](WIFI_PORTAL_2026_11_02.md).
+
 Settings -> Wi-Fi -> Set up Wi-Fi starts a temporary password-protected
 VOLTRA-Setup-XXXX access point. The remote displays its random session password
 and 192.168.4.1. The phone page offers scanned 2.4 GHz SSIDs or manual entry,

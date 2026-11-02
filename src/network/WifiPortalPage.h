@@ -1,7 +1,7 @@
 #pragma once
 namespace voltra {
 // Self-contained phone page: no CDN, analytics, remote requests or credential
-// echo. Submitted Wi-Fi passwords only go to the remote over its protected AP.
+// echo. User-approved open temporary AP; the page PIN is not link encryption.
 inline constexpr const char* wifiPortalPage=R"HTML(<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>VOLTRA Remote Wi-Fi</title><style>
@@ -13,6 +13,7 @@ button:disabled{opacity:.55}#status{padding:16px;border-radius:12px;background:#
 small{display:block;color:#b4c2ce;margin-top:16px;line-height:1.4}</style>
 <main><h1>Connect your remote</h1><p>Choose your home Wi-Fi or enter its name. Use a 2.4 GHz network.</p>
 <form id="wifi"><input type="hidden" name="token" value="%TOKEN%">
+<label for="pin">Remote setup PIN</label><input id="pin" name="pin" type="text" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" autocomplete="off" placeholder="4 digits shown on your remote" required>
 <label for="ssid">Wi-Fi name</label><input id="ssid" name="ssid" list="networks" maxlength="32" autocomplete="off" required><datalist id="networks"></datalist>
 <label for="password">Wi-Fi password</label><input id="password" name="password" type="password" maxlength="64" autocomplete="new-password">
 <small>Leave the password empty only for an open network. Your password stays on the remote.</small>
@@ -21,8 +22,8 @@ small{display:block;color:#b4c2ce;margin-top:16px;line-height:1.4}</style>
 <script>
 const form=document.querySelector('#wifi'),status=document.querySelector('#status'),button=document.querySelector('#connect');let submitted=false,finished=false;
 async function networks(){try{const r=await fetch('/networks',{cache:'no-store'}),data=await r.json();const list=document.querySelector('#networks');list.replaceChildren();for(const name of data){const option=document.createElement('option');option.value=name;list.append(option);}}catch{}}
-form.onsubmit=async e=>{e.preventDefault();button.disabled=true;submitted=true;status.textContent='Connecting…';try{const r=await fetch('/configure',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(form))});const data=await r.json();status.textContent=data.message;if(!r.ok){submitted=false;button.disabled=false;}}catch{status.textContent='Waiting for the remote. Stay connected to its setup Wi-Fi.';}};
-async function poll(){if(finished)return;try{const r=await fetch('/status',{cache:'no-store'}),data=await r.json();if(submitted){status.textContent=data.message;if(data.connected&&data.saved){finished=true;form.password.value='';status.textContent='Connected and saved. You can return to your usual Wi-Fi. The setup hotspot will close shortly.';}else if(!data.connecting){button.disabled=false;submitted=false;}}}catch{} }
+form.onsubmit=async e=>{e.preventDefault();button.disabled=true;submitted=true;status.textContent='Connecting…';try{const r=await fetch('/configure',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(new FormData(form))});const data=await r.json();status.textContent=data.message||'Could not read the remote response. Reopen this page.';if(!r.ok){submitted=false;button.disabled=false;}}catch{status.textContent='Waiting for the remote. Stay connected to its setup Wi-Fi.';}};
+async function poll(){if(finished)return;try{const r=await fetch('/status',{cache:'no-store'}),data=await r.json();if(!r.ok){status.textContent=data.message||'Reconnect to the remote setup Wi-Fi.';button.disabled=false;submitted=false;return;}if(submitted){status.textContent=data.message||'Waiting for the remote…';if(data.connected&&data.saved){finished=true;form.password.value='';status.textContent='Connected and saved. You can return to your usual Wi-Fi. The setup hotspot will close shortly.';}else if(!data.connecting){button.disabled=false;submitted=false;}}}catch{} }
 networks();setTimeout(networks,4000);setInterval(poll,1000);
 </script></html>)HTML";
 }

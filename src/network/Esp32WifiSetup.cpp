@@ -9,15 +9,40 @@
 #include <cstring>
 #include <vector>
 #include <cctype>
+#include <cstdio>
 #include <lwip/sockets.h>
 namespace voltra {
 namespace {
 constexpr uint64_t setupTimeoutMs=300000,connectTimeoutMs=20000,successCloseMs=15000;
+// Same fixed IPv4 address/subnet advertised by the setup AP and captive DNS.
+constexpr uint32_t setupAddress=0xc0a80401u,setupNetmask=0xffffff00u;
 uint64_t nowMs(){return uint64_t(esp_timer_get_time())/1000;}
+bool socketIpv4(const sockaddr_storage& address,socklen_t length,uint32_t& result) {
+    if(address.ss_family==AF_INET && length>=sizeof(sockaddr_in)) {
+        result=ntohl(reinterpret_cast<const sockaddr_in*>(&address)->sin_addr.s_addr);return true;
+    }
+#if LWIP_IPV6
+    if(address.ss_family==AF_INET6 && length>=sizeof(sockaddr_in6)) {
+        // ESP-IDF 4.4's HTTP listener uses PF_INET6 when IPv6 is enabled.
+        // IPv4 clients then appear as ::ffff:a.b.c.d, not sockaddr_in.
+        const auto* bytes=reinterpret_cast<const uint8_t*>(&reinterpret_cast<const sockaddr_in6*>(&address)->sin6_addr);
+        constexpr uint8_t mappedPrefix[12]={0,0,0,0,0,0,0,0,0,0,0xff,0xff};
+        if(std::memcmp(bytes,mappedPrefix,sizeof(mappedPrefix))==0) {
+            uint32_t value;std::memcpy(&value,bytes+12,sizeof(value));result=ntohl(value);return true;
+        }
+    }
+#endif
+    return false;
+}
 bool setupClient(httpd_req_t* req) {
-    sockaddr_in peer{};socklen_t size=sizeof(peer);
-    return getpeername(httpd_req_to_sockfd(req),reinterpret_cast<sockaddr*>(&peer),&size)==0 &&
-        peer.sin_family==AF_INET && (ntohl(peer.sin_addr.s_addr)&0xffffff00u)==0xc0a80400u;
+    sockaddr_storage peer{},local{};socklen_t peerSize=sizeof(peer),localSize=sizeof(local);
+    uint32_t peerIp=0,localIp=0;const int socket=httpd_req_to_sockfd(req);
+    const bool allowed=getpeername(socket,reinterpret_cast<sockaddr*>(&peer),&peerSize)==0 &&
+        getsockname(socket,reinterpret_cast<sockaddr*>(&local),&localSize)==0 &&
+        socketIpv4(peer,peerSize,peerIp) && socketIpv4(local,localSize,localIp) &&
+        localIp==setupAddress && (peerIp&setupNetmask)==(setupAddress&setupNetmask);
+    if(!allowed) std::printf("Wi-Fi portal: client rejected (peer family %d, local family %d)\n",int(peer.ss_family),int(local.ss_family));
+    return allowed;
 }
 struct Lock { SemaphoreHandle_t m; explicit Lock(SemaphoreHandle_t mutex):m(mutex){xSemaphoreTake(m,portMAX_DELAY);} ~Lock(){xSemaphoreGive(m);} };
 std::string randomText(size_t count) {
@@ -36,6 +61,14 @@ esp_err_t reply(httpd_req_t* req,const std::string& body,const char* type="appli
     httpd_resp_set_hdr(req,"X-Content-Type-Options","nosniff");
     httpd_resp_set_hdr(req,"Content-Security-Policy","default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'");
     return httpd_resp_send(req,body.data(),body.size());
+}
+esp_err_t wrongNetwork(httpd_req_t* req,bool html=false) {
+    return html ? reply(req,
+        "<!doctype html><html><meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>VOLTRA Remote Wi-Fi</title><h1>Join the remote's setup Wi-Fi</h1>"
+        "<p>Connect to the VOLTRA-Setup network shown on your remote, then open "
+        "<a href='http://192.168.4.1/'>192.168.4.1</a>.</p></html>","text/html; charset=utf-8","403 Forbidden") :
+        reply(req,"{\"message\":\"Join the remote's VOLTRA-Setup Wi-Fi and reopen 192.168.4.1.\"}","application/json","403 Forbidden");
 }
 bool decode(const std::string& in,std::string& out) {
     auto hex=[](char c)->int {if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;};
@@ -72,13 +105,15 @@ bool Esp32WifiSetup::start() {
     if(server_) return true;
     if(connecting_) {WiFi.disconnect(false,false);Lock lock(mutex_);connecting_=false;view_.connected=false;}
     attempted_=true; // Editing must not race an automatic saved-network attempt.
-    const std::string ap="VOLTRA-Setup-"+randomText(4),password=randomText(10);
+    // User requested four digits. WPA2 requires >=8 characters, so use an
+    // open temporary AP and check a four-digit PIN on the setup form instead.
+    const std::string ap="VOLTRA-Setup-"+randomText(4),pin=std::to_string(1000+esp_random()%9000);
     WiFi.mode(WIFI_AP_STA);
     const IPAddress ip(192,168,4,1);
-    if(!WiFi.softAPConfig(ip,ip,IPAddress(255,255,255,0)) || !WiFi.softAP(ap.c_str(),password.c_str(),1,0,2)) {
+    if(!WiFi.softAPConfig(ip,ip,IPAddress(255,255,255,0)) || !WiFi.softAP(ap.c_str(),nullptr,1,0,2)) {
         Lock lock(mutex_);view_.message="Could not start setup Wi-Fi";return false;
     }
-    {Lock lock(mutex_);token_=randomText(24);networks_="[]";}
+    {Lock lock(mutex_);token_=randomText(24);networks_="[]";view_.setupPin=pin;}
     httpd_config_t config=HTTPD_DEFAULT_CONFIG();config.stack_size=6144;config.max_open_sockets=3;
     config.recv_wait_timeout=1;config.send_wait_timeout=1;config.lru_purge_enable=true;
     if(httpd_start(&server_,&config)!=ESP_OK) {WiFi.softAPdisconnect(false);Lock lock(mutex_);view_.message="Could not open setup page";return false;}
@@ -88,7 +123,8 @@ bool Esp32WifiSetup::start() {
     httpd_register_err_handler(server_,HTTPD_404_NOT_FOUND,captive);
     dns_.start(53,"*",ip);WiFi.scanNetworks(true);
     setupAt_=nowMs();finishAt_=0;
-    Lock lock(mutex_);view_.setupActive=true;view_.setupNetwork=ap;view_.setupPassword=password;
+    std::printf("Wi-Fi portal: temporary open AP started; four-digit page PIN required\n");
+    Lock lock(mutex_);view_.setupActive=true;view_.setupNetwork=ap;
     view_.message="Connect your phone to setup Wi-Fi";return true;
 }
 void Esp32WifiSetup::stop() {
@@ -96,7 +132,7 @@ void Esp32WifiSetup::stop() {
     if(server_) {httpd_stop(server_);server_=nullptr;}
     dns_.stop();WiFi.scanDelete();WiFi.softAPdisconnect(false);finishAt_=0;
     if(!mutex_) return;
-    Lock lock(mutex_);view_.setupActive=false;view_.setupNetwork.clear();view_.setupPassword.clear();
+    Lock lock(mutex_);view_.setupActive=false;view_.setupNetwork.clear();view_.setupPin.clear();
     submitted_=false;submittedPassword_.clear();token_.clear();
 }
 void Esp32WifiSetup::tick(bool radioAvailable) {
@@ -154,18 +190,19 @@ void Esp32WifiSetup::tick(bool radioAvailable) {
     }
 }
 esp_err_t Esp32WifiSetup::page(httpd_req_t* req) {
-    if(!setupClient(req)) return reply(req,"{}","application/json","403 Forbidden");
+    if(!setupClient(req)) return wrongNetwork(req,true);
     auto* self=static_cast<Esp32WifiSetup*>(req->user_ctx);std::string html=wifiPortalPage;
     {Lock lock(self->mutex_);html.replace(html.find("%TOKEN%"),7,self->token_);}
+    std::printf("Wi-Fi portal: serving setup HTML\n");
     return reply(req,html,"text/html; charset=utf-8");
 }
 esp_err_t Esp32WifiSetup::networks(httpd_req_t* req) {
-    if(!setupClient(req)) return reply(req,"{}","application/json","403 Forbidden");
+    if(!setupClient(req)) return wrongNetwork(req);
     auto* self=static_cast<Esp32WifiSetup*>(req->user_ctx);std::string body;
     {Lock lock(self->mutex_);body=self->networks_;}return reply(req,body);
 }
 esp_err_t Esp32WifiSetup::statusPage(httpd_req_t* req) {
-    if(!setupClient(req)) return reply(req,"{}","application/json","403 Forbidden");
+    if(!setupClient(req)) return wrongNetwork(req);
     auto* self=static_cast<Esp32WifiSetup*>(req->user_ctx);std::string body;
     {Lock lock(self->mutex_);body=std::string("{\"connected\":")+(self->view_.connected ? "true" : "false")+
         ",\"saved\":"+(self->view_.saved ? "true" : "false")+",\"connecting\":"+(self->connecting_ || self->submitted_ ? "true" : "false")+
@@ -173,13 +210,13 @@ esp_err_t Esp32WifiSetup::statusPage(httpd_req_t* req) {
     return reply(req,body);
 }
 esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
-    if(!setupClient(req)) return reply(req,"{}","application/json","403 Forbidden");
+    if(!setupClient(req)) return wrongNetwork(req);
     auto* self=static_cast<Esp32WifiSetup*>(req->user_ctx);
     auto reject=[&](const char* msg){return reply(req,"{\"message\":"+json(msg)+"}","application/json","400 Bad Request");};
     if(req->content_len<1 || req->content_len>512) return reject("Invalid setup request.");
     std::string body(req->content_len,'\0');size_t received=0;
     while(received<body.size()) {int n=httpd_req_recv(req,body.data()+received,body.size()-received);if(n<=0)return reject("Please submit again.");received+=size_t(n);}
-    std::string ssid,password,token;size_t pos=0;bool haveSsid=false,havePassword=false,haveToken=false;
+    std::string ssid,password,token,pin;size_t pos=0;bool haveSsid=false,havePassword=false,haveToken=false,havePin=false;
     while(pos<body.size()) {
         const auto end=body.find('&',pos),eq=body.find('=',pos);const auto limit=end==std::string::npos ? body.size() : end;
         if(eq==std::string::npos || eq>=limit) return reject("Invalid form.");
@@ -187,6 +224,7 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
         if(key=="ssid" && !haveSsid) {ssid=value;haveSsid=true;}
         else if(key=="password" && !havePassword) {password=value;havePassword=true;}
         else if(key=="token" && !haveToken) {token=value;haveToken=true;}
+        else if(key=="pin" && !havePin) {pin=value;havePin=true;}
         else return reject("Invalid form.");
         pos=limit+1;
     }
@@ -195,6 +233,7 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
         return reject("Use a Wi-Fi name up to 32 bytes and an 8–63 character password, or leave it empty for an open network.");
     {Lock lock(self->mutex_);
         if(!haveToken || token!=self->token_ || token.empty() || !self->view_.setupActive) return reject("Setup expired. Reopen the setup page.");
+        if(!havePin || pin.size()!=4 || pin!=self->view_.setupPin) return reject("Enter the four-digit PIN shown on your remote.");
         if(self->submitted_ || self->connecting_) return reject("A connection is already being checked.");
         self->submittedSsid_=ssid;self->submittedPassword_=password;self->submitted_=true;
         self->view_.connected=false;self->view_.message="Connecting…";
@@ -202,8 +241,10 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
     return reply(req,"{\"message\":\"Connecting. Stay on the setup Wi-Fi.\"}");
 }
 esp_err_t Esp32WifiSetup::captive(httpd_req_t* req,httpd_err_code_t) {
+    if(!setupClient(req)) return wrongNetwork(req,true);
+    httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Cache-Control","no-store");
     httpd_resp_set_status(req,"302 Found");httpd_resp_set_hdr(req,"Location","http://192.168.4.1/");
-    return httpd_resp_send(req,nullptr,0);
+    return httpd_resp_sendstr(req,"<!doctype html><html><title>VOLTRA Remote Wi-Fi</title><a href='http://192.168.4.1/'>Open VOLTRA Remote Wi-Fi setup</a></html>");
 }
 }
 #endif

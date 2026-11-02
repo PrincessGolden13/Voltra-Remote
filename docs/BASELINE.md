@@ -562,3 +562,27 @@ remain explicit future milestones.
   ("yep - good"). Scope is that trial on Black; the user did not specify the
   dropset mode or number of attempts. Loaded modifier edits, global rest-alert
   persistence and phone Wi-Fi setup still await physical verification.
+
+## November 2 captive page and four-digit setup PIN
+
+- CONFIRMED (user): the previous protected hotspot accepted the phone, but
+  captive/direct page requests returned only {}. Home-network setup was not
+  verified. Source audit found an IPv4-only socket filter on the SDK's IPv6
+  listener; mapped IPv4 rejection matches the symptom. Physical socket family
+  on the old build was not captured. See WIFI_PORTAL_2026_11_02.md.
+- Decode sockaddr_storage as native IPv4 or IPv4-mapped IPv6, checking both
+  peer subnet and local AP address. Root/redirect/error responses are HTML;
+  API failures have readable messages. Diagnostic logs omit credentials/PINs.
+- User requested four digits and accepted lower temporary Wi-Fi security.
+  WPA2 rejects passwords under eight characters, so the AP is open and a fresh
+  four-digit PIN is entered on the phone form. The remote explains both steps.
+  Existing expiry, successful-save policy and training isolation remain.
+- Native, Normal and isolated Simulator builds pass. Existing validators pass
+  (203 SDK / 593 modifier packets and pinned upstream checks). No new tests.
+  Remote setup layouts inspected at 360/466/480 and the real HTML template
+  inspected in a local browser. This is layout evidence only, not a physical
+  captive-portal/server/PIN/credential-persistence pass.
+- Snapshot: build/guition/2026-11-02-wifi-portal. Normal: 1,663,328 bytes,
+  SHA256 BBC28DA74F1F896723DCC41E1EEA8ECB6796C7C1DA95A0B6E40BE77B64E7A2D1.
+  Simulator: 953,104 bytes,
+  SHA256 6C0E3ACBA34454F2F61F817446C4AA9E67B25856737F03D96BA1201828230CD7.

@@ -175,3 +175,11 @@ Wi-Fi provisioning is available only while disconnected from VOLTRA. The radio
 and setup server stop during a connection/connection attempt. The bounded local
 portal has no motor or firmware-upload endpoint. Credentials remain in separate
 local NVS; simulator builds exclude physical Wi-Fi entirely.
+
+November 2 Wi-Fi usability authorization supersedes the protected-AP detail:
+the temporary AP is open, with a fresh four-digit PIN checked on submission.
+The PIN is not wireless encryption. The user explicitly requested a short
+temporary credential and accepted reduced Wi-Fi security. Existing five-minute
+expiry, AP-only route checks, session token, bounded form and no-secret-logging
+policies remain. Socket checks accept IPv4 and IPv4-mapped IPv6, verify the
+destination is the AP address, and reject native IPv6/other interfaces.

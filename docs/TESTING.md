@@ -336,3 +336,14 @@ logs. Wi-Fi/HTTP must stop during VOLTRA connection, without a resistance action
 Physical phone join and network persistence require human observation. Review
 360/466/480 setup/Apply layouts. Diagnose occasional Apply with press/release,
 cancel reason and app refusal rather than claiming every lost touch is fixed.
+
+November 2 Wi-Fi regression cases queued (new test code remains deferred):
+IPv4 and ::ffff:IPv4 peer/local sockets, truncated sockaddr, native IPv6,
+getpeername/getsockname failure and non-AP interface/subnet. Root must return
+HTML rather than {}, and a refused page must explain how to join setup Wi-Fi.
+Captive probe redirect and direct 192.168.4.1 must both reach the form. The
+open AP has no Wi-Fi password; each setup gets a four-digit PIN shown only on
+the remote, not prefilled in HTML or logged. Reject absent/wrong/expired PIN,
+duplicate fields and stale token without changing stored credentials. Verify
+phone join, correct-PIN submission, failed home-network password, success/save,
+reboot persistence and timeouts. Check 360/466/480 remote PIN instructions.

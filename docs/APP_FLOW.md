@@ -1,3 +1,9 @@
+> November 2 Wi-Fi follow-up: replace the long temporary hotspot password with
+> an open setup AP and a four-digit page PIN (WPA2 cannot use four characters).
+> The remote labels both steps. Phone setup must accept IPv4 clients reported
+> as IPv4-mapped IPv6 sockets; serve HTML for the page, including readable
+> errors. See [portal repair](WIFI_PORTAL_2026_11_02.md).
+>
 > October 31 later follow-up: after a real dropset ends, unload and restore its
 > original starting base (50 -> 20 ends unloaded at 50). Never reload. Restore
 > only after confirmed unload, within the current connection/unit/limits, and

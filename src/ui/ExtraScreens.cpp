@@ -166,7 +166,7 @@ void UiController::updateExtra() {
         if(!wifi_) text(wifiBody_,"Phone setup is available\nin Normal mode on\nthe physical remote.");
         else {
             const auto w=wifi_->status();
-            text(wifiBody_,w.setupActive ? "Join Wi-Fi:\n"+w.setupNetwork+"\nPassword: "+w.setupPassword+"\n\nOpen 192.168.4.1\non your phone" :
+            text(wifiBody_,w.setupActive ? "Join Wi-Fi:\n"+w.setupNetwork+"\n(no password)\nPage PIN: "+w.setupPin+"\n\n192.168.4.1" :
                 w.connected ? "Connected to\n"+w.network+"\n\n"+w.address :
                 w.saved ? "Saved Wi-Fi\n"+w.network+"\n\nUse your phone to change\nthis remote's network." :
                     "Use your phone to connect\nthis remote to Wi-Fi.\n\nChoose a 2.4 GHz network.\nCredentials stay on the remote.");
