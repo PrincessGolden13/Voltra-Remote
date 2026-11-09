@@ -5,6 +5,8 @@
 #include <WiFi.h>
 #include <cJSON.h>
 #include <esp_http_client.h>
+#include <esp_tls.h>
+#include <esp_heap_caps.h>
 #include <mbedtls/sha256.h>
 #include <algorithm>
 #include <array>
@@ -19,9 +21,9 @@ extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
 namespace voltra {
 namespace {
 // Units/policy: see docs/FIRMWARE_UPDATES.md. No credentials in this feed.
-constexpr uint64_t startupGraceMs=15000, restartNoticeMs=2000;
-constexpr uint32_t clockWaitMs=10000, requestTimeoutMs=10000, downloadTimeoutMs=180000;
-constexpr size_t maximumManifestBytes=2048, transferBlockBytes=4096;
+constexpr uint64_t startupGraceMs=25000, restartNoticeMs=2000;
+constexpr uint32_t clockWaitMs=10000, requestTimeoutMs=30000, downloadTimeoutMs=180000;
+constexpr size_t maximumManifestBytes=2048, transferBlockBytes=4096, requestBufferBytes=8192;
 constexpr int maximumRedirects=5;
 const std::string repositoryBase="https://github.com/" VOLTRA_UPDATE_REPOSITORY;
 struct Lock {
@@ -57,6 +59,10 @@ struct Download {
     void close() { if(client) {esp_http_client_cleanup(client);client=nullptr;} }
     static esp_err_t event(esp_http_client_event_t* e) {
         auto* self=static_cast<Download*>(e->user_data);
+        if(e->event_id==HTTP_EVENT_DISCONNECTED && e->data) {
+            int tls=0,flags=0;const auto error=esp_tls_get_and_clear_last_error(static_cast<esp_tls_error_handle_t>(e->data),&tls,&flags);
+            if(error) Serial.printf("Update TLS: error=%x code=%x flags=%x\n",unsigned(error),unsigned(tls),unsigned(flags));
+        }
         if(e->event_id==HTTP_EVENT_ON_HEADER && e->header_key && e->header_value && strcasecmp(e->header_key,"Location")==0)
             self->location=e->header_value;
         return ESP_OK;
@@ -65,14 +71,29 @@ struct Download {
         for(int hop=0;hop<=maximumRedirects;++hop) {
             if(!permitted || !allowedUrl(url)) return false;
             close();location.clear();
+            // Resolve separately from the TLS connection window. Arduino's
+            // bounded IPv4 lookup populates the same lwIP cache used by ESP-TLS.
+            const auto hostEnd=url.find('/',8);const auto host=url.substr(8,hostEnd-8);
+            IPAddress resolved;
+            if(!WiFi.hostByName(host.c_str(),resolved) || !permitted) return false;
             esp_http_client_config_t config{};
             config.url=url.c_str();config.crt_bundle_attach=esp_crt_bundle_attach;
             config.timeout_ms=requestTimeoutMs;config.disable_auto_redirect=true;
             config.user_agent="Voltra-Remote/" VOLTRA_VERSION;
             config.event_handler=event;config.user_data=this;config.buffer_size=2048;
+            // GitHub's signed asset request target is longer than IDF's 512-byte
+            // default. This fits our 4096-byte URL cap plus ordinary headers.
+            config.buffer_size_tx=requestBufferBytes;
             client=esp_http_client_init(&config);
-            if(!client || esp_http_client_open(client,0)!=ESP_OK || esp_http_client_fetch_headers(client)<0) return false;
+            if(!client) return false;
+            const auto opened=esp_http_client_open(client,0);
+            if(opened!=ESP_OK) {
+                Serial.printf("Update HTTPS open: %s errno=%d heap=%u largest=%u\n",esp_err_to_name(opened),esp_http_client_get_errno(client),ESP.getFreeHeap(),heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+                return false;
+            }
+            if(esp_http_client_fetch_headers(client)<0) {Serial.println("Update HTTPS: response headers unavailable");return false;}
             const int code=esp_http_client_get_status_code(client);
+            Serial.printf("Update HTTPS: hop=%d status=%d\n",hop,code);
             if(code==200) return true;
             if((code!=301 && code!=302 && code!=303 && code!=307 && code!=308) || location.empty() || location.size()>4096) return false;
             if(location.front()=='/' && (location.size()==1 || location[1]!='/')) {
@@ -146,6 +167,7 @@ void Esp32FirmwareUpdate::launch(bool installing) {
     }
 }
 void Esp32FirmwareUpdate::run(bool installing) {
+    Serial.printf("Update network: signal=%d dBm\n",WiFi.RSSI());
     // SNTP is needed for TLS certificate validity. Failing to obtain time never
     // falls back to unauthenticated HTTP or an insecure TLS connection.
     constexpr time_t earliestValidTime=1735689600; // 2025-01-01 UTC

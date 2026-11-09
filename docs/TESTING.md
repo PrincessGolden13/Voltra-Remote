@@ -1,5 +1,11 @@
 # Validation status and pending tests
 
+November 9 live-update follow-up cases (new test code deferred): signed GitHub
+asset redirects longer than the IDF default send buffer; delayed DNS/TLS;
+connection reset with manual retry; startup Wi-Fi before BLE discovery;
+manual device selection while discovery is paused; stored bootstrap
+profile loaded from a public update without embedding private fields.
+
 November 9 update cases (new test code remains deferred): check once per boot;
 offline boot and unavailable SNTP/TLS; interruption by manual BLE connection;
 duplicate install taps; no install/load from startup, a reconnect or a check alone;

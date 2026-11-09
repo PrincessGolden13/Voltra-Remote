@@ -897,6 +897,10 @@ void UiController::tick() {
     if(updates_) {
         const auto phase=updates_->status().phase;
         app_.setMaintenance(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready);
+        // Saved Wi-Fi gets the shared radio first at boot. Discovery resumes
+        // after the bounded startup attempt/check; manual selection still works.
+        const bool savedWifi=wifi_ && wifi_->status().saved;
+        app_.setDiscoveryPaused((savedWifi && updates_->startupPending()) || updates_->status().busy());
     }
     app_.tick(now);
     if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());

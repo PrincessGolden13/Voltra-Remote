@@ -59,7 +59,7 @@ bool TrainingApplication::tryAutomaticSelection() {
     return select(it->id);
 }
 void TrainingApplication::scan() {
-    if (maintenance_ || connected() || connecting() || scanPending_) return;
+    if (maintenance_ || discoveryPaused_ || connected() || connecting() || scanPending_) return;
     const auto found=transport_.scan();
     scanPending_=transport_.scanInProgress();
     if (!scanPending_) refreshDiscovery(found);

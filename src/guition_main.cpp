@@ -49,6 +49,8 @@ voltra::UiController* ui=nullptr;
 void setup() {
     Serial.begin(115200);delay(1500);
     Serial.printf("VOLTRA Guition K5 - %s\n",bootMode.simulated() ? "SIMULATOR / no physical BLE" : "NORMAL / physical BLE");
+    const auto* running=esp_ota_get_running_partition();
+    Serial.printf("Firmware %s / slot %s\n",VOLTRA_VERSION,running ? running->label : "unknown");
     Serial.printf("Flash %u PSRAM %u\n",ESP.getFlashChipSize(),ESP.getPsramSize());
     if(!board.begin()) { Serial.println("Hardware init failed; no radio or machine commands");return; }
 #ifndef VOLTRA_SIMULATOR
@@ -62,6 +64,7 @@ void setup() {
     physicalSession=new voltra::PhysicalSession(transport,voltra::local::finishIdentity,voltra::local::helloIdentity);
 #else
     const auto bootstrap=voltra::guition::BootstrapStore::load();
+    Serial.println(bootstrap ? "Retained device-local bootstrap loaded" : "Generated client identity; pairing compatibility unverified");
     physicalSession=bootstrap ? new voltra::PhysicalSession(transport,bootstrap->finish,bootstrap->hello) :
         new voltra::PhysicalSession(transport,clientIdentity());
 #endif
@@ -82,7 +85,7 @@ void setup() {
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");
 #else
-    Serial.println("Shared UI started. Serial: d=devices, c=connect single available (no load command)");
+    Serial.println("Shared UI started. Serial: d=devices, c=connect single available, v=check updates (no load command)");
 #endif
     if(!bootMode.confirmStartup()) Serial.println("Firmware startup confirmation failed");
     if(!bootMode.begin()) Serial.println("Normal boot target unavailable; mode switching cannot be validated");
@@ -105,6 +108,7 @@ void loop() {
             for(const auto& d:application->devices()) if(d.online) {++online;target=d.id;}
             if(online==1 && application->select(target)) ui->navigate(voltra::Screen::Main);
         }
+        if(c=='v') updates.check(); // Read-only update check; never installs or controls resistance.
 #endif
         if(c=='d') {application->leave();ui->navigate(voltra::Screen::Devices);}
     }
@@ -112,9 +116,14 @@ void loop() {
 #ifndef VOLTRA_SIMULATOR
     static uint64_t diagnosticsAt=0;
     static std::string previousDiagnostics;
+    static std::string previousWifiDiagnostics;
     const auto now=board.nowMs();
     if(now-diagnosticsAt>=1000) {
         diagnosticsAt=now;
+        const auto ws=wifi.status();
+        const auto wifiSummary=std::string("Remote Wi-Fi: saved=")+std::to_string(ws.saved)+
+            " connected="+std::to_string(ws.connected)+" "+ws.message;
+        if(wifiSummary!=previousWifiDiagnostics) {Serial.println(wifiSummary.c_str());previousWifiDiagnostics=wifiSummary;}
         size_t online=0;for(const auto& d:application->devices()) if(d.online) ++online;
         const auto report=application->report();
         const auto summary=std::string("VOLTRA session: online=")+std::to_string(online)+

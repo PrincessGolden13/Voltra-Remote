@@ -27,10 +27,17 @@ publish an update until a maintainer releases a version.
   at most five redirects. The TLS clock uses `time.cloudflare.com` and
   `pool.ntp.org`; clock failure fails closed. HTTPS trusts the release maintainer;
   the checksum detects corruption, and is not an independent code signature.
-- Network work uses a separate FreeRTOS task (12 KiB stack), 10-second socket
-  timeouts, a 2 KiB manifest cap and 4 KiB download buffer. Firmware transfer has
-  a three-minute deadline. The updater performs no VOLTRA commands.
-- Automatic connection gives startup Wi-Fi a 15-second opportunity. A person can
+- Network work uses a separate FreeRTOS task (12 KiB stack), 30-second socket
+  timeouts, a 2 KiB manifest cap and 4 KiB download buffer. A bounded IPv4 DNS
+  lookup precedes each TLS connection. The 8 KiB HTTP transmit buffer fits
+  GitHub's signed asset URLs (capped at 4 KiB) and request headers; the IDF
+  default 512-byte buffer failed on the physical remote. Firmware transfer has
+  a three-minute deadline; clock synchronization has ten seconds. The updater
+  performs no VOLTRA commands.
+- Automatic connection gives startup Wi-Fi a 25-second opportunity. BLE discovery
+  pauses during that window when a network is saved, and during active checks,
+  to share the 2.4 GHz radio with Wi-Fi. Without saved Wi-Fi discovery starts
+  immediately. A person can
   select a VOLTRA immediately. A deferred boot check runs once Wi-Fi is ready
   while disconnected. Failed checks never trap the app or retry continuously;
   the manual button can retry. No Internet is needed for ordinary operation.
@@ -109,9 +116,11 @@ checks, with no publication permissions. Hardware cannot be validated by CI.
 CONFIRMED source design: compile-time simulator isolation, explicit install intent,
 TLS checks, separate A/B slots, current image retained until verification.
 Build/package/CI results are recorded in BASELINE.md after execution.
-UNVERIFIED until physical trials: startup HTTPS/time synchronization on the board,
-first USB migration, actual OTA transfer/reboot/rollback, power-cut recovery,
-mode switching across an OTA and retained local bootstrap connectivity.
+CONFIRMED on the owner's board: full backup and USB layout migration, normal
+startup, and both automatic power-on and manual HTTPS release checks with validated certificates and all
+GitHub redirects. Transient network failures leave manual retry available.
+UNVERIFIED until physical trials: actual OTA transfer/reboot/rollback, power-cut
+recovery, mode switching across an OTA and retained local bootstrap connectivity.
 No autonomous resistance tests or new automated test code were added.
 
 References: [Espressif IDF 4.4 OTA](https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32s3/api-reference/system/ota.html),

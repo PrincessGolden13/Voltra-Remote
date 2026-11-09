@@ -13,6 +13,7 @@ public:
     // Reserve an already-disconnected remote for a platform firmware install.
     // Never disconnects, unloads, or changes any confirmed machine state.
     void setMaintenance(bool active) { maintenance_=active; }
+    void setDiscoveryPaused(bool paused) { discoveryPaused_=paused; }
     bool select(const DeviceId&);
     bool tryAutomaticSelection();
     bool remembered(const DeviceId&) const;
@@ -75,6 +76,7 @@ private:
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
     bool automaticSelection_ = false;
     bool maintenance_ = false;
+    bool discoveryPaused_ = false;
     bool scanPending_ = false;
     std::optional<DeviceEntry> connectingDevice_;
     std::optional<int> weightIntent_, dropTarget_;

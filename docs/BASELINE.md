@@ -1,5 +1,49 @@
 # Foundation baseline
 
+## November 9 public source and firmware updates
+
+- CONFIRMED: public MIT repository `PrincessGolden13/Voltra-Remote`; existing
+  GitHub history retained without force-pushing. Release source is tag `v0.4.0`,
+  commit 3703aed. Both the main and tag GitHub Actions runs compiled both embedded
+  images and the offline core/packet inspector, validated the package, and passed.
+- CONFIRMED: Windows desktop simulator/packet inspector, public Normal, private
+  Normal migration and isolated Simulator builds pass. Public local image is
+  1,895,504 bytes; Simulator is 955,328 bytes. The GitHub Linux-built Normal image
+  is 1,895,440 bytes. Compilation timestamps/toolchains can change binary hashes.
+- CONFIRMED: public release v0.4.0 has the Normal OTA image, board manifest,
+  USB installer and relink object archive. An unauthenticated download through
+  the latest-release feed matched the manifest's length/SHA-256 and the image's
+  independent board/channel/version descriptor.
+- CONFIRMED: final link inspection found NimBLE/updater/IDF certificate bundle
+  in Normal and no mock transport; Simulator contains mocks and no NimBLE,
+  updater or certificate-bundle entry point. Both ignored local bootstrap arrays
+  were checked and absent from the public image. A credential-pattern/device-
+  address scan of 539 unique local/previous GitHub history blobs found no matches.
+- CONFIRMED: pinned Ryan validators pass (203 SDK vectors, generated 5..230 LB,
+  593 modifier packets, and pinned-SDK consistency). The existing packet inspector
+  accepts the documented inbound fixture and rejects its corrupted CRC. No new
+  automated test code or physical motor test was created.
+- CONFIRMED: offline Updates/About renders at 360 px and Updates at 480 px succeed;
+  the 360 px unavailable-service explanation was visually inspected. This is not
+  a physical update-screen interaction check.
+- Before edits, previous Normal/Simulator/partition binaries and SHA-256 hashes
+  were retained under ignored `build/pre-github-update`. Public/private packaging
+  is separate; private profiles, local images and flash backups are never releases.
+- CONFIRMED on COM3 after the owner verified all VOLTRAs unloaded: full 16 MiB
+  flash backup read and verified before USB layout migration; hashes verified
+  for every written image. Backup and manifest remain in ignored
+  `build/hardware-backups/guition-before-update-20261109T155743584094Z.*`.
+  Display/touch/encoder, physical BLE backend and shared UI initialized normally.
+- CONFIRMED on the owner's remote: manual HTTPS release check followed two
+  GitHub redirects and returned HTTP 200 / latest firmware. Hardware debugging
+  found the IDF default transmit buffer too small for signed asset URLs; v0.4.1
+  increases it to 8 KiB, separates DNS resolution, allows 30-second sockets and
+  pauses discovery during saved-network startup/checks. One connection reset was
+  recoverable with a manual check. No VOLTRA commands were used for these checks.
+- CONFIRMED after scheduling saved Wi-Fi before discovery: the remote connected
+  at startup, automatically checked GitHub, followed both redirects and reported
+  latest firmware. Evidence: ignored `build/update-startup-radio-boot.log`.
+
 ## October 17 Normal-mode build and upload
 
 - CONFIRMED: Windows simulator/packet inspector and both remote targets build.
