@@ -5,6 +5,7 @@ void UiController::openDebugDialog() {
     debugEvents_=EventLog::instance().snapshot();
     debugContext_="firmware=" VOLTRA_VERSION " screen="+std::to_string(int(page_))+" "+app_.diagnosticState();
     debugSubmitted_=false;editDirty_=returnAfterEdit_=false;
+    if(restButton_) lv_obj_add_flag(restButton_,LV_OBJ_FLAG_HIDDEN);
     debugDialog_=lv_obj_create(lv_layer_top());
     lv_obj_set_size(debugDialog_,width_,height_);lv_obj_center(debugDialog_);
     lv_obj_set_style_bg_color(debugDialog_,lv_color_hex(0x04080b),0);
@@ -43,6 +44,7 @@ void UiController::openDebugDialog() {
 void UiController::closeDebugDialog() {
     if(debugDialog_) lv_obj_delete_async(debugDialog_);
     debugDialog_=debugText_=debugYes_=debugUnload_=nullptr;
+    if(restButton_ && restNotice_) lv_obj_remove_flag(restButton_,LV_OBJ_FLAG_HIDDEN);
     debugEvents_.clear();debugContext_.clear();
     lv_indev_wait_release(touch_);
 }

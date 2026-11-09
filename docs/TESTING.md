@@ -6,6 +6,22 @@ November 9 bug follow-up: [source audit](PROTOCOL_AUDIT_2026_11_09.md),
 deferred. Physical Twin and the unrecognized void-lock state remain unresolved;
 no hardware or resistance tests were performed for these changes.
 
+November 9 rest completion follow-up: [behavior and hardware evidence](REST_ALERT_2026_11_09.md).
+The factory timer's ability to vibrate is owner-confirmed. New DRV2605/2605L
+hardware driving remains unverified on this remote. Check 20-second automatic
+stop, early acknowledgment, persistent Rest over across navigation, no hidden
+unload control, wake/dim/sleep, no boot buzz, Off defaults/reset, saved choices,
+no repeat for one rest, later-set rearming and temporary stale telemetry.
+CONFIRMED (cloud build): PlatformIO 6.1.19 / espressif32 6.12.0 builds of
+both guition_k5_release and guition_k5_offline pass for v0.4.2. CMake 3.31.6
+builds the offline core and packet inspector; the existing source-reported
+base-weight fixture passes framing/CRC inspection. package_release.py validates
+v0.4.2 (Normal image 1,899,568 bytes) and packages OTA, USB and relink assets.
+git diff --check passes. The baseline offline core at 3bf2b14 was also built.
+These checks do not execute the UI or prove motor output. Linux has no supported
+graphical simulator adapter in this repository; no visual pass is claimed.
+No new automated test code was added, per the master brief.
+
 November 9 live-update follow-up cases (new test code deferred): signed GitHub
 asset redirects longer than the IDF default send buffer; delayed DNS/TLS;
 connection reset with manual retry; startup Wi-Fi before BLE discovery;

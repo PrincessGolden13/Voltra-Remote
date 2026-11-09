@@ -1,4 +1,4 @@
-# Diagnostic reports (v0.4.2)
+# Diagnostic reports (v0.4.3)
 
 Hold a stationary finger anywhere on an awake screen for six seconds. The remote
 asks **Send last events for debugging?** Choose YES to save and send, or CLOSE / NO

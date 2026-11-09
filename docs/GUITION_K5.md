@@ -1,5 +1,10 @@
 # Guition K5 hardware validation
 
+November 9: the [rest completion alert](REST_ALERT_2026_11_09.md) adds a detected
+DRV2605/2605L driver. The owner confirmed factory-firmware vibration; the new
+driver still needs a physical trial. Older absence-of-vibration notes below
+describe the earlier firmware.
+
 October 17: [Normal/Simulator firmware](NORMAL_MODE_2026_10_17.md) supersedes the
 single-image offline build below. Build-Guition now builds both images; Flash-Guition
 uploads both and boots Normal. The second OTA region has its own verified factory

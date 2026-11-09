@@ -58,7 +58,7 @@ decoder. The Twin icon/grouped names already exist in the simulator, but physica
 Twin routing, peer safety and combined readback were never implemented.
 
 This is an implementation gap, not proof that Twin is impossible or wholly
-undocumented. v0.4.2 does not claim to fix or enable Twin control. Its reports
+undocumented. v0.4.3 does not claim to fix or enable Twin control. Its reports
 capture the two raw coworker status fields and paired-ID presence without storing
 the identifier. Future evidence must establish live role, peer readiness/freshness,
 combined command/readback units and loss-of-peer behavior before enabling control.
@@ -72,7 +72,7 @@ calls it a uint32 lock-type field, without bit definitions. EP_VOID_LOCK_MASK
 neither supplies the missing meaning of the current bits.
 
 INFERRED: a different legitimate value or a stale report can explain the user's
-failure. It is not established which occurred. v0.4.2 distinguishes missing/stale
+failure. It is not established which occurred. v0.4.3 distinguishes missing/stale
 status from an unrecognized numeric value and captures state values/ages in the
 approved report. It does **not** change the accepted lock bits, write a lock mask,
 retry loading or bypass mount/cable/peer readiness. The reported loading defect
