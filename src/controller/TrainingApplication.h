@@ -10,6 +10,9 @@ public:
     TrainingApplication(BleTransport&, VoltraController&, ControlSession&, DeviceMemory* = nullptr, std::vector<DeviceEntry> knownDevices = {}, bool automaticSelection = false);
     void tick(uint64_t now);
     void scan();
+    // Reserve an already-disconnected remote for a platform firmware install.
+    // Never disconnects, unloads, or changes any confirmed machine state.
+    void setMaintenance(bool active) { maintenance_=active; }
     bool select(const DeviceId&);
     bool tryAutomaticSelection();
     bool remembered(const DeviceId&) const;
@@ -71,6 +74,7 @@ private:
     DropSetProgress dropProgress_;
     bool scanned_ = false, pending_ = false, requestedLoad_ = false;
     bool automaticSelection_ = false;
+    bool maintenance_ = false;
     bool scanPending_ = false;
     std::optional<DeviceEntry> connectingDevice_;
     std::optional<int> weightIntent_, dropTarget_;

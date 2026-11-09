@@ -4,6 +4,7 @@
 #include "hardware/interfaces/HardwarePlatform.h"
 #include "RotaryAdjustment.h"
 #include "network/WifiSetup.h"
+#include "update/FirmwareUpdate.h"
 #include <lvgl.h>
 #include <memory>
 #include <vector>
@@ -13,7 +14,7 @@ namespace voltra {
 enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice };
 class UiController {
 public:
-    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr, WifiSetup* = nullptr);
+    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr, WifiSetup* = nullptr, FirmwareUpdate* = nullptr);
     ~UiController();
     void tick();
     void readTouch();
@@ -24,6 +25,8 @@ private:
     TrainingApplication& app_;
     RuntimeMode* runtime_ = nullptr;
     WifiSetup* wifi_ = nullptr;
+    FirmwareUpdate* updates_ = nullptr;
+    bool updatePromptShown_=false;
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;
     DeviceId forgetId_;
@@ -84,6 +87,7 @@ private:
     lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
     lv_obj_t* holdBar_ = nullptr;
     lv_obj_t *wifiBody_=nullptr,*wifiButton_=nullptr;
+    lv_obj_t *updateBody_=nullptr,*updateCheck_=nullptr,*updateInstall_=nullptr;
     lv_obj_t* settingsValues_[4]{};
     lv_obj_t* liveValues_[3]{};
     uint32_t accent() const;

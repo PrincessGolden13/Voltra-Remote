@@ -1,8 +1,9 @@
-# Normal and simulator images have separate link graphs and app partitions.
-# Upload tooling requires verified recovery copies for both occupied regions.
+# Layout 2 requires an initial USB install with a full-flash recovery backup.
+# Normal A/B update slots; Simulator remains a separate link graph and slot.
 # Name, Type, SubType, Offset, Size, Flags
 nvs, data, nvs, 0x9000, 0x5000,
 otadata, data, ota, 0xe000, 0x2000,
-normal, app, ota_0, 0x10000, 0x1d0000,
-coredump, data, coredump, 0x1e0000, 0x20000,
-simulator, app, ota_1, 0x210000, 0x1d0000,
+normal, app, ota_0, 0x10000, 0x300000,
+normal_b, app, ota_1, 0x310000, 0x300000,
+simulator, app, ota_2, 0x610000, 0x200000,
+coredump, data, coredump, 0x810000, 0x20000,

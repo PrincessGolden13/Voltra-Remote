@@ -10,8 +10,10 @@
 #include "ble/NimBleTransport.h"
 #include "protocol/PhysicalSession.h"
 #include "network/Esp32WifiSetup.h"
+#include "update/Esp32FirmwareUpdate.h"
+#include "hardware/boards/guition_k5/BootstrapStore.h"
 #include <esp_system.h>
-#if __has_include("LocalConfig.h")
+#if !defined(VOLTRA_PUBLIC_BUILD) && __has_include("LocalConfig.h")
 #include "LocalConfig.h" // Ignored, local-only diagnostic identities; never Git.
 #endif
 #endif
@@ -36,6 +38,7 @@ std::array<uint8_t,16> clientIdentity() {
 }
 voltra::PhysicalSession* physicalSession=nullptr;
 voltra::Esp32WifiSetup wifi;
+voltra::Esp32FirmwareUpdate updates;
 #endif
 voltra::guition::ConfigurationStore configuration;
 voltra::guition::DeviceStore devices(bootMode.simulated());
@@ -48,15 +51,19 @@ void setup() {
     Serial.printf("VOLTRA Guition K5 - %s\n",bootMode.simulated() ? "SIMULATOR / no physical BLE" : "NORMAL / physical BLE");
     Serial.printf("Flash %u PSRAM %u\n",ESP.getFlashChipSize(),ESP.getPsramSize());
     if(!board.begin()) { Serial.println("Hardware init failed; no radio or machine commands");return; }
-    if(!bootMode.begin()) { Serial.println("Normal boot target unavailable; mode switching cannot be validated"); }
 #ifndef VOLTRA_SIMULATOR
     transport.onDiagnostic([](const std::string& message){Serial.printf("%llu %s\n",static_cast<unsigned long long>(board.nowMs()),message.c_str());});
     if(!transport.begin()) {Serial.println("BLE init failed");return;}
 #if defined(VOLTRA_LOCAL_BOOTSTRAP_PROFILE) && VOLTRA_LOCAL_BOOTSTRAP_PROFILE
     Serial.println("Local bootstrap identity; load requires explicit input and fresh readiness");
+    if(!voltra::guition::BootstrapStore::save({voltra::local::finishIdentity,voltra::local::helloIdentity})) {
+        Serial.println("Could not retain local bootstrap for firmware updates");return;
+    }
     physicalSession=new voltra::PhysicalSession(transport,voltra::local::finishIdentity,voltra::local::helloIdentity);
 #else
-    physicalSession=new voltra::PhysicalSession(transport,clientIdentity());
+    const auto bootstrap=voltra::guition::BootstrapStore::load();
+    physicalSession=bootstrap ? new voltra::PhysicalSession(transport,bootstrap->finish,bootstrap->hello) :
+        new voltra::PhysicalSession(transport,clientIdentity());
 #endif
     auto& session=*physicalSession;
 #endif
@@ -70,13 +77,15 @@ void setup() {
 #ifdef VOLTRA_SIMULATOR
     ui=new voltra::UiController(board,*application,&configuration,&bootMode);
 #else
-    wifi.begin();ui=new voltra::UiController(board,*application,&configuration,&bootMode,&wifi);
+    wifi.begin();updates.begin();ui=new voltra::UiController(board,*application,&configuration,&bootMode,&wifi,&updates);
 #endif
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");
 #else
     Serial.println("Shared UI started. Serial: d=devices, c=connect single available (no load command)");
 #endif
+    if(!bootMode.confirmStartup()) Serial.println("Firmware startup confirmation failed");
+    if(!bootMode.begin()) Serial.println("Normal boot target unavailable; mode switching cannot be validated");
 }
 void loop() {
     if(!ui) {delay(100);return;}

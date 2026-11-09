@@ -50,7 +50,7 @@ bool TrainingApplication::forget(const DeviceId& id) {
     return true;
 }
 bool TrainingApplication::tryAutomaticSelection() {
-    if (!automaticSelection_ || !scanned_ || scanPending_ || connected() || connecting()) return false;
+    if (maintenance_ || !automaticSelection_ || !scanned_ || scanPending_ || connected() || connecting()) return false;
     const auto count = std::count_if(devices_.begin(), devices_.end(), [](const auto& d) { return d.online; });
     if (!count) return false; // Keep discovering when the remote starts first.
     automaticSelection_ = false; // One startup attempt; never fight manual navigation.
@@ -59,7 +59,7 @@ bool TrainingApplication::tryAutomaticSelection() {
     return select(it->id);
 }
 void TrainingApplication::scan() {
-    if (connected() || connecting() || scanPending_) return;
+    if (maintenance_ || connected() || connecting() || scanPending_) return;
     const auto found=transport_.scan();
     scanPending_=transport_.scanInProgress();
     if (!scanPending_) refreshDiscovery(found);
@@ -87,6 +87,7 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
     }
 }
 bool TrainingApplication::select(const DeviceId& id) {
+    if(maintenance_) return false;
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && d.online; });
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
     const DeviceEntry chosen = *it;

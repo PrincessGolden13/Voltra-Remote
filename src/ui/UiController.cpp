@@ -177,7 +177,7 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
 
 }
 
-UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime, WifiSetup* wifi) : hardware_(h), app_(app), runtime_(runtime), wifi_(wifi), store_(store) {
+UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime, WifiSetup* wifi, FirmwareUpdate* updates) : hardware_(h), app_(app), runtime_(runtime), wifi_(wifi), updates_(updates), store_(store) {
     if (store_) config_ = store_->load();
     if (!h.capabilities().coreInputsValid()) throw std::runtime_error("Unsupported display/input target");
     lv_init(); width_ = h.display().width(); height_ = h.display().height();
@@ -256,6 +256,12 @@ void UiController::navigate(Screen page) {
     if (page == Screen::Drops) { draftDrops_ = app_.drops(); dropField_ = 1; }
 }
 void UiController::act(int action, const std::string& id, bool held) {
+    // Installation reserves the disconnected remote until failure/restart.
+    // Unload is never gated, including if connection state unexpectedly changes.
+    if(updates_ && action!=Unload) {
+        const auto phase=updates_->status().phase;
+        if(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready) return;
+    }
     activityAt_ = hardware_.nowMs();
     rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
@@ -310,6 +316,11 @@ void UiController::act(int action, const std::string& id, bool held) {
         navigate(Screen::Main); return;
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
+    if(action==CheckUpdates) {if(updates_) updates_->check();return;}
+    if(action==InstallUpdate) {
+        if(updates_ && !app_.connected() && !app_.connecting() && !app_.pending() && updates_->install()) app_.setMaintenance(true);
+        return;
+    }
     if (action == CloseSettings) { if(page_==Screen::Wifi && wifi_) wifi_->stop();saveConfiguration(); navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return; }
     if(action==WifiSetupToggle) {
         if(wifi_ && !app_.connected() && !app_.connecting()) {
@@ -392,6 +403,7 @@ void UiController::build() {
     presetTile_ = presetValue_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
     wifiBody_=wifiButton_=nullptr;
+    updateBody_=updateCheck_=updateInstall_=nullptr;
     for (auto& item : settingsValues_) item = nullptr;
     for (auto& item : liveValues_) item = nullptr;
     for (auto& item : unitChoices_) item = nullptr;
@@ -882,8 +894,20 @@ void UiController::edited() {
 }
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
+    if(updates_) {
+        const auto phase=updates_->status().phase;
+        app_.setMaintenance(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready);
+    }
     app_.tick(now);
     if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());
+    if(updates_) {
+        const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
+        updates_->tick(now,w.connected && !w.setupActive,!app_.connected() && !app_.connecting() && !app_.pending());
+        if(updates_->status().phase==UpdatePhase::Available && !updatePromptShown_ &&
+           !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
+            updatePromptShown_=true;navigate(Screen::Updates);
+        }
+    }
     if(app_.dropConfirmationRevision()!=dropCueRevision_) {
         dropCueRevision_=app_.dropConfirmationRevision();
         if(app_.fresh() && app_.confirmedDropWeight()) {
@@ -894,7 +918,8 @@ void UiController::tick() {
     rememberModifiers();
     if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting()) { app_.leave(true); navigate(Screen::Devices); }
     if (page_ == Screen::Devices) {
-        if (!touchDown_ && !modeGestureUntil_ && !rebuild_ && app_.tryAutomaticSelection()) navigate(Screen::Main);
+        if (!touchDown_ && !modeGestureUntil_ && !rebuild_ &&
+            (!updates_ || (!updates_->startupPending() && !updates_->status().busy())) && app_.tryAutomaticSelection()) navigate(Screen::Main);
         std::string signature;
         for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+(d.online ? "1" : "0")+(app_.remembered(d.id) ? "S" : "D");
         // Do not destroy a tile underneath a held finger when a scan completes.
@@ -945,7 +970,7 @@ void UiController::tick() {
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
     }
     // Keep unload visible while loaded, pending, armed, or connected with unknown state.
-    const bool mustStayAwake = app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending());
+    const bool mustStayAwake = (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
     if (mustStayAwake) activityAt_ = now;
     sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && now-activityAt_ >= uint64_t(config_.sleepMinutes)*60000;
     dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && now-activityAt_ >= uint64_t(config_.dimMinutes)*60000;

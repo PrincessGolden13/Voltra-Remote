@@ -153,15 +153,33 @@ void UiController::buildExtra() {
         wifiBody_=label(face_,"",width_*76/100,height_*28/100,medium);
         if(wifi_) wifiButton_=action("SET UP WI-FI",23,78,54,10,WifiSetupToggle);
         status_=label(face_,"",width_*78/100,height_*69/100);
+    } else if(page_==Screen::Updates) {
+        updateBody_=label(face_,"",width_*74/100,height_*31/100,medium);
+        if(updates_) {
+            updateCheck_=action("CHECK FOR UPDATES",19,66,62,10,CheckUpdates);
+            updateInstall_=action("INSTALL & RESTART",19,79,62,10,InstallUpdate);
+        }
     } else {
-        std::string body = page_ == Screen::Updates ? "Check for updates\n\nNo firmware update service\nis configured for this target.\n\nNo update installed." :
-            std::string("VOLTRA Remote 0.3.0\n")+(runtime_ && !runtime_->simulated() ? "Normal / Bluetooth" : "Simulator")+"\n" __DATE__ "\n\n"+std::to_string(width_)+" x "+std::to_string(height_)+"\nShared LVGL application";
+        std::string body = std::string("VOLTRA Remote " VOLTRA_VERSION "\n")+(runtime_ && !runtime_->simulated() ? "Normal / Bluetooth" : "Simulator")+"\n" __DATE__ "\n\n"+std::to_string(width_)+" x "+std::to_string(height_)+"\nShared LVGL application";
         label(face_,body,width_*74/100,height_*33/100,medium);
     }
     message_=label(face_,"",width_*75/100,height_*88/100);
 }
 void UiController::updateExtra() {
     const auto r=app_.report();
+    if(page_==Screen::Updates) {
+        if(!updates_) text(updateBody_,"Firmware " VOLTRA_VERSION "\n\nWireless updates are available\nin Normal mode on\nthe physical remote.");
+        else {
+            const auto u=updates_->status();
+            std::string body="Installed: " VOLTRA_VERSION;
+            if(!u.version.empty()) body+="\nLatest: "+u.version;
+            body+="\n\n"+u.message;
+            if(u.phase==UpdatePhase::Installing) body+="\n"+std::to_string(u.percent)+"%";
+            text(updateBody_,body);
+            if(u.busy()) lv_obj_add_state(updateCheck_,LV_STATE_DISABLED);else lv_obj_remove_state(updateCheck_,LV_STATE_DISABLED);
+            if(u.phase==UpdatePhase::Available) lv_obj_remove_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if(page_==Screen::Wifi) {
         if(!wifi_) text(wifiBody_,"Phone setup is available\nin Normal mode on\nthe physical remote.");
         else {

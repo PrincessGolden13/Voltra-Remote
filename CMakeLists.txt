@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(voltra_remote LANGUAGES C CXX)
+file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION" VOLTRA_VERSION LIMIT_COUNT 1)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -21,7 +22,7 @@ add_library(voltra_core
     src/controller/TrainingApplication.cpp)
 target_include_directories(voltra_core PUBLIC src)
 # Every CMake artifact is offline. Embedded targets use separate PlatformIO sources.
-target_compile_definitions(voltra_core PUBLIC VOLTRA_OFFLINE=1)
+target_compile_definitions(voltra_core PUBLIC VOLTRA_OFFLINE=1 VOLTRA_VERSION="${VOLTRA_VERSION}")
 if(MSVC)
     target_compile_options(voltra_core PRIVATE /W4)
 else()
