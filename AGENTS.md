@@ -49,3 +49,15 @@ and `docs/FIRMWARE_UPDATES.md`. Builds and releases must use the public environm
 - Keep secrets and unnecessary device identifiers out of Git. Use ignored local
   configuration. Group commits logically; no destructive Git operations.
 - Name and document necessary constants, units, provenance and tunable policies.
+
+## Standing publication preference (November 9, 2026)
+
+The owner explicitly requests publishing completed changes by default so they can
+check them on the physical remote from their phone. After required checks pass,
+commit/merge the changes, prepare the next version and release notes, push its
+matching tag, follow the firmware workflow, and publish the validated release as
+the latest ordinary release. Do not stop at a PR or draft release or request
+routine publication approval again. Report the published version and installation
+steps, and identify physical checks that remain unverified. Installation remains
+the owner's explicit action on the remote. If publishing is blocked, explain the
+specific blocker and continue all independent authorized work.
