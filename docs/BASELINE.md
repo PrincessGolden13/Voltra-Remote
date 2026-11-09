@@ -2,6 +2,25 @@
 
 ## November 9 public source and firmware updates
 
+- CONFIRMED v0.4.1 (source 910ad9c): both GitHub main/tag builds and release
+  packaging passed; Windows public Normal, embedded Simulator and desktop builds
+  passed. Public Linux firmware is 1,897,952 bytes; local public firmware is
+  1,898,016 bytes and Simulator is 955,520 bytes. Final ELF checks preserve
+  physical/simulator isolation; neither private bootstrap field appears in the
+  unauthenticated GitHub download. Manifest SHA-256 and image identity match.
+- CONFIRMED on the owner's remote: after the owner's explicit INSTALL & RESTART
+  tap, firmware downloaded from GitHub to the other Normal slot, passed hash/image
+  checks and rebooted as `Firmware 0.4.1 / slot normal_b`. Display, input, BLE
+  backend and shared UI initialized; the retained device-local bootstrap loaded,
+  saved Wi-Fi reconnected and the automatic startup update check began. Evidence:
+  ignored `build/update-v041-ota.log`. No USB flash was used for this upgrade.
+  The first post-update check encountered a DNS failure after reaching GitHub;
+  this did not affect the completed installation or saved configuration.
+- UNVERIFIED: power-cut rollback/recovery, Simulator return after this OTA, and
+  live VOLTRA pairing/control after the public update. Loading the saved profile
+  is confirmed; it does not by itself prove physical connectivity. No motor test
+  was performed. The full pre-migration backup remains private and retained.
+
 - CONFIRMED: public MIT repository `PrincessGolden13/Voltra-Remote`; existing
   GitHub history retained without force-pushing. Release source is tag `v0.4.0`,
   commit 3703aed. Both the main and tag GitHub Actions runs compiled both embedded

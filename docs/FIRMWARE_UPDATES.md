@@ -116,11 +116,13 @@ checks, with no publication permissions. Hardware cannot be validated by CI.
 CONFIRMED source design: compile-time simulator isolation, explicit install intent,
 TLS checks, separate A/B slots, current image retained until verification.
 Build/package/CI results are recorded in BASELINE.md after execution.
-CONFIRMED on the owner's board: full backup and USB layout migration, normal
-startup, and both automatic power-on and manual HTTPS release checks with validated certificates and all
-GitHub redirects. Transient network failures leave manual retry available.
-UNVERIFIED until physical trials: actual OTA transfer/reboot/rollback, power-cut
-recovery, mode switching across an OTA and retained local bootstrap connectivity.
+CONFIRMED on the owner's board: full backup and USB layout migration, automatic
+power-on and manual HTTPS release checks, and explicit installation of public
+v0.4.1 from GitHub into Normal B. The updated firmware booted, loaded the retained
+bootstrap profile and reconnected saved Wi-Fi. Transient network failures leave
+manual retry available. See BASELINE.md for build and physical evidence.
+UNVERIFIED until physical trials: power-cut rollback/recovery, mode switching
+across an OTA and live VOLTRA connectivity using the retained bootstrap.
 No autonomous resistance tests or new automated test code were added.
 
 References: [Espressif IDF 4.4 OTA](https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32s3/api-reference/system/ota.html),

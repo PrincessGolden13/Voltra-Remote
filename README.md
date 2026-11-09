@@ -95,6 +95,9 @@ is intentionally blocked. Select an explicit supported environment.
 
 ## Engineering documentation
 
+[Phone and Codex Cloud workflow](docs/CLOUD_DEVELOPMENT.md) explains how to report
+a bug, prepare a fix, publish firmware and update the remote without a running PC.
+
 [Architecture](docs/ARCHITECTURE.md), [hardware compatibility](docs/HARDWARE_COMPATIBILITY.md),
 [safety](docs/SAFETY.md), [protocol notes](docs/PROTOCOL_NOTES.md),
 [Twin evidence](docs/TWIN_MODE.md), [upstream audit](docs/UPSTREAM_AUDIT.md),

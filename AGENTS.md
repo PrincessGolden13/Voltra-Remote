@@ -5,6 +5,8 @@ debugging, documentation, builds and Git; request human help only for inaccessib
 information, permissions or physical observations/actions.
 Read `docs/APP_FLOW.md` for the user's later five-screen specification and the
 documented precedence over the original setup milestone.
+For cloud/phone development and firmware publishing, read `docs/CLOUD_DEVELOPMENT.md`
+and `docs/FIRMWARE_UPDATES.md`. Builds and releases must use the public environment.
 
 - Core scope: Weight Training controls. Device settings, cable length, DTR,
   isokinetic testing and additional modes are deferred scope.
