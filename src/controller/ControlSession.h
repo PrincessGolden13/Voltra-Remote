@@ -20,6 +20,7 @@ public:
     virtual bool busy() const { return false; }
     virtual bool commandFailed() const { return false; }
     virtual const std::string& status() const { static const std::string empty; return empty; }
+    virtual std::string diagnosticState() const { return status(); }
     virtual SessionReadiness readiness() const = 0;
     virtual TransportResult setWeight(uint16_t pounds) = 0;
     virtual TransportResult setLoaded(bool loaded) = 0;

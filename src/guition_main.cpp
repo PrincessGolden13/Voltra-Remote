@@ -11,6 +11,7 @@
 #include "protocol/PhysicalSession.h"
 #include "network/Esp32WifiSetup.h"
 #include "update/Esp32FirmwareUpdate.h"
+#include "diagnostics/Esp32DebugReports.h"
 #include "hardware/boards/guition_k5/BootstrapStore.h"
 #include <esp_system.h>
 #if !defined(VOLTRA_PUBLIC_BUILD) && __has_include("LocalConfig.h")
@@ -39,6 +40,7 @@ std::array<uint8_t,16> clientIdentity() {
 voltra::PhysicalSession* physicalSession=nullptr;
 voltra::Esp32WifiSetup wifi;
 voltra::Esp32FirmwareUpdate updates;
+voltra::Esp32DebugReports reports;
 #endif
 voltra::guition::ConfigurationStore configuration;
 voltra::guition::DeviceStore devices(bootMode.simulated());
@@ -54,7 +56,14 @@ void setup() {
     Serial.printf("Flash %u PSRAM %u\n",ESP.getFlashChipSize(),ESP.getPsramSize());
     if(!board.begin()) { Serial.println("Hardware init failed; no radio or machine commands");return; }
 #ifndef VOLTRA_SIMULATOR
-    transport.onDiagnostic([](const std::string& message){Serial.printf("%llu %s\n",static_cast<unsigned long long>(board.nowMs()),message.c_str());});
+    transport.onDiagnostic([](const std::string& message){
+        Serial.printf("%llu %s\n",static_cast<unsigned long long>(board.nowMs()),message.c_str());
+        // Keep semantic link events. Repeated scan/service/packet dumps would
+        // evict the user's actions, and raw payloads may contain identities.
+        if(message.find("BLE link") == 0 || message.find("BLE connect") == 0 || message.find("BLE disconnect") == 0 ||
+           message.find("BLE establishment") == 0 || message.find("BLE target RSSI") == 0)
+            voltra::diagnostic(message);
+    });
     if(!transport.begin()) {Serial.println("BLE init failed");return;}
 #if defined(VOLTRA_LOCAL_BOOTSTRAP_PROFILE) && VOLTRA_LOCAL_BOOTSTRAP_PROFILE
     Serial.println("Local bootstrap identity; load requires explicit input and fresh readiness");
@@ -80,7 +89,7 @@ void setup() {
 #ifdef VOLTRA_SIMULATOR
     ui=new voltra::UiController(board,*application,&configuration,&bootMode);
 #else
-    wifi.begin();updates.begin();ui=new voltra::UiController(board,*application,&configuration,&bootMode,&wifi,&updates);
+    wifi.begin();updates.begin();reports.begin();ui=new voltra::UiController(board,*application,&configuration,&bootMode,&wifi,&updates,&reports);
 #endif
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");

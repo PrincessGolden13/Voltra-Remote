@@ -23,6 +23,7 @@ public:
     bool connecting() const { return controller_.connecting(); }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
+    std::string diagnosticState() const { return session_.diagnosticState(); }
     TrainingReport report() const { return session_.trainingReport(); }
     // Presentation clock; prefer machine elapsed time, otherwise use its actual
     // set-close event. Never put locally elapsed seconds into TrainingReport.

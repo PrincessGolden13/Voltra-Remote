@@ -1,5 +1,11 @@
 # Existing Twin pairs
 
+November 9: [the expanded source audit](PROTOCOL_AUDIT_2026_11_09.md) covers all
+seven supplied firmware/protocol/hardware repositories and SDK/Android history.
+Twin parameters and master ownership are documented; a live direct-BLE decoder
+is still absent from the reviewed implementations. Physical Twin remains
+unsupported. v0.4.3 adds consented status reports, not inferred Twin controls.
+
 October 17 correction: 2.x is 230 LB per unit / 460 LB combined, as confirmed
 by the user. The older 400 LB example is not universal. Effective combined
 reports take precedence over the unit-aware [firmware fallback](WEIGHT_LIMITS.md).
@@ -36,8 +42,9 @@ capture. That value alone is not a verified single-device/Twin-state decoder.
 
 ## Working hypothesis and unresolved questions
 
-INFERRED (user's preferred model, not yet corroborated): send a combined user-
-facing resistance to the appropriate connected VOLTRA, likely the master, and
+CONFIRMED at the official Cortex API level (November 9): the master owns active
+Twin control. Direct-BLE combined user-facing resistance encoding/readback remains
+UNVERIFIED. Route through an evidenced master and
 let the pair coordinate internally. Do not halve values, duplicate commands,
 assume two BLE links, or double the limit.
 

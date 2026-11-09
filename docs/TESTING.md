@@ -1,5 +1,11 @@
 # Validation status and pending tests
 
+November 9 bug follow-up: [source audit](PROTOCOL_AUDIT_2026_11_09.md),
+[implementation/validation record](BUG_FIXES_2026_11_09.md) and
+[diagnostic gesture/report cases](DEBUG_REPORTS.md). New test source remains
+deferred. Physical Twin and the unrecognized void-lock state remain unresolved;
+no hardware or resistance tests were performed for these changes.
+
 November 9 rest completion follow-up: [behavior and hardware evidence](REST_ALERT_2026_11_09.md).
 The factory timer's ability to vibrate is owner-confirmed. New DRV2605/2605L
 hardware driving remains unverified on this remote. Check 20-second automatic
