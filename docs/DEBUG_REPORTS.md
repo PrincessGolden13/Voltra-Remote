@@ -26,7 +26,8 @@ hold again and select YES to retry. Simulator delivery is disabled.
 On receipt, a short reference code appears. Include that code and a description
 of the symptom in the bug report. Delivery does not send an email. The inbox is
 hosted with Sites at `https://voltra-remote-diagnostics.darkheath.chatgpt.site`;
-its deployment/access verification is recorded in the November 9 change notes.
+its production receipt and private owner access were verified on November 9
+after the owner approved the public submission URL. See the dated change notes.
 
 ## Inbox and access
 
