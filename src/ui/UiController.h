@@ -81,7 +81,12 @@ private:
     uint64_t activityAt_ = 0;
     bool sleeping_ = false, dimmed_ = false;
     bool wakeTouch_ = false;
-    uint64_t alertUntil_ = 0;
+    static constexpr uint32_t restBuzzMs = 20000; // User-requested maximum alert duration.
+    bool restNotice_ = false, restBuzzing_ = false;
+    uint64_t restBuzzUntil_ = 0;
+    lv_obj_t* restButton_ = nullptr;
+    void dismissRestAlert();
+    void updateRestAlert(uint64_t now);
     uint64_t dropCueRevision_=0, dropCueUntil_=0;
     Preset saveDraft_;
     lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;

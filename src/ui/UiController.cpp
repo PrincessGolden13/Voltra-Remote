@@ -230,7 +230,51 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
     });
     lastTickMs_ = hardware_.nowMs();
 }
-UiController::~UiController() { lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
+UiController::~UiController() { hardware_.restAlert(0); lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
+void UiController::dismissRestAlert() {
+    hardware_.restAlert(0);
+    restBuzzing_ = restNotice_ = false;
+    if(restButton_) lv_obj_add_flag(restButton_,LV_OBJ_FLAG_HIDDEN);
+    activityAt_ = hardware_.nowMs();
+}
+void UiController::updateRestAlert(uint64_t now) {
+    const auto rest=app_.restSeconds();
+    if(app_.fresh() && (!rest || *rest==0)) restAlerted_=false;
+    if(config_.restAlertSeconds==0) {
+        if(restNotice_) dismissRestAlert();
+        return;
+    }
+    if(rest && *rest>=config_.restAlertSeconds && !restAlerted_) {
+        restAlerted_=true;
+        // An unacknowledged notice stays visible; never extend its buzz deadline.
+        if(!restNotice_) {
+            restNotice_=restBuzzing_=true;restBuzzUntil_=now+restBuzzMs;
+            hardware_.restAlert(restBuzzMs);
+            // Separate top-layer button survives screen rebuilds. It covers only
+            // the upper banner, leaving the weight/unload controls accessible.
+            if(!restButton_) {
+                restButton_=lv_button_create(lv_display_get_layer_top(display_));
+                lv_obj_set_size(restButton_,width_*56/100,height_*13/100);
+                lv_obj_set_pos(restButton_,width_*22/100,height_*8/100);
+                lv_obj_remove_flag(restButton_,LV_OBJ_FLAG_SCROLLABLE);
+                lv_obj_set_style_radius(restButton_,LV_RADIUS_CIRCLE,0);
+                lv_obj_set_style_bg_color(restButton_,lv_color_hex(amber),0);
+                auto* caption=label(restButton_,"Rest over",width_*52/100,0);
+                color(caption,bg);lv_obj_center(caption);
+                lv_obj_add_event_cb(restButton_,[](lv_event_t* e) {
+                    auto* ui=static_cast<UiController*>(lv_event_get_user_data(e));
+                    if(!ui->touchMoved_) ui->dismissRestAlert();
+                },LV_EVENT_CLICKED,this);
+            }
+            if(touchDown_) lv_indev_wait_release(touch_);
+            lv_obj_remove_flag(restButton_,LV_OBJ_FLAG_HIDDEN);
+            activityAt_=now;sleeping_=dimmed_=false;
+        }
+    }
+    if(restBuzzing_ && now>=restBuzzUntil_) {
+        hardware_.restAlert(0);restBuzzing_=false;
+    }
+}
 void UiController::readTouch() {
     const auto now=hardware_.nowMs();lv_tick_inc(uint32_t(now-lastTickMs_));lastTickMs_=now;
     lv_indev_read(touch_);
@@ -952,12 +996,7 @@ void UiController::tick() {
     if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_])))) activePreset_ = -1;
     if (app_.fresh() && r.loaded && r.setActive.value_or(true) && r.telemetryValid && r.repsStarted.value_or(false) && page_ == Screen::Main) navigate(Screen::Live);
     if (app_.fresh() && (!r.loaded || r.setActive==false) && page_ == Screen::Live) navigate(Screen::Main);
-    const auto rest=app_.restSeconds();
-    if (!rest || *rest == 0) restAlerted_ = false;
-    if (rest && config_.restAlertSeconds > 0 && *rest >= config_.restAlertSeconds && !restAlerted_) {
-        hardware_.restAlert(2000); restAlerted_ = true; alertUntil_ = now+2000;
-        activityAt_=now;sleeping_=false; // Make the visual fallback visible after dim/sleep.
-    }
+    updateRestAlert(now);
     if (rebuild_) build();
     const int delta = hardware_.rotary().getDelta();
     const bool pressed = hardware_.rotary().wasPressed();
@@ -974,14 +1013,13 @@ void UiController::tick() {
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
     }
     // Keep unload visible while loaded, pending, armed, or connected with unknown state.
-    const bool mustStayAwake = (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
+    const bool mustStayAwake = restNotice_ || (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
     if (mustStayAwake) activityAt_ = now;
     sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && now-activityAt_ >= uint64_t(config_.sleepMinutes)*60000;
     dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && now-activityAt_ >= uint64_t(config_.dimMinutes)*60000;
     hardware_.setDisplayPower(sleeping_,dimmed_);
     style::set_opa(face_,sleeping_ ? 0 : dimmed_ ? 65 : 255,0);
     update();
-    if (now < alertUntil_ && page_ == Screen::Main) value(message_,"Rest alert");
     lv_timer_handler();
     // Navigation is deferred until after input callbacks return.
     if (rebuild_) { build(); update(); }

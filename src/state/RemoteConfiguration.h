@@ -23,7 +23,8 @@ inline bool samePreset(const Preset& a, const Preset& b) {
 }
 struct RemoteConfiguration {
     int theme = 7; // Teal; indices follow the settings picker.
-    int restAlertSeconds = 0, dimMinutes = 15, sleepMinutes = 20;
+    int restAlertSeconds = 0; // Off on first use and factory reset; preserve explicit saved choices.
+    int dimMinutes = 15, sleepMinutes = 20;
     std::vector<Preset> presets;
 };
 class RemoteConfigurationStore {
