@@ -3,6 +3,7 @@
 #include "FrameBuilder.h"
 #include "VoltraGattProfile.h"
 #include "WeightLimits.h"
+#include "diagnostics/EventLog.h"
 #include <algorithm>
 #include <Arduino.h>
 namespace voltra {
@@ -259,6 +260,7 @@ void PhysicalSession::apply(const Frame& f) {
     if(f.command==0x27 && p.size()==3 && p[0]==0x82 && p[1]==1) {
         accepted_=p[2]==0;
         status_=accepted_ ? "Reading VOLTRA state" : "VOLTRA refused connection";
+        diagnostic("Session acceptance="+std::to_string(p[2]));
         Serial.printf("VOLTRA acceptance %u\n",unsigned(p[2]));
         if(!accepted_) {connectionFailure_=true;transport_.disconnect();}
         return;
@@ -292,7 +294,7 @@ void PhysicalSession::apply(const Frame& f) {
     for(unsigned n=0;n<count;++n) {
         if(at+2>p.size()) return; const auto id=u16(p,at);at+=2;
         const int bytes=width(id);
-        if(!bytes || at+bytes>p.size()) { Serial.printf("VOLTRA unparsed parameter %u\n",unsigned(id));return; }
+        if(!bytes || at+bytes>p.size()) { diagnostic("Unparsed parameter="+std::to_string(id)+" bytes="+std::to_string(p.size()));Serial.printf("VOLTRA unparsed parameter %u\n",unsigned(id));return; }
         uint64_t value=0;for(int i=0;i<bytes;++i) value|=uint64_t(p[at++])<<(8*i);
         // Only retain presence for a paired identifier; do not log/persist it.
         decoded[id]=id==pairedDevice ? int64_t(value!=0) :
@@ -302,6 +304,12 @@ void PhysicalSession::apply(const Frame& f) {
     if(at!=p.size()) return;
     bool acknowledgedMagic=false,acknowledgedEccentric=false;
     for(const auto& pair:decoded) {
+        if(pair.first==voidLock || pair.first==mountLock || pair.first==twin || pair.first==remoteCoworker ||
+           pair.first==pairedDevice || pair.first==motor || pair.first==autoLoadStatus) {
+            const auto previous=values_.find(pair.first);
+            if(previous==values_.end() || previous->second.value!=pair.second)
+                diagnostic("State "+std::to_string(pair.first)+"="+std::to_string(pair.second));
+        }
         const auto previous=values_.find(pair.first);
         const bool changed=previous==values_.end() || previous->second.value!=pair.second;
         values_[pair.first]={pair.second,now_};
@@ -486,10 +494,24 @@ SessionReadiness PhysicalSession::readiness() const {
     else if(!updateAllowsControls()) r.reason=updateBlockReason();
     else if(!settingsReady()) r.reason="Control state unavailable";
     else if(fresh(mountLock)!=securedMount) r.reason="Secure VOLTRA mounting lock";
-    else if(fresh(voidLock)!=observedVoidLock) r.reason="VOLTRA safety state unavailable";
+    else if(!fresh(voidLock)) r.reason="Waiting for fresh VOLTRA safety status";
+    else if(fresh(voidLock)!=observedVoidLock) r.reason="Unrecognized VOLTRA safety status: "+std::to_string(*fresh(voidLock))+". Hold 6s to report.";
     else if(!r.ready) r.reason="Waiting for fresh load readiness";
     else if(!r.cableZero) r.reason="Retract cable to load";
     return r;
+}
+std::string PhysicalSession::diagnosticState() const {
+    std::string text="accepted="+std::to_string(accepted_)+" activated="+std::to_string(activated_);
+    // Numeric state only. Never include the client identity, BLE address, name,
+    // Wi-Fi details, or paired-device identifier (only its presence is retained).
+    for(const auto id:{motor,workout,base,unit,maxForce,position,offset,childLock,otaState,
+                       mountLock,voidLock,autoLoadStatus,twin,remoteCoworker,pairedDevice}) {
+        text+=" "+std::to_string(id)+"=";
+        const auto it=values_.find(id);
+        if(it==values_.end()) text+="missing";
+        else text+=std::to_string(it->second.value)+"@"+std::to_string(now_>=it->second.at ? now_-it->second.at : 0)+"ms";
+    }
+    return text;
 }
 TransportResult PhysicalSession::setWeight(uint16_t pounds) {
     auto settings=report_.settings; settings.weight=convertWeightUnits(pounds,WeightUnit::Pounds,report_.unit);

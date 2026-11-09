@@ -1,3 +1,10 @@
+> November 9 bug follow-up: retain settings across OTA; verify dim/sleep; release
+> BLE on returning to Devices; explain connection failures; keep the last 20
+> diagnostic events and offer consented submission after a six-second hold.
+> Ordinary short holds now act on release so that debug holds cannot first load.
+> Physical Twin grouping/control and the reported unrecognized safety state
+> remain unresolved: see PROTOCOL_AUDIT_2026_11_09.md and DEBUG_REPORTS.md.
+>
 > November 9: check GitHub firmware releases at power-on over saved Wi-Fi and
 > through Settings -> Updates. Show an explicit install prompt; never install
 > merely from a startup check. Download and restart only while disconnected from

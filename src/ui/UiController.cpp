@@ -31,7 +31,7 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
         auto* b = static_cast<Binding*>(lv_event_get_user_data(e));
         const auto code = lv_event_get_code(e);
         if (code == LV_EVENT_PRESSED) b->held = false;
-        if (b->ui->touchMoved_) {
+        if (b->ui->touchMoved_ || b->ui->debugConsumed_ || b->ui->debugDialog_) {
             if(code==LV_EVENT_RELEASED) std::printf("Touch cancelled by movement: action=%d\n",b->action);
             return;
         }
@@ -39,13 +39,11 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
             b->action == Drops || b->action == ChoosePreset || b->action == Select;
         if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
             b->held = true;
-            std::printf("%llu Touch action=%d hold=1\n",static_cast<unsigned long long>(b->ui->hardware_.nowMs()),b->action);
-            b->ui->act(b->action, b->id, true);
-        } else if (code == LV_EVENT_CLICKED && !b->held) {
-            // Ordinary buttons also accept a deliberate slow tap. A handled hold
-            // can never issue a second short action when the finger is released.
-            std::printf("%llu Touch action=%d hold=0\n",static_cast<unsigned long long>(b->ui->hardware_.nowMs()),b->action);
-            b->ui->act(b->action, b->id, false);
+        } else if (code == LV_EVENT_CLICKED) {
+            // Commit ordinary holds on release. A six-second debug hold consumes
+            // the entire gesture, including the earlier Auto Load threshold.
+            diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(b->held));
+            b->ui->act(b->action, b->id, b->held);
         }
     }, LV_EVENT_ALL, bindings_.back().get());
 }
@@ -177,7 +175,7 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
 
 }
 
-UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime, WifiSetup* wifi, FirmwareUpdate* updates) : hardware_(h), app_(app), runtime_(runtime), wifi_(wifi), updates_(updates), store_(store) {
+UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime, WifiSetup* wifi, FirmwareUpdate* updates, DebugReports* reports) : hardware_(h), app_(app), runtime_(runtime), wifi_(wifi), updates_(updates), reports_(reports), store_(store) {
     if (store_) config_ = store_->load();
     if (!h.capabilities().coreInputsValid()) throw std::runtime_error("Unsupported display/input target");
     lv_init(); width_ = h.display().width(); height_ = h.display().height();
@@ -207,7 +205,10 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
             if (s->sleeping_) { s->sleeping_ = false; s->wakeTouch_ = true; }
         }
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
-        if(p.pressed && !s->touchDown_) { s->touchStartX_=x; s->touchStartY_=y; s->touchMoved_=false; s->modeGestureUntil_=0; }
+        if(p.pressed && !s->touchDown_) {
+            s->touchStartX_=x;s->touchStartY_=y;s->touchMoved_=false;s->modeGestureUntil_=0;
+            s->touchStartedAt_=s->hardware_.nowMs();s->debugConsumed_=false;
+        }
         // Allow normal finger drift on controls (5% of the short display side:
         // 18 px on K5). Paged pickers keep the stricter 2.5% swipe rejection so
         // a short attempted swipe cannot select a device or apply a preset.
@@ -215,7 +216,13 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         const bool paged=s->page_==Screen::Devices || s->page_==Screen::Presets;
         const int tapSlop=std::max(1,std::min(s->width_,s->height_)/(paged ? 40 : 20));
         if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > tapSlop || std::abs(y-s->touchStartY_) > tapSlop)) s->touchMoved_=true;
-        if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_) {
+        const auto holdNow=s->hardware_.nowMs();
+        if((p.pressed || s->touchDown_) && !s->touchMoved_ && !s->wakeTouch_ && !s->debugDialog_ &&
+           !s->debugConsumed_ && holdNow>=s->touchStartedAt_ && holdNow-s->touchStartedAt_>=debugHoldMs) {
+            s->debugPending_=s->debugConsumed_=true;
+            lv_indev_wait_release(input);
+        }
+        if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_ && !s->debugConsumed_ && !s->debugDialog_) {
             const int dx=x-s->touchStartX_, dy=y-s->touchStartY_;
             std::printf("Touch drag page=%d dx=%d dy=%d\n",int(s->page_),dx,dy);
             if(std::abs(dx) > s->width_/8 && std::abs(dx) > std::abs(dy)) {
@@ -225,10 +232,10 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         }
         s->touchDown_=p.pressed;
         data->point = {x,y};
-        data->state = p.pressed && !s->wakeTouch_ ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+        data->state = p.pressed && !s->wakeTouch_ && !s->debugConsumed_ ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
         if (!p.pressed) s->wakeTouch_ = false;
     });
-    lastTickMs_ = hardware_.nowMs();
+    lastTickMs_ = activityAt_ = hardware_.nowMs();
 }
 UiController::~UiController() { lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
 void UiController::readTouch() {
@@ -236,6 +243,7 @@ void UiController::readTouch() {
     lv_indev_read(touch_);
 }
 void UiController::navigate(Screen page) {
+    diagnostic("Screen="+std::to_string(int(page)));
     modeGestureUntil_ = 0;
     if (page == Screen::ForgetDevice && forgetId_.empty()) { forgetId_=app_.selectedDevice();forgetName_=app_.name(); }
     rotaryAdjustment_.reset();
@@ -263,6 +271,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         if(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready) return;
     }
     activityAt_ = hardware_.nowMs();
+    if(action==DismissConnection) {app_.leave();navigate(Screen::Devices);return;}
     rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
         const size_t count = (app_.devices().size()+3)/4;
@@ -275,7 +284,7 @@ void UiController::act(int action, const std::string& id, bool held) {
             forgetId_ = id;
             for (const auto& d : app_.devices()) if (d.id == id) forgetName_ = d.name;
             navigate(Screen::ForgetDevice);
-        } else if (!held && app_.select(id)) navigate(Screen::Main);
+        } else if (!held) {if(app_.select(id)) navigate(Screen::Main);else if(!app_.message().empty()) navigate(Screen::ConnectionNotice);}
         return;
     }
     if (action == CancelForget) { navigate(Screen::Devices); return; }
@@ -287,7 +296,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         else value(message_,app_.message());
         return;
     }
-    if (action == BackDevices && !held) { app_.leave(); navigate(Screen::Devices); return; }
+    if (action == BackDevices && !held) { diagnostic("User released Bluetooth connection");app_.leave(); navigate(Screen::Devices); return; }
     if (action == Weight) {
         if (held) app_.autoLoad();
         else app_.toggleWeight();
@@ -894,21 +903,27 @@ void UiController::edited() {
 }
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
+    EventLog::instance().clock(now);
     if(updates_) {
         const auto phase=updates_->status().phase;
-        app_.setMaintenance(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready);
+        app_.setMaintenance(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready || (reports_ && reports_->status().busy()));
         // Saved Wi-Fi gets the shared radio first at boot. Discovery resumes
         // after the bounded startup attempt/check; manual selection still works.
         const bool savedWifi=wifi_ && wifi_->status().saved;
-        app_.setDiscoveryPaused((savedWifi && updates_->startupPending()) || updates_->status().busy());
+        app_.setDiscoveryPaused((savedWifi && updates_->startupPending()) || updates_->status().busy() ||
+            (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())));
     }
     app_.tick(now);
     if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());
+    if(reports_) reports_->tick(wifi_ && wifi_->status().connected && !wifi_->status().setupActive,
+        !app_.connected() && !app_.connecting() && !app_.pending() && (!updates_ || !updates_->status().busy()));
+    app_.setMaintenance((reports_ && reports_->status().busy()) || (updates_ &&
+        (updates_->status().phase==UpdatePhase::Installing || updates_->status().phase==UpdatePhase::Ready)));
     if(updates_) {
         const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
-        updates_->tick(now,w.connected && !w.setupActive,!app_.connected() && !app_.connecting() && !app_.pending());
+        updates_->tick(now,w.connected && !w.setupActive,!app_.connected() && !app_.connecting() && !app_.pending() && (!reports_ || !reports_->status().busy()));
         if(updates_->status().phase==UpdatePhase::Available && !updatePromptShown_ &&
-           !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
+           !debugDialog_ && !debugPending_ && !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
             updatePromptShown_=true;navigate(Screen::Updates);
         }
     }
@@ -920,9 +935,12 @@ void UiController::tick() {
     }
     if(!app_.fresh() || !app_.confirmedDropWeight() || !app_.report().loaded) dropCueUntil_=0;
     rememberModifiers();
-    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting()) { app_.leave(true); navigate(Screen::Devices); }
+    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting() &&
+        !(rebuild_ && next_==Screen::Devices)) {
+        app_.leave(true);navigate(app_.message().empty() ? Screen::Devices : Screen::ConnectionNotice);
+    }
     if (page_ == Screen::Devices) {
-        if (!touchDown_ && !modeGestureUntil_ && !rebuild_ &&
+        if (!debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
             (!updates_ || (!updates_->startupPending() && !updates_->status().busy())) && app_.tryAutomaticSelection()) navigate(Screen::Main);
         std::string signature;
         for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+(d.online ? "1" : "0")+(app_.remembered(d.id) ? "S" : "D");
@@ -964,25 +982,38 @@ void UiController::tick() {
     const bool wasSleeping = sleeping_;
     if (delta || pressed) { activityAt_ = now; sleeping_ = false; }
     if (modeGestureUntil_ && now > modeGestureUntil_) modeGestureUntil_ = 0;
-    if (pressed && !wasSleeping && page_ == Screen::Devices && runtime_) {
+    if (pressed && !wasSleeping && !debugDialog_ && page_ == Screen::Devices && runtime_) {
         modeGestureUntil_ = now+3000; modeGestureClicks_ = 0;
     }
-    if (delta && !wasSleeping) rotate(delta);
-    if (pressed && !wasSleeping) {
+    if (delta && !wasSleeping && !debugDialog_) {
+        diagnostic("Dial delta="+std::to_string(delta)+" screen="+std::to_string(int(page_)));
+        rotate(delta);
+    }
+    if (pressed && !wasSleeping && !debugDialog_) {
         if (page_ == Screen::Presets) act(ChoosePreset,"",false);
         else if (page_ == Screen::PresetNotice) act(Unload,"",false);
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
     }
     // Keep unload visible while loaded, pending, armed, or connected with unknown state.
-    const bool mustStayAwake = (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
-    if (mustStayAwake) activityAt_ = now;
-    sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && now-activityAt_ >= uint64_t(config_.sleepMinutes)*60000;
-    dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && now-activityAt_ >= uint64_t(config_.dimMinutes)*60000;
+    const bool mustStayAwake = debugDialog_ || (reports_ && reports_->status().busy()) || (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
+    // An action above can block on GATT and record activity later than `now`.
+    // Sample again; unsigned subtraction from the old loop clock sleeps instantly.
+    const auto powerNow=hardware_.nowMs();
+    if (mustStayAwake) activityAt_ = powerNow;
+    const auto idleMs=powerNow>=activityAt_ ? powerNow-activityAt_ : 0;
+    sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && idleMs >= uint64_t(config_.sleepMinutes)*60000;
+    dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && idleMs >= uint64_t(config_.dimMinutes)*60000;
     hardware_.setDisplayPower(sleeping_,dimmed_);
     style::set_opa(face_,sleeping_ ? 0 : dimmed_ ? 65 : 255,0);
     update();
+    if(app_.message()!=lastDiagnosticMessage_) {
+        lastDiagnosticMessage_=app_.message();
+        if(!lastDiagnosticMessage_.empty()) diagnostic("Status: "+(app_.connecting() ? std::string("Connecting to VOLTRA") : lastDiagnosticMessage_));
+    }
     if (now < alertUntil_ && page_ == Screen::Main) value(message_,"Rest alert");
     lv_timer_handler();
+    if(debugPending_) {debugPending_=false;openDebugDialog();}
+    updateDebugDialog();
     // Navigation is deferred until after input callbacks return.
     if (rebuild_) { build(); update(); }
 }

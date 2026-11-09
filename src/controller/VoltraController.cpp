@@ -14,7 +14,7 @@ VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlS
         confirmed_ = {}; requested_ = {}; parser_.reset();
         confirmed_.connected = connected;
         pendingLoad_.reset();
-        feedback_ = failed ? "Connection failed / tap to retry" : "Disconnected";
+        feedback_ = failed ? "Bluetooth may be in use. Disconnect other app and retry; check VOLTRA is nearby." : "Disconnected";
     });
     transport_.onNotification([this](const std::string& characteristic, const Bytes& bytes) {
         if (controls_) controls_->notification(characteristic,bytes);

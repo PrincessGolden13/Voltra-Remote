@@ -5,16 +5,17 @@
 #include "RotaryAdjustment.h"
 #include "network/WifiSetup.h"
 #include "update/FirmwareUpdate.h"
+#include "diagnostics/DebugReports.h"
 #include <lvgl.h>
 #include <memory>
 #include <vector>
 #include <array>
 #include <map>
 namespace voltra {
-enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice };
+enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice, ConnectionNotice };
 class UiController {
 public:
-    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr, WifiSetup* = nullptr, FirmwareUpdate* = nullptr);
+    UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr, WifiSetup* = nullptr, FirmwareUpdate* = nullptr, DebugReports* = nullptr);
     ~UiController();
     void tick();
     void readTouch();
@@ -26,6 +27,16 @@ private:
     RuntimeMode* runtime_ = nullptr;
     WifiSetup* wifi_ = nullptr;
     FirmwareUpdate* updates_ = nullptr;
+    DebugReports* reports_=nullptr;
+    static constexpr uint64_t debugHoldMs=6000; // User-requested global diagnostic gesture.
+    lv_obj_t *debugDialog_=nullptr,*debugText_=nullptr,*debugYes_=nullptr,*debugUnload_=nullptr;
+    bool debugPending_=false,debugConsumed_=false,debugSubmitted_=false;
+    uint64_t touchStartedAt_=0;
+    std::vector<EventLog::Event> debugEvents_;
+    std::string debugContext_,lastDiagnosticMessage_;
+    void openDebugDialog();
+    void closeDebugDialog();
+    void updateDebugDialog();
     bool updatePromptShown_=false;
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;

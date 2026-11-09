@@ -42,6 +42,12 @@ void UiController::buildExtra() {
         auto* b=button(face_,name,width_*x/100,height_*y/100,width_*w/100,height_*h/100,id);
         glow(b,accent(),true); return b;
     };
+    if(page_==Screen::ConnectionNotice) {
+        label(face_,"CONNECTION ENDED",width_*76/100,height_*22/100,heading);
+        label(face_,app_.message(),width_*74/100,height_*38/100,medium);
+        action("OK",33,72,34,12,DismissConnection);
+        return;
+    }
     if (page_ == Screen::ForgetDevice) {
         label(face_,"REMOVE VOLTRA?",width_*76/100,height_*22/100,heading);
         auto* name = label(face_,forgetName_,width_*72/100,height_*35/100,heading);

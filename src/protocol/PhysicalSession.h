@@ -20,6 +20,7 @@ public:
     bool busy() const override { return waitingWrite_.has_value() || !writes_.empty() || target_.has_value(); }
     bool commandFailed() const override { return commandFailed_; }
     const std::string& status() const override { return status_; }
+    std::string diagnosticState() const override;
     SessionReadiness readiness() const override;
     TrainingReport trainingReport() const override;
     TransportResult setWeight(uint16_t) override;

@@ -1,5 +1,11 @@
 # Validation status and pending tests
 
+November 9 bug follow-up: [source audit](PROTOCOL_AUDIT_2026_11_09.md),
+[implementation/validation record](BUG_FIXES_2026_11_09.md) and
+[diagnostic gesture/report cases](DEBUG_REPORTS.md). New test source remains
+deferred. Physical Twin and the unrecognized void-lock state remain unresolved;
+no hardware or resistance tests were performed for these changes.
+
 November 9 live-update follow-up cases (new test code deferred): signed GitHub
 asset redirects longer than the IDF default send buffer; delayed DNS/TLS;
 connection reset with manual retry; startup Wi-Fi before BLE discovery;

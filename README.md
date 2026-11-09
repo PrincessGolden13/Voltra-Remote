@@ -36,14 +36,21 @@ Read the dated [application flow](docs/APP_FLOW.md) and
 [validation record](docs/TESTING.md) for the distinction between implementation,
 simulator behavior and actual hardware observations. Real Twin work is deferred.
 
-Turn the dial to edit weight. Tap the main number to load/unload; hold for 650 ms
-to request the device's existing Auto Load behavior. An unloaded number is darker;
+Turn the dial to edit weight. Tap the main number to load/unload; hold for at least
+650 ms and release before six seconds to request the device's existing Auto Load
+behavior. An unloaded number is darker;
 confirmed loaded weight is bright. Pending intent stays distinct from device
 confirmation. Boot, reconnect, presets and updates never load resistance.
 
 Tap an off modifier tile to open its editor; tap an active tile to disable it,
-or hold to edit. The device name returns to the picker. The gear opens settings.
+or hold and release to edit. The device name releases Bluetooth and returns to the
+picker, allowing the phone app to connect. The gear opens settings.
 Wi-Fi setup uses a temporary phone portal under Settings -> Wi-Fi.
+
+Hold anywhere on an awake screen for six seconds to approve sending the last
+20 diagnostic events. Reports wait for Wi-Fi after leaving the VOLTRA connection.
+See [debug reports](docs/DEBUG_REPORTS.md) and the
+[November 9 fixes and remaining limitations](docs/BUG_FIXES_2026_11_09.md).
 
 ## Firmware updates
 

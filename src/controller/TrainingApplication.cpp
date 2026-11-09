@@ -1,4 +1,5 @@
 #include "TrainingApplication.h"
+#include "diagnostics/EventLog.h"
 #include "protocol/VoltraGattProfile.h"
 #include <algorithm>
 namespace voltra {
@@ -92,7 +93,7 @@ bool TrainingApplication::select(const DeviceId& id) {
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
     const DeviceEntry chosen = *it;
     leave();
-    if (!controller_.connect(chosen.id)) { message_ = "Connection unavailable"; scan(); return false; }
+    if (!controller_.connect(chosen.id)) { message_ = controller_.feedback(); scan(); return false; }
     selected_ = chosen.id; name_ = chosen.name;
     if(connecting()) message_="Connecting to "+name_+"...";
     connectingDevice_ = chosen;
@@ -177,6 +178,7 @@ void TrainingApplication::adjustWeight(int delta) {
     if (sendSettings(s)) {weightIntent_ = s.weight;weightIntentUnit_=r.unit;}
 }
 void TrainingApplication::toggleWeight() {
+    diagnostic("Explicit weight action");
     auto r = report();
     if (!fresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
         unload(); return;
@@ -184,12 +186,14 @@ void TrainingApplication::toggleWeight() {
     const auto e = session_.readiness();
     if (pending() || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = r.minWeight>0 && r.settings.weight < r.minWeight ? "Set at least "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
-            !e.reason.empty() ? e.reason : "Device not ready"; return;
+            !e.reason.empty() ? e.reason : "Device not ready"; diagnostic("Load blocked: "+message_);return;
     }
     const auto result = session_.setLoaded(true);
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
+    diagnostic("Load request result="+std::to_string(int(result)));
 }
 void TrainingApplication::unload() {
+    diagnostic("Unload requested");
     // Always a cancel/unload, even before a pending load is reported. Never
     // route an editor's unload target through a toggle that could load instead.
     presetIntent_.reset(); settingsIntent_.reset(); resetDrops(); dropsCancelled_ = true;
@@ -198,6 +202,7 @@ void TrainingApplication::unload() {
     sent(session_.setLoaded(false));
 }
 void TrainingApplication::autoLoad() {
+    diagnostic("Explicit Auto Load action");
     const auto r = report(); const auto e = session_.readiness();
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; return;
@@ -504,7 +509,9 @@ void TrainingApplication::tick(uint64_t now) {
     if (scanPending_ && !transport_.scanInProgress()) { scanPending_=false; refreshDiscovery(transport_.discovered()); }
     if (!scanned_ || now - scannedAt_ >= discoveryIntervalMs) scan();
     if (!connected()) {
-        if(!selected_.empty() && !session_.status().empty()) message_=session_.status();
+        // Keep the transport's failed-attempt explanation. A protocol session
+        // that never opened only knows "Connection lost" and would erase it.
+        if(!connectingDevice_ && !selected_.empty() && !session_.status().empty()) message_=session_.status();
         restSince_.reset();restSetRevision_=0;
         dropProgress_={};
         confirmedDropWeight_.reset();
