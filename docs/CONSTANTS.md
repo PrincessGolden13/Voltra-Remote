@@ -1,5 +1,12 @@
 # Constants and configurable policies
 
+November 9 update constants are named in `src/update/Esp32FirmwareUpdate.cpp`
+and `hardware/boards/guition_k5/FirmwareSlots.h`: 15 s startup opportunity, 10 s
+clock/socket/manifest windows, 180 s firmware transfer, 2 s restart notice,
+2 KiB manifest, 4 KiB stream buffer, 12 KiB task stack and five HTTPS redirects.
+The GitHub repository is in `config/release.json`, the version in `VERSION`.
+Board-specific layout 2 offsets/sizes and rationale are in FIRMWARE_UPDATES.md.
+
 No device address, serial or key is hard-coded. Board pins stay in their board
 profile. Nominal firmware ceilings stay in the protocol policy, with reported
 effective limits preferred. Necessary constants and their provenance:

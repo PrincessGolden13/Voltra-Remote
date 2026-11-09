@@ -1,5 +1,15 @@
 # Validation status and pending tests
 
+November 9 update cases (new test code remains deferred): check once per boot;
+offline boot and unavailable SNTP/TLS; interruption by manual BLE connection;
+duplicate install taps; no install/load from startup, a reconnect or a check alone;
+installed/same/older/newer versions; bad/truncated/oversized manifests; wrong board,
+channel, layout and image descriptor; HTTP redirects to unapproved/non-HTTPS hosts;
+size/hash mismatches; download cancellation/timeouts; power loss during flash;
+startup rollback; Normal A/B to Simulator return; local bootstrap/preferences
+survival; no radio/update symbols in Simulator; and no secrets in public artifacts.
+Source checks/builds cannot establish actual OTA or physical interoperability.
+
 October 24 idle-force regression (new test code deferred): with confirmed base
 10 LB, fresh idle phase 0 and force samples 0–36 tenths LB at a stationary
 148 mm cable, Live must retain 10. Active phases 1–3 use fresh reported force;

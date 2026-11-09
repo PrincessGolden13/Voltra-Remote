@@ -1,3 +1,8 @@
+> November 9: check GitHub firmware releases at power-on over saved Wi-Fi and
+> through Settings -> Updates. Show an explicit install prompt; never install
+> merely from a startup check. Download and restart only while disconnected from
+> VOLTRA, preserving settings and never restoring load intent. See FIRMWARE_UPDATES.md.
+>
 > November 2 later Wi-Fi feedback supersedes the PIN flow: Settings -> Wi-Fi
 > immediately opens the temporary hotspot and instructions. No hotspot password
 > or page PIN. The phone shows a network dropdown, Refresh, and a separate

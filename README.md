@@ -1,162 +1,105 @@
 # VOLTRA Remote
 
-Standalone round touchscreen/rotary Weight Training remote, with a shared LVGL
-application and offline Windows and macOS simulators.
+An open-source touchscreen and rotary remote for Beyond Power VOLTRA Weight
+Training, with shared application code for physical hardware and offline desktop
+simulators. Independent community project; not affiliated with Beyond Power.
 
-The Guition remote now has Normal Bluetooth firmware and a separate offline
-Simulator image. **Full real training control is not ready:** connection and
-unloaded LB dial changes and Black's 20% Inverse Chains / 20% EO reports are
-physically confirmed with the local diagnostic profile. Unloaded percentage
-modifier transactions, KG conversion and explicit unload are implemented for
-manual verification. Loading, Auto Load, Mountain, mixed modifier units and
-automatic dropsets remain unavailable. Real Twin verification is deferred at the
-user's request; connection robustness still needs longer testing. Desktop devices
-are synthetic.
-See [current implementation and blockers](docs/NORMAL_MODE_2026_10_17.md).
+**Development software.** The current physical target is the Guition JC3636K518
+(ESP32-S3, 360 x 360 round display, 16 MB flash / 8 MB OPI PSRAM). Do not install
+its firmware on a different board, including a 480 x 480 Elecrow rotary display.
 
-The remote boots Normal. On Devices, press the rotary button, then turn left
-three logical clicks within three seconds to enter/leave Simulator. Normal mode
-rescans every five seconds, attempts a sole available VOLTRA once, and keeps saved
-devices visible offline. Hold a saved device and confirm REMOVE to forget it.
-After an accepted real connection, the remote opens Weight Training from the
-idle, unloaded home screen and waits for confirmation. It never loads resistance
-or interrupts an active workout during connection setup.
+**Pairing on a fresh remote still needs work.** Physical training observations
+come from the owner's local diagnostic bootstrap profile, which is excluded from
+public code and binaries. Generated identities did not establish pairing in those
+trials. Other owners can download, build, run the simulator and improve the code;
+public firmware is not yet a validated plug-and-play remote.
+See [connection evidence](docs/LIVE_CONNECTION_2026_10_18.md).
 
-## Run
+## Download and contribute
 
-On Windows, open `build/native/voltra_simulator.exe`.
-On Mac, follow [Mac setup](docs/MAC_SIMULATOR.md), then run
-`bash tools/Run-Simulator.sh` or open `build/mac/voltra_simulator.app`.
-Both start at the device picker and share the same screens and controls.
-Tap a VOLTRA; turn the mouse wheel or use Left/Right to adjust weight. Tap the
-weight to load/unload; hold it for 650 ms to request Auto Load. Tap the name to
-return to the picker. Drag the top rim to move the window; Escape closes it.
+- [Download source](https://github.com/PrincessGolden13/Voltra-Remote/archive/refs/heads/main.zip)
+- [Firmware releases](https://github.com/PrincessGolden13/Voltra-Remote/releases)
+- [Report a bug or request a feature](https://github.com/PrincessGolden13/Voltra-Remote/issues)
+- [Contribution guide](CONTRIBUTING.md)
 
-The setup screen has one theme color, a device-scaled outer weight dial, and
-four controls: Magic, EO, Dropsets and Presets. Tap the weight to load/unload.
-Unload remains available immediately
-while loaded, pending or stale. Hold the weight for Auto Load. At the confirmed device maximum, the number and
-dial use a contrasting color paired with the selected theme, and show MAX.
+Original code is [MIT licensed](LICENSE): use, modify and share it, keeping the
+license notice. [Third-party portions](THIRD_PARTY_NOTICES.md) retain their own terms.
 
-Tap an off Magic, EO or Dropset tile to edit it; tap an active tile to disable it.
-Hold either state to edit. The Magic picker is ordered IC / MTN / C and is
-touch-only, as is the unit picker. Rotary always adjusts the amount. Tap the
-large amount to apply/return to setup. There is no Back button in Magic or EO.
-Modifier editors apply changes without an Apply button. Supported devices offer % and
-LB/KG independently for Magic and EO; older profiles show only their supported
-absolute unit. Consecutive knob events settle for 150 ms before one request;
-reported values remain authoritative, with no confirmation-driven retries.
-There are no X controls. Disable modifiers with their main-screen tiles;
-Dropsets retain Apply.
+## What it does
 
-Slow rotation changes 1 LB or 0.5 KG; faster rotation ramps through small even
-steps to round 5/10-unit marks, with immediate braking when slowed or reversed.
-Device paging
-supports arrows, horizontal swipes and rotary (positive rotation goes right).
-Twin pairs use overlapping circles. See [the October 17 fixes](docs/UI_FIXES_2026_10_17.md).
-Physical settings wait for a 100 ms pause in input before the latest intent is
-sent. The main number/dial previews requested weight with "Setting weight...";
-only device reports confirm it. IC and EO changes do not clear one another.
-Disabling either retains its last confirmed amount as an editor default for that
-device during the current run; reopening does not apply it until you tap/edit.
-Twin information is shown only when a pair is detected. The synthetic Yellow/Pink
-pair now reports 250 LB per unit / 500 LB combined (113 / 226 KG).
-The real Mountain path reads its separate switch and confirms unloaded curve
-changes. Dropset configuration stays visible as a local preview while real drop
-execution remains unavailable. See [current control feedback](docs/CONTROL_FEEDBACK_2026_10_24.md).
+The physical remote operates directly over BLE; a phone, server and Internet
+connection are unnecessary for normal training control. Implemented controls
+include base weight, Magic (IC / Chains / Mountain), eccentric overload, presets,
+Stairs and Rest-Pause dropsets, load/unload and an explicit Auto Load long press.
+Availability depends on confirmed device capabilities and current safety state.
+Read the dated [application flow](docs/APP_FLOW.md) and
+[validation record](docs/TESTING.md) for the distinction between implementation,
+simulator behavior and actual hardware observations. Real Twin work is deferred.
 
-Tap Presets to browse P01–P99 with the knob. Tap an existing preset to request
-its modifiers; hold it to compare OLD / NEW before saving an override. The
-single NEW slot at the end saves the current modifier configuration. Presets
-exclude base weight, never load resistance, and become active only when the
-machine report matches. Unsupported units/features or intrinsically invalid recipes
-are rejected instead of silently converted. When the exact preset modifiers
-need more headroom, selecting it reduces base weight to the highest safe integer
-display tick (never increases it). Save returns to Main and matching confirmed
-settings automatically light the preset indicator. The stored modifier values
-are not trimmed. Presets and remote preferences
-persist in `remote-settings.txt` beside the Windows executable (or in the Mac
-application support directory). Restoring saved data never applies a preset.
+Turn the dial to edit weight. Tap the main number to load/unload; hold for 650 ms
+to request the device's existing Auto Load behavior. An unloaded number is darker;
+confirmed loaded weight is bright. Pending intent stays distinct from device
+confirmation. Boot, reconnect, presets and updates never load resistance.
 
-Confirmed rep-start telemetry opens the workout screen. F8/F9/F10 provide
-synthetic workout telemetry; unloading returns to setup with mock-device
-completed-set, rep and rest fields. Missing telemetry is omitted.
+Tap an off modifier tile to open its editor; tap an active tile to disable it,
+or hold to edit. The device name returns to the picker. The gear opens settings.
+Wi-Fi setup uses a temporary phone portal under Settings -> Wi-Fi.
 
-The device picker's gear opens theme, rest-alert, dim and sleep settings.
-Touch a setting to select it; rotate to change it. Rest alert adjusts in seconds
-(0 is Off); dim/sleep adjust in minutes (0 is Never), defaulting to 15/20.
-The desktop simulates display dim/sleep and shows a two-second rest alert;
-physical haptics require a board adapter. Loaded, armed, pending or unknown
-connected state keeps unload visible. The first wake input only wakes.
-Wi-Fi and Updates currently explain their unavailable platform services.
-Factory reset requires an explicit confirmation and preserves recent devices.
+## Firmware updates
 
-## Offline scenarios
+After the [initial USB installation](docs/USB_INSTALL.md), the remote checks
+GitHub at power-on using saved Wi-Fi. A newer release shows an installation prompt.
+Settings -> Updates -> CHECK FOR UPDATES checks again; INSTALL & RESTART downloads
+and installs the firmware. Leave the VOLTRA connection and keep power connected
+during installation. Offline operation remains available without Wi-Fi.
 
-| Key | Action |
-| --- | --- |
-| F1–F4 | Open Garage with unloaded, loaded, stale, or unknown Twin state |
-| F5 | Disconnect and return to Devices |
-| F6 | Scan now (normal background interval is 5 seconds) |
-| F7 | Toggle White OFF availability (offline at startup) |
-| F8 | Complete one simulated rep while loaded |
-| F9 | Simulate holding the cable steady |
-| F10 | Simulate cable movement; rearms the next RP hold |
-| F11 | Ignore the next command; subsequent reports remain the source of truth |
-| Enter / Space | Load/unload shortcut; inert on Devices |
+Updates use published firmware releases for this board, with HTTPS, size and
+SHA-256 verification. The old flash layout requires one USB migration; subsequent
+updates write the inactive Normal slot and preserve the separate Simulator.
+See [update design, build/release process and unverified cases](docs/FIRMWARE_UPDATES.md).
 
-For Stairs: enable Dropsets, load, then press F8 for each rep.
-For RP: hold Dropsets, choose RP, Apply & Back, load, then use F10 followed by
-F9 for each set's pause. Defaults are two drops, 50%, one second.
-For Auto Load: hold the unloaded weight, then F9; the **mock device** loads
-after a three-second hold. Tap the weight to cancel.
+## Build and run
 
-Six simulated VOLTRAs provide different firmware, unit, availability and Twin scenarios.
-Recent connections are stored in `recent-voltras.txt` beside the Windows executable
-or in `~/Library/Application Support/VOLTRA Remote/` on Mac
-(maximum 64, most recent first; no automatic eviction). No load intent is stored.
+Clone or download this repository. On Windows, use a real Python 3 installation:
 
-## Build and documentation
+```powershell
+./tools/Setup-Development.ps1 -Python C:/path/to/python.exe
+./tools/Build-Desktop.ps1
+./build/native/voltra_simulator.exe
+```
 
-Build Windows with `tools/Build-Desktop.ps1`; build Mac with
-`bash tools/Build-Desktop.sh`. See [Mac setup and validation status](docs/MAC_SIMULATOR.md).
-[Revised five-screen specification](docs/APP_FLOW.md),
-[development/render options](docs/DEVELOPMENT.md),
-[architecture](docs/ARCHITECTURE.md),
-[validation status](docs/TESTING.md),
-[original requirements](docs/PROJECT_REQUIREMENTS.md),
-[source audit](docs/UPSTREAM_AUDIT.md),
-[hardware](docs/HARDWARE_COMPATIBILITY.md),
-[safety](docs/SAFETY.md) and [Twin evidence](docs/TWIN_MODE.md).
+On macOS, install Apple's command-line tools and CMake, then:
 
-October 18 physical results and remaining work are recorded in the
-[connection and weight audit](docs/LIVE_CONNECTION_2026_10_18.md).
+```sh
+bash tools/Setup-Development.sh
+bash tools/Build-Desktop.sh
+bash tools/Run-Simulator.sh
+```
 
-### October 11 simulator profiles
+The simulator uses mouse/touch, mouse wheel or Left/Right, and Enter/Space for
+encoder press. F1–F4 select synthetic unloaded, loaded, stale and Twin scenarios;
+F5 disconnects, F8 completes a rep, F9 holds cable still, F10 moves it and F11
+ignores the next command. Synthetic devices are not hardware compatibility evidence.
+Simulator builds cannot link physical BLE or OTA implementations.
 
-The two device pages contain Green 2.0 (230 LB, MTN and percentages), Yellow TW
-2.0 and Pink TW 2.0 (paired, reported 460 LB / nominal 208 KG limit), Red 2.0 KG
-(104 KG ceiling, 0.5 KG steps), Black 1.x (200 LB, no MTN/percentages), and White
-OFF (unavailable). Device reports take precedence over unit-specific firmware
-fallbacks; see [limit evidence](docs/WEIGHT_LIMITS.md).
-These are synthetic profiles, not claims of verified hardware compatibility.
-Loading stays on setup with a white number. F8 reports a rep and opens Live.
-Presets are shared across devices; absolute values convert to the device unit.
-Unsupported recipes require an OK acknowledgement.
+Build both public embedded images on Windows:
 
-For large-number layout previews, add `--modifier-value 125` to a `--render`
-command on screen 2 or 3. This initializes synthetic settings only and cannot
-be used in the interactive simulator.
-For unit-specific layout previews, `--weight-unit 0` selects LB or
-`--weight-unit 1` selects KG, also only with `--render`.
-`--weight-ticks N` previews a base amount (1 LB / 0.5 KG per tick), clamped to
-the profile ceiling. For example, screen 2 with 127 ticks on Green has an 81%
-modifier ceiling, useful for inspecting adjacent scale labels.
+```powershell
+./tools/Build-Guition.ps1 -Target Release
+./.venv/Scripts/python.exe tools/package_release.py
+```
 
-### Physical Guition K5 bring-up
+Linux/macOS firmware builds use PlatformIO; commands and pinned versions are in
+[firmware updates](docs/FIRMWARE_UPDATES.md). The default `prototype_21` environment
+is intentionally blocked. Select an explicit supported environment.
 
-The connected JC3636K518 working target has a dedicated offline build sharing
-this UI and the six mock VOLTRAs. See [hardware bring-up](docs/GUITION_K5.md).
-`tools/Build-Guition.ps1` builds it; `tools/Flash-Guition.ps1` requires the verified
-local recovery image and checks the generated partition map before upload.
-This firmware does not connect to or control a physical VOLTRA.
+## Engineering documentation
+
+[Architecture](docs/ARCHITECTURE.md), [hardware compatibility](docs/HARDWARE_COMPATIBILITY.md),
+[safety](docs/SAFETY.md), [protocol notes](docs/PROTOCOL_NOTES.md),
+[Twin evidence](docs/TWIN_MODE.md), [upstream audit](docs/UPSTREAM_AUDIT.md),
+[Windows development](docs/DEVELOPMENT.md), [Mac setup](docs/MAC_SIMULATOR.md),
+[build baselines](docs/BASELINE.md) and [standing requirements](AGENTS.md).
+
+The documentation retains dated development history. Later dated findings and
+the precedence notes in APP_FLOW.md supersede older milestone descriptions.

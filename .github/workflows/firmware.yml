@@ -1,0 +1,64 @@
+name: Firmware builds and release
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLATFORMIO_CORE_DIR: ${{ github.workspace }}/.tools/platformio
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
+      - name: Install pinned build tools
+        run: python -m pip install platformio==6.1.19
+      - name: Build public Normal and isolated Simulator
+        run: python -m platformio run -e guition_k5_release -e guition_k5_offline -j 2
+      - name: Build offline core and packet inspector
+        run: |
+          cmake -S . -B build/core -DVOLTRA_BUILD_SIMULATOR=OFF
+          cmake --build build/core --parallel 2
+      - name: Validate and package release artifacts
+        run: python tools/package_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-release
+          path: |
+            build/release/*.bin
+            build/release/*.json
+            build/release/*.zip
+          if-no-files-found: error
+
+  draft-release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-release
+          path: build/release
+      - name: Create reviewable draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" build/release/*
+          --draft --verify-tag --title "VOLTRA Remote $GITHUB_REF_NAME"
+          --notes-file "docs/releases/$GITHUB_REF_NAME.md"

@@ -72,6 +72,11 @@ native compiler candidate; Zig is the selected C++17 compiler.
 
 ## Git
 
+November 9: the current source is published as `PrincessGolden13/Voltra-Remote`
+under MIT. The older private GitHub snapshot's history is retained. See
+[firmware updates](FIRMWARE_UPDATES.md) for current builds, releases and installation.
+The original setup notes below describe the earlier state.
+
 Local branch: codex/foundation. No remote existed; no GitHub repository was
 created or changed. With no configured author, initial commits explicitly use
 `Codex <codex@local.invalid>` via per-command config, without changing user/global
@@ -82,7 +87,7 @@ commercial distribution, choose it deliberately and retain dependency notices.
 
 ## October 11 render screens
 
-Screen numbers 5–13: Presets, SavePreset, OverridePreset, Live, Settings,
+Screen numbers 5â€“13: Presets, SavePreset, OverridePreset, Live, Settings,
 Reset, Wi-Fi, Updates, About. Empty-library Override previews fall back to New.
 Use `--screen 8 --profile 1 --live-drops 1 --drop-mode 0` for Stairs live, or
 `--drop-mode 1` for Rest-Pause live. `--live-drops` only enables synthetic local
