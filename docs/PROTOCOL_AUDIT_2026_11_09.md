@@ -1,8 +1,9 @@
 # November 9 source audit: Twin and safety status
 
 The user requested a wider source audit before arranging another physical
-diagnostic session. References were cloned outside this repository. The source
-baseline remains public v0.4.1; ignored build/pre-nov9-bugfix contains its binaries.
+diagnostic session. References were cloned outside this repository. Investigation
+began at public v0.4.1; ignored build/pre-nov9-bugfix contains its binaries. The
+final integration retains the subsequently published v0.4.2 rest-alert changes.
 
 ## Reviewed revisions
 
