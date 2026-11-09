@@ -14,6 +14,7 @@ public:
     TouchInput& touch() override { return *this; }
     RotaryInput& rotary() override { return *this; }
     uint64_t nowMs() const override;
+    void restAlert(uint32_t durationMs) override;
     void setDisplayPower(bool asleep,bool dimmed) override;
 private:
     static constexpr int resolution=360, rowsPerTransfer=8;
@@ -46,6 +47,14 @@ private:
     volatile uint32_t pulseStarted_[2]={0,0};
     volatile bool pulseActive_[2]={false,false};
     portMUX_TYPE mux_=portMUX_INITIALIZER_UNLOCKED;
+    // DRV2605/2605L on the existing touch I2C bus. Only the touch task uses
+    // Wire after begin(); UI requests exchange a deadline under touchMux_.
+    bool hapticsReady_=false, hapticActive_=false;
+    uint64_t hapticUntil_=0;
+    bool hapticWrite(uint8_t reg,uint8_t value);
+    bool hapticRead(uint8_t reg,uint8_t& value);
+    void beginHaptics();
+    void pollHaptics();
     bool ready_=false,pressCandidate_=false,pressStable_=false,pressed_=false;
     uint32_t pressChanged_=0;
     static void IRAM_ATTR encoderInterrupt(void*);

@@ -13,6 +13,7 @@ HardwareCapabilities Board::capabilities() const {
     c.bluetoothAvailable=true;
     c.wifiAvailable=true;
 #endif
+    c.hapticsAvailable=hapticsReady_;
     return c;
 }
 uint64_t Board::nowMs() const { return uint64_t(esp_timer_get_time())/1000; }
@@ -53,6 +54,7 @@ bool Board::begin() {
     if(Wire.endTransmission()!=0) { Serial.println("CST816 not responding; init stopped");return false; }
     // CST816S DisAutoSleep register; keep touch responsive while UI is awake.
     Wire.beginTransmission(0x15);Wire.write(0xFE);Wire.write(1);Wire.endTransmission();
+    beginHaptics(); // Probe/configure with zero output; never buzz on boot.
     pinMode(encoderA,INPUT_PULLUP);pinMode(encoderB,INPUT_PULLUP);pinMode(pressPin,INPUT_PULLUP);
     encoderState_=(digitalRead(encoderA)<<1)|digitalRead(encoderB);
     attachInterruptArg(encoderA,encoderInterrupt,this,CHANGE);attachInterruptArg(encoderB,encoderInterrupt,this,CHANGE);
@@ -98,7 +100,63 @@ void Board::poll() {
 }
 void Board::touchTask(void* context) {
     auto* board=static_cast<Board*>(context);
-    for(;;) {board->pollTouch();vTaskDelay(pdMS_TO_TICKS(touchPollMs));}
+    for(;;) {board->pollHaptics();board->pollTouch();vTaskDelay(pdMS_TO_TICKS(touchPollMs));}
+}
+namespace {
+// TI DRV2605/DRV2605L register map; see docs/REST_ALERT_2026_11_09.md.
+constexpr uint8_t hapticAddress=0x5a, hapticStatus=0x00, hapticMode=0x01;
+constexpr uint8_t hapticRtp=0x02, hapticGo=0x0c, hapticFeedback=0x1a, hapticControl3=0x1d;
+constexpr uint32_t maximumRestBuzzMs=20000;
+constexpr uint8_t hapticStrength=0x7f; // Full positive signed RTP amplitude.
+}
+bool Board::hapticWrite(uint8_t reg,uint8_t value) {
+    Wire.beginTransmission(hapticAddress);Wire.write(reg);Wire.write(value);
+    return Wire.endTransmission()==0;
+}
+bool Board::hapticRead(uint8_t reg,uint8_t& value) {
+    Wire.beginTransmission(hapticAddress);Wire.write(reg);
+    if(Wire.endTransmission(false)!=0 || Wire.requestFrom(hapticAddress,uint8_t(1))!=1) return false;
+    value=Wire.read();return true;
+}
+void Board::beginHaptics() {
+    uint8_t status=0,feedback=0,control3=0;
+    if(!hapticRead(hapticStatus,status) || ((status>>5)!=3 && (status>>5)!=7)) {
+        Serial.println("DRV2605 not detected; rest notification remains visual");return;
+    }
+    // The matching K5 reference uses an LRA. Preserve the driver's remaining
+    // feedback/voltage defaults; no guessed motor GPIO or calibration actuation.
+    hapticsReady_=hapticWrite(hapticMode,0x40) && hapticWrite(hapticGo,0) && hapticWrite(hapticRtp,0) &&
+        hapticRead(hapticFeedback,feedback) && hapticWrite(hapticFeedback,feedback|0x80) &&
+        hapticRead(hapticControl3,control3) && hapticWrite(hapticControl3,control3 & ~0x08); // Signed RTP; remain in standby.
+    Serial.printf("DRV2605 rest haptics %s\n",hapticsReady_ ? "ready" : "unavailable");
+}
+void Board::restAlert(uint32_t durationMs) {
+    const auto until=durationMs ? nowMs()+std::min(durationMs,maximumRestBuzzMs) : 0;
+    portENTER_CRITICAL(&touchMux_);hapticUntil_=until;portEXIT_CRITICAL(&touchMux_);
+}
+void Board::pollHaptics() {
+    if(!hapticsReady_) return;
+    portENTER_CRITICAL(&touchMux_);const auto until=hapticUntil_;portEXIT_CRITICAL(&touchMux_);
+    const bool active=until && nowMs()<until;
+    if(active==hapticActive_) return;
+    bool written;
+    if(active) written=hapticWrite(hapticRtp,0) && hapticWrite(hapticMode,0x05) && hapticWrite(hapticRtp,hapticStrength);
+    else {
+        // Attempt both stopping mechanisms even if either bus write fails.
+        const bool zeroed=hapticWrite(hapticRtp,0);
+        const bool standby=hapticWrite(hapticMode,0x40);
+        written=zeroed && standby;
+    }
+    if(written) {
+        hapticActive_=active;
+        Serial.printf("Rest vibration %s\n",active ? "on" : "off");
+    } else if(active) {
+        // An ACK failure cannot prove the motor stayed off. Treat it as on so
+        // the deadline/cancel must still send zero; never retry a buzz blindly.
+        hapticActive_=true;
+        Serial.println("Rest vibration start unconfirmed");
+    }
+    // Retry failed zero writes; the independent deadline survives UI/BLE stalls.
 }
 void Board::cancelTouchLocked(uint64_t now,uint8_t reason) {
     touchBlocked_=true;
