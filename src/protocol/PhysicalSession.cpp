@@ -98,6 +98,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
     values_.clear();directMotor_.reset();seen_.clear();report_={};firmware_.clear();
+    pairedReadSupported_=autoUnloadReadSupported_=false;
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
     trainingSeen_=false;
@@ -310,6 +311,10 @@ void PhysicalSession::apply(const Frame& f) {
             (id==eccentric || id==0x3e83) ? int16_t(value) : int64_t(value);
     }
     if(at!=p.size()) return;
+    if(f.command==0x0f) {
+        pairedReadSupported_=pairedReadSupported_ || decoded.count(pairedDevice)!=0;
+        autoUnloadReadSupported_=autoUnloadReadSupported_ || decoded.count(autoUnloadHoldTime)!=0;
+    }
     bool acknowledgedMagic=false,acknowledgedEccentric=false;
     for(const auto& pair:decoded) {
         if(pair.first==motor) {
@@ -659,14 +664,17 @@ void PhysicalSession::pollState(size_t group) {
     switch(group) {
     case 0:read({base,motor,workout,unit});break;
     case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false),mountain,accessoryDisplayPercent});break;
-    case 2:read({childLock,otaState,twin,remoteCoworker,maxForce});break;
+    case 2:
+        if(pairedReadSupported_) read({childLock,otaState,twin,remoteCoworker,maxForce,pairedDevice});
+        else read({childLock,otaState,twin,remoteCoworker,maxForce});
+        break;
     case 3:read({position,offset,battery,autoLoadEnabled,autoLoadSafetyEnabled});break;
-    case 4:read({autoLoadStatus,mountLock,voidLock});break;
-    // Optional/newer fields must not cause rejection of the required safety
-    // group on older firmware. Once a paired field is observed, keep polling
-    // it at the critical cadence; stale presence still blocks standalone use.
-    case 5:if(values_.count(pairedDevice)) read({pairedDevice});break;
-    case 6:read({autoUnloadHoldTime});break; // Needed fresh for the RP hold limit, isolated from load readiness.
+    case 4:
+        // Probe newer fields separately first. Only a successful direct read
+        // permits joining the five critical groups, preserving their bandwidth.
+        if(autoUnloadReadSupported_) read({autoLoadStatus,mountLock,voidLock,autoUnloadHoldTime});
+        else read({autoLoadStatus,mountLock,voidLock});
+        break;
     }
 }
 bool PhysicalSession::enterTrainingOnConnect() {
@@ -769,7 +777,7 @@ void PhysicalSession::tick(uint64_t now) {
         if(backgroundRead_++%2) {
             switch(infoRead_++%9) {
             case 0:read({pairedDevice});break;
-            case 1:read({0x5355,0x53cf});break;
+            case 1:read({autoUnloadHoldTime});break;
             case 2:send(0x74,{});break;
             case 3:send(0x77,{0});break;
             case 4:send(0x77,{1});break;

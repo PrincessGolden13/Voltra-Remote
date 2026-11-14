@@ -44,7 +44,8 @@ private:
     uint64_t now_=0,connectedAt_=0,lastWrite_=0,reportRevision_=0;
     uint16_t sequence_=0;
     size_t bootstrap_=0,backgroundRead_=0,infoRead_=0;
-    std::array<uint64_t,7> pollAt_{};
+    std::array<uint64_t,5> pollAt_{};
+    bool pairedReadSupported_=false,autoUnloadReadSupported_=false;
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
