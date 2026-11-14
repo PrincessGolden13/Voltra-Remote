@@ -47,10 +47,11 @@ or hold and release to edit. The device name releases Bluetooth and returns to t
 picker, allowing the phone app to connect. The gear opens settings.
 Wi-Fi setup uses a temporary phone portal under Settings -> Wi-Fi.
 
-Hold anywhere on an awake screen for six seconds to approve sending the last
-20 diagnostic events. Reports wait for Wi-Fi after leaving the VOLTRA connection.
+Choose Settings -> Send debug log, or hold anywhere on an awake screen for six
+seconds, to approve sending the last 20 diagnostic events. Reports wait for
+Wi-Fi after leaving the VOLTRA connection. Load refusals also offer this button.
 See [debug reports](docs/DEBUG_REPORTS.md) and the
-[November 9 fixes and remaining limitations](docs/BUG_FIXES_2026_11_09.md).
+[November 14 fixes and remaining limitations](docs/BUG_FIXES_2026_11_14.md).
 
 ## Firmware updates
 

@@ -4,6 +4,7 @@
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <algorithm>
+#include "diagnostics/EventLog.h"
 namespace voltra::guition {
 HardwareCapabilities Board::capabilities() const {
     HardwareCapabilities c;
@@ -52,8 +53,18 @@ bool Board::begin() {
     pinMode(touchIrq,INPUT_PULLUP);Wire.begin(touchSda,touchScl,400000);Wire.setTimeOut(20);
     Wire.beginTransmission(0x15);
     if(Wire.endTransmission()!=0) { Serial.println("CST816 not responding; init stopped");return false; }
-    // CST816S DisAutoSleep register; keep touch responsive while UI is awake.
-    Wire.beginTransmission(0x15);Wire.write(0xFE);Wire.write(1);Wire.endTransmission();
+    // CST816S register declaration: 0xFB auto-resets a stationary touch (default
+    // 5 s); 0xFC resets a long press (default 10 s). Both interrupt a 6 s gesture.
+    // Zero disables these touch-controller resets, not any VOLTRA interlock.
+    // Keep auto sleep disabled too. See BUG_FIXES_2026_11_14.md for provenance.
+    for(const auto reg:{uint8_t(0xFB),uint8_t(0xFC),uint8_t(0xFE)}) {
+        Wire.beginTransmission(0x15);Wire.write(reg);Wire.write(reg==0xFE ? 1 : 0);
+        const bool written=Wire.endTransmission()==0;
+        Wire.beginTransmission(0x15);Wire.write(reg);
+        const bool readable=Wire.endTransmission(false)==0 && Wire.requestFrom(uint8_t(0x15),uint8_t(1))==1;
+        const int actual=readable ? Wire.read() : -1;
+        diagnostic("Touch config reg="+std::to_string(reg)+" ack="+std::to_string(written)+" read="+std::to_string(actual));
+    }
     beginHaptics(); // Probe/configure with zero output; never buzz on boot.
     pinMode(encoderA,INPUT_PULLUP);pinMode(encoderB,INPUT_PULLUP);pinMode(pressPin,INPUT_PULLUP);
     encoderState_=(digitalRead(encoderA)<<1)|digitalRead(encoderB);
@@ -199,6 +210,8 @@ TouchPoint Board::sample() {
     if(touchCount_) {captured=touchQueue_[touchHead_];touchHead_=(touchHead_+1)%touchQueueCapacity;--touchCount_;}
     portEXIT_CRITICAL(&touchMux_);
     const auto point=captured.point;
+    if(point.cancelled && !deliveredTouch_.cancelled)
+        diagnostic("Touch cancelled reason="+std::to_string(captured.cancelReason));
     if(point.pressed!=deliveredTouch_.pressed || point.cancelled!=deliveredTouch_.cancelled)
         Serial.printf("%llu Touch %s %d,%d ageMs=%llu reason=%u\n",static_cast<unsigned long long>(now),
             point.cancelled ? "cancel" : point.pressed ? "down" : "up",

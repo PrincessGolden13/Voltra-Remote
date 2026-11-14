@@ -42,6 +42,14 @@ void UiController::buildExtra() {
         auto* b=button(face_,name,width_*x/100,height_*y/100,width_*w/100,height_*h/100,id);
         glow(b,accent(),true); return b;
     };
+    if(page_==Screen::ControlNotice) {
+        label(face_,"LOAD REQUEST BLOCKED",width_*80/100,height_*20/100,heading);
+        label(face_,app_.loadRefusalMessage(),width_*74/100,height_*33/100,medium);
+        action("Send debug log",20,56,60,11,SendDebugLog);
+        action("BACK",20,70,28,11,DismissControl);
+        action("UNLOAD",52,70,28,11,Unload);
+        return;
+    }
     if(page_==Screen::ConnectionNotice) {
         label(face_,"CONNECTION ENDED",width_*76/100,height_*22/100,heading);
         label(face_,app_.message(),width_*74/100,height_*38/100,medium);
@@ -147,10 +155,11 @@ void UiController::buildExtra() {
     if (page_ == Screen::Settings) {
         const char* names[]={"Theme", "Rest alert", "Dim", "Sleep"};
         for(int i=0;i<4;++i) {
-            auto* b=action(names[i],19,27+i*10,62,9,ThemeField+i); settingsValues_[i]=lv_obj_get_child(b,0);
+            auto* b=action(names[i],19,25+i*9,62,8,ThemeField+i); settingsValues_[i]=lv_obj_get_child(b,0);
         }
-        action("Wi-Fi",16,70,31,8,OpenWifi); action("Updates",53,70,31,8,OpenUpdates);
-        action("About",21,80,27,8,OpenAbout); action("Reset",52,80,27,8,OpenReset);
+        action("Send debug log",19,62,62,9,SendDebugLog);
+        action("Wi-Fi",16,73,31,8,OpenWifi); action("Updates",53,73,31,8,OpenUpdates);
+        action("About",24,83,24,8,OpenAbout); action("Reset",52,83,24,8,OpenReset);
     } else if(page_ == Screen::Reset) {
         label(face_,"Erase themes, preferences\nand saved presets?\nRecent devices are kept.",width_*73/100,height_*36/100,medium);
         action("CANCEL",26,62,48,12,CloseSettings);

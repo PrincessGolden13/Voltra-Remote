@@ -1,5 +1,15 @@
 # Validation status and pending tests
 
+November 14 follow-up: [changes and evidence](BUG_FIXES_2026_11_14.md).
+Future cases (new test code still deferred): Settings debug access; visible hold
+countdown, 6+ second blank/control holds, drift independent of tap rejection,
+controller 0xFB/0xFC ACK/readback, cancellation and wake-only input; no action
+on release after a debug hold; preserved refusal snapshot after disconnect;
+optional-parameter rejection must not erase required polls; direct motor 5 vs
+bulk echo 1, stale direct motor and immediate single-field unload/unknown state;
+no automatic reload after RP, and weight writes/readbacks distinct from force.
+Keep load refusal and Unload readable on 360/466/480 displays.
+
 November 9 bug follow-up: [source audit](PROTOCOL_AUDIT_2026_11_09.md),
 [implementation/validation record](BUG_FIXES_2026_11_09.md) and
 [diagnostic gesture/report cases](DEBUG_REPORTS.md). New test source remains

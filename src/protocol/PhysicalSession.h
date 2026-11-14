@@ -37,13 +37,14 @@ private:
     std::array<uint64_t,3> fragmentAt_{};
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
+    std::optional<Observed> directMotor_;
     std::deque<std::pair<uint8_t,uint16_t>> seen_;
     TrainingReport report_;
     std::string status_,firmware_;
     uint64_t now_=0,connectedAt_=0,lastWrite_=0,reportRevision_=0;
     uint16_t sequence_=0;
     size_t bootstrap_=0,backgroundRead_=0,infoRead_=0;
-    std::array<uint64_t,5> pollAt_{};
+    std::array<uint64_t,7> pollAt_{};
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
@@ -78,6 +79,7 @@ private:
     bool trainingSeen_=false;
     std::optional<int64_t> fresh(uint16_t) const;
     std::optional<int64_t> freshMotorMode() const;
+    std::optional<int64_t> freshDirectMotorMode() const;
     bool updateAllowsControls() const;
     const char* updateBlockReason() const;
     bool standalone() const;

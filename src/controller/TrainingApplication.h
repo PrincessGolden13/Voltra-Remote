@@ -23,7 +23,9 @@ public:
     bool connecting() const { return controller_.connecting(); }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
-    std::string diagnosticState() const { return session_.diagnosticState(); }
+    std::string diagnosticState() const { return (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+" lastFailure={"+lastControlFailure_+"}"; }
+    uint64_t loadRefusalRevision() const { return loadRefusalRevision_; }
+    const std::string& loadRefusalMessage() const { return loadRefusalMessage_; }
     TrainingReport report() const { return session_.trainingReport(); }
     // Presentation clock; prefer machine elapsed time, otherwise use its actual
     // set-close event. Never put locally elapsed seconds into TrainingReport.
@@ -70,6 +72,10 @@ private:
     std::map<DeviceId, DropSettings> dropSettings_;
     DeviceId selected_;
     std::string name_, message_, presetError_;
+    std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_;
+    uint64_t loadRefusalRevision_=0;
+    void recordControlFailure(const std::string&);
+    void recordLoadRefusal();
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
     uint64_t restSetRevision_ = 0;
     std::optional<uint64_t> restSince_;

@@ -97,7 +97,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
-    values_.clear();seen_.clear();report_={};firmware_.clear();
+    values_.clear();directMotor_.reset();seen_.clear();report_={};firmware_.clear();
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
     trainingSeen_=false;
@@ -121,6 +121,10 @@ std::optional<int64_t> PhysicalSession::fresh(uint16_t id) const {
 std::optional<int64_t> PhysicalSession::freshMotorMode() const {
     const auto raw=fresh(motor);
     return raw ? motorMode(*raw) : std::nullopt;
+}
+std::optional<int64_t> PhysicalSession::freshDirectMotorMode() const {
+    if(!directMotor_ || now_<directMotor_->at || now_-directMotor_->at>stateFreshMs) return {};
+    return motorMode(directMotor_->value);
 }
 bool PhysicalSession::updateAllowsControls() const {
     const auto state=fresh(otaState);
@@ -164,11 +168,14 @@ bool PhysicalSession::liveWeightReady() const {
     // needs a load reassertion in another remote's capture; do not do that here.
     const auto m=freshMotorMode();
     const bool loaded=m==1 || (m==autoLoadMotorMode && fresh(autoLoadStatus)==autoLoadComplete);
-    return controlContextReady() && fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock &&
+    // Bulk settings pushes can echo idle mode 1 during an active mode-5 set
+    // (kirby 8e1ea1c PROTOCOL.md). They must not authorize the idle-only path.
+    return controlContextReady() && freshDirectMotorMode()==m && fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock &&
         loaded && (!workoutStatus_ || *workoutStatus_==2 || *workoutStatus_==3) &&
         (fresh(accessoryDisplayPercent)==0 || (*fresh(chainsPercent)%100==0 && *fresh(eccentricPercent)%100==0));
 }
 void PhysicalSession::cancelWrites(const char* reason) {
+    if(*reason) diagnostic(std::string("Control transaction stopped: ")+reason);
     waitingWrite_.reset();writes_.clear();target_.reset();status_=reason;
     targetClockPending_=targetImmediate_=false;
     liveIntent_.reset();liveBefore_.reset();
@@ -219,6 +226,7 @@ bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
     for(int i=0;i<bytes;++i) b.push_back(uint8_t(uint32_t(value)>>(i*8)));
     // Numeric control trace only; no handshake identity or device address.
     Serial.printf("%llu VOLTRA write request id=%u value=%d\n",static_cast<unsigned long long>(now_),unsigned(id),value);
+    diagnostic("BLE parameter write id="+std::to_string(id)+" value="+std::to_string(value));
     if(!send(0x11,b)) return false;
     waitingWrite_=std::make_pair(id,value);waitingAt_=now_;return true;
 }
@@ -304,8 +312,14 @@ void PhysicalSession::apply(const Frame& f) {
     if(at!=p.size()) return;
     bool acknowledgedMagic=false,acknowledgedEccentric=false;
     for(const auto& pair:decoded) {
+        if(pair.first==motor) {
+            if(f.command==0x0f) directMotor_=Observed{pair.second,now_};
+            // Ignore only the documented stale loaded-idle echo; genuine
+            // single-field changes, unloads and unknown states still invalidate.
+            else if(count>1 && motorMode(pair.second)==1 && freshDirectMotorMode()==5) continue;
+        }
         if(pair.first==voidLock || pair.first==mountLock || pair.first==twin || pair.first==remoteCoworker ||
-           pair.first==pairedDevice || pair.first==motor || pair.first==autoLoadStatus) {
+           pair.first==pairedDevice || pair.first==motor || pair.first==autoLoadStatus || pair.first==base) {
             const auto previous=values_.find(pair.first);
             if(previous==values_.end() || previous->second.value!=pair.second)
                 diagnostic("State "+std::to_string(pair.first)+"="+std::to_string(pair.second));
@@ -327,6 +341,8 @@ void PhysicalSession::apply(const Frame& f) {
             const bool autoArmed=pair.first==motor && waitingWrite_->second==38 && observed==autoLoadMotorMode &&
                 autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
             if(unloaded || loaded || autoArmed || observed==waitingWrite_->second) {
+                diagnostic("Device readback id="+std::to_string(pair.first)+" value="+std::to_string(pair.second)+
+                    " source="+(f.command==0x0f ? std::string("read") : std::string("push")));
                 if(pair.first==accessoryDisplayPercent) unitSwitchAt_=now_;
                 acknowledgedMagic=acknowledgedMagic || pair.first==chains || pair.first==percentParameter(true);
                 acknowledgedEccentric=acknowledgedEccentric || pair.first==eccentric || pair.first==percentParameter(false);
@@ -477,7 +493,8 @@ void PhysicalSession::updateReport() {
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
     report_.revision=++reportRevision_;
     if(!busy() && !commandFailed_) status_=settingsReady() || liveWeightReady() ? "" :
-        !updateAllowsControls() ? updateBlockReason() : report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
+        !updateAllowsControls() ? updateBlockReason() : freshDirectMotorMode()==5 ? "Active-set weight change unsupported; send debug log" :
+        report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
 }
 TrainingReport PhysicalSession::trainingReport() const { return report_; }
 SessionReadiness PhysicalSession::readiness() const {
@@ -487,21 +504,32 @@ SessionReadiness PhysicalSession::readiness() const {
     const auto cable=fresh(position),zero=fresh(offset);
     r.cableZero=cable && zero && std::abs(*cable-*zero)<=cableZeroToleranceCm;
     r.twinSafe=standalone();r.minWeightLbs=5;
-    r.ready=accepted_ && activated_ && settingsReady() && freshMotorMode()==0 && cable && zero &&
+    r.ready=accepted_ && activated_ && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
         fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock && fresh(autoLoadStatus)==0;
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
-    else if(!standalone()) r.reason="Device connection state unavailable";
+    else if(!activated_) r.reason="Waiting for VOLTRA activation status";
+    else if(!fresh(twin) || !fresh(remoteCoworker) || (values_.count(pairedDevice) && !fresh(pairedDevice))) r.reason="Reading VOLTRA link status; try again";
+    else if(!standalone()) r.reason="Twin/link state unsupported; send debug log";
     else if(!updateAllowsControls()) r.reason=updateBlockReason();
+    else if(fresh(childLock)!=0) r.reason="Check VOLTRA child lock";
     else if(!settingsReady()) r.reason="Control state unavailable";
     else if(fresh(mountLock)!=securedMount) r.reason="Secure VOLTRA mounting lock";
     else if(!fresh(voidLock)) r.reason="Waiting for fresh VOLTRA safety status";
-    else if(fresh(voidLock)!=observedVoidLock) r.reason="Unrecognized VOLTRA safety status: "+std::to_string(*fresh(voidLock))+". Hold 6s to report.";
+    else if(fresh(voidLock)!=observedVoidLock) r.reason="Safety status "+std::to_string(*fresh(voidLock))+" unrecognized; send debug log";
+    else if(!fresh(autoLoadStatus)) r.reason="Reading Auto Load status; try again";
+    else if(fresh(autoLoadStatus)!=0) r.reason="Finish or cancel Auto Load on VOLTRA";
+    else if(!freshDirectMotorMode()) r.reason="Reading VOLTRA motor status; try again";
+    else if(!cable || !zero) r.reason="Reading cable position; try again";
     else if(!r.ready) r.reason="Waiting for fresh load readiness";
     else if(!r.cableZero) r.reason="Retract cable to load";
     return r;
 }
 std::string PhysicalSession::diagnosticState() const {
     std::string text="accepted="+std::to_string(accepted_)+" activated="+std::to_string(activated_);
+    text+=" directMotor="+(directMotor_ ? std::to_string(directMotor_->value)+"@"+std::to_string(now_>=directMotor_->at ? now_-directMotor_->at : 0)+"ms" : "missing");
+    text+=" phase="+(workoutStatus_ ? std::to_string(*workoutStatus_) : "unknown")+
+        " forceTenthsLb="+std::to_string(motionForce_)+" posMm="+std::to_string(motionPosition_)+
+        " motionAgeMs="+(motionAt_ ? std::to_string(now_>=motionAt_ ? now_-motionAt_ : 0) : "missing");
     // Numeric state only. Never include the client identity, BLE address, name,
     // Wi-Fi details, or paired-device identifier (only its presence is retained).
     for(const auto id:{motor,workout,base,unit,maxForce,position,offset,childLock,otaState,
@@ -556,8 +584,13 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     return TransportResult::Accepted;
 }
 TransportResult PhysicalSession::setLiveWeight(int ticks) {
-    if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs)
+    if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) {
+        status_=freshDirectMotorMode()==5 ? "Active-set drop unsupported; send debug log" : "Drop blocked: fresh loaded state required";
+        diagnostic(status_);
         return TransportResult::Unsupported;
+    }
+    diagnostic("Drop base request ticks="+std::to_string(ticks)+" from="+std::to_string(report_.settings.weight)+
+        " unit="+unitName(report_.unit)+" forceTenthsLb="+std::to_string(motionForce_));
     auto s=report_.settings;s.weight=ticks;
     const auto result=setTraining(s);
     if(result==TransportResult::Accepted) targetImmediate_=true;
@@ -626,9 +659,14 @@ void PhysicalSession::pollState(size_t group) {
     switch(group) {
     case 0:read({base,motor,workout,unit});break;
     case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false),mountain,accessoryDisplayPercent});break;
-    case 2:read({childLock,otaState,twin,remoteCoworker,pairedDevice,maxForce});break;
+    case 2:read({childLock,otaState,twin,remoteCoworker,maxForce});break;
     case 3:read({position,offset,battery,autoLoadEnabled,autoLoadSafetyEnabled});break;
-    case 4:read({autoLoadStatus,mountLock,voidLock,fitnessRestTime,autoUnloadHoldTime});break;
+    case 4:read({autoLoadStatus,mountLock,voidLock});break;
+    // Optional/newer fields must not cause rejection of the required safety
+    // group on older firmware. Once a paired field is observed, keep polling
+    // it at the critical cadence; stale presence still blocks standalone use.
+    case 5:if(values_.count(pairedDevice)) read({pairedDevice});break;
+    case 6:read({autoUnloadHoldTime});break; // Needed fresh for the RP hold limit, isolated from load readiness.
     }
 }
 bool PhysicalSession::enterTrainingOnConnect() {
@@ -730,7 +768,7 @@ void PhysicalSession::tick(uint64_t now) {
         }
         if(backgroundRead_++%2) {
             switch(infoRead_++%9) {
-            case 0:read({pairedDevice,20566});break;
+            case 0:read({pairedDevice});break;
             case 1:read({0x5355,0x53cf});break;
             case 2:send(0x74,{});break;
             case 3:send(0x77,{0});break;
