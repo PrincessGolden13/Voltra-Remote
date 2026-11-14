@@ -2,6 +2,7 @@
 namespace voltra {
 void UiController::openDebugDialog() {
     if(debugDialog_) return;
+    if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
     debugEvents_=EventLog::instance().snapshot();
     debugContext_="firmware=" VOLTRA_VERSION " screen="+std::to_string(int(page_))+" "+app_.diagnosticState();
     debugSubmitted_=false;editDirty_=returnAfterEdit_=false;
@@ -13,7 +14,7 @@ void UiController::openDebugDialog() {
     lv_obj_set_style_border_width(debugDialog_,0,0);lv_obj_set_style_pad_all(debugDialog_,0,0);
     lv_obj_remove_flag(debugDialog_,LV_OBJ_FLAG_SCROLLABLE);
     label(debugDialog_,"DEBUG REPORT",width_*3/4,height_/6);
-    debugText_=label(debugDialog_,"Send last events for debugging?\n\n20 recent events and control status.\nNo Wi-Fi passwords or device IDs.",width_*3/4,height_*28/100);
+    debugText_=label(debugDialog_,"Send last events for debugging?\n\n20 recent events and control status.\nNo Wi-Fi passwords or device IDs.\n\nLeave VOLTRA to send over Wi-Fi.",width_*3/4,height_*27/100);
     auto make=[&](const char* title,int x,lv_event_cb_t callback) {
         auto* b=lv_button_create(debugDialog_);lv_obj_set_size(b,width_*28/100,height_/9);
         lv_obj_set_pos(b,x,height_*66/100);
@@ -49,6 +50,20 @@ void UiController::closeDebugDialog() {
     lv_indev_wait_release(touch_);
 }
 void UiController::updateDebugDialog() {
+    const auto now=hardware_.nowMs();
+    const auto heldMs=now>=touchStartedAt_ ? now-touchStartedAt_ : 0;
+    const bool counting=touchDown_ && !debugMoved_ && !wakeTouch_ && !debugConsumed_ && !debugDialog_ && heldMs>=1000;
+    if(counting) {
+        if(!debugHint_) {
+            debugHint_=label(lv_layer_top(),"",width_*70/100,height_*82/100);
+            lv_obj_set_style_bg_color(debugHint_,lv_color_hex(0x04080b),0);
+            lv_obj_set_style_bg_opa(debugHint_,LV_OPA_COVER,0);
+        }
+        const auto remaining=heldMs>=debugHoldMs ? 0 : (debugHoldMs-heldMs+999)/1000;
+        const auto caption="Debug log in "+std::to_string(remaining)+"s - keep holding";
+        if(caption!=lv_label_get_text(debugHint_)) lv_label_set_text(debugHint_,caption.c_str());
+        lv_obj_remove_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
+    } else if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
     if(!debugDialog_) return;
     if(app_.connected()) lv_obj_remove_flag(debugUnload_,LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(debugUnload_,LV_OBJ_FLAG_HIDDEN);

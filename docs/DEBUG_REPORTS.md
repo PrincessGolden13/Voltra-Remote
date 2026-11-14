@@ -1,11 +1,15 @@
-# Diagnostic reports (v0.4.3)
+# Diagnostic reports (v0.4.4)
 
-Hold a stationary finger anywhere on an awake screen for six seconds. The remote
+Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
+screen for six seconds. A countdown appears after one second. The remote
 asks **Send last events for debugging?** Choose YES to save and send, or CLOSE / NO
 to dismiss without transmitting. Waking a sleeping screen consumes the first
 touch; lift and hold again. Ordinary 650 ms hold actions now execute on release
 before six seconds, so the debugging gesture cannot first trigger Auto Load.
-Movement cancels the gesture. Unload remains available on the dialog when connected.
+Drift up to 10% of the display's short side is allowed for debugging; larger
+movement cancels. Control taps keep their stricter movement limits. Unload
+remains available on the dialog when connected. Load refusals also have a
+Send debug log button and stay visible until dismissed.
 
 The last 20 bounded semantic events are kept in RAM, replacing the oldest. They
 include user actions, connection outcomes, relevant state changes, protocol parse
@@ -13,6 +17,11 @@ failures and displayed errors. Each message is limited to 256 bytes. No raw BLE
 payloads, bootstrap identities, Wi-Fi credentials, Bluetooth addresses or paired
 device identifiers are included. A snapshot also records firmware, screen, numeric
 readiness fields and their ages. The paired ID is represented only by presence.
+The latest control failure retains a bounded RAM snapshot with timestamp across
+disconnect, so Settings can report the original blocked state. Manually leaving
+the connection also retains its last numeric session snapshot. Weight command
+and readback events include measured force context where available, without
+claiming that register readback proves actual resistance.
 
 YES persists one approved snapshot in the separate `voltra-debug/pending` NVS key.
 It survives a restart or OTA. Unapproved ring history is RAM-only and resets at

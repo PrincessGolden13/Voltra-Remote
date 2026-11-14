@@ -114,6 +114,7 @@ void TrainingApplication::rememberConnection() {
     scan();
 }
 void TrainingApplication::leave(bool preserveFailure) {
+    if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
     automaticSelection_ = false;
     scanned_ = scanPending_ = false;
@@ -177,6 +178,16 @@ void TrainingApplication::adjustWeight(int delta) {
         sameModifier(s.eccentric,r.settings.eccentric)) return;
     if (sendSettings(s)) {weightIntent_ = s.weight;weightIntentUnit_=r.unit;}
 }
+void TrainingApplication::recordControlFailure(const std::string& reason) {
+    // RAM-only boot-local snapshot survives leaving Devices for Settings. The
+    // session itself clears on disconnect, which used to lose the useful values.
+    lastControlFailure_=("at="+std::to_string(now_)+" reason="+reason+" "+session_.diagnosticState()).substr(0,900);
+    diagnostic("Control failure: "+reason);
+}
+void TrainingApplication::recordLoadRefusal() {
+    loadRefusalMessage_=message();++loadRefusalRevision_;
+    recordControlFailure(loadRefusalMessage_);
+}
 void TrainingApplication::toggleWeight() {
     diagnostic("Explicit weight action");
     auto r = report();
@@ -186,11 +197,12 @@ void TrainingApplication::toggleWeight() {
     const auto e = session_.readiness();
     if (pending() || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = r.minWeight>0 && r.settings.weight < r.minWeight ? "Set at least "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
-            !e.reason.empty() ? e.reason : "Device not ready"; diagnostic("Load blocked: "+message_);return;
+            !e.reason.empty() ? e.reason : "Device not ready"; recordLoadRefusal();return;
     }
     const auto result = session_.setLoaded(true);
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
     diagnostic("Load request result="+std::to_string(int(result)));
+    if(result!=TransportResult::Accepted) recordLoadRefusal();
 }
 void TrainingApplication::unload() {
     diagnostic("Unload requested");
@@ -328,6 +340,7 @@ void TrainingApplication::resetDrops() {
     repSet_.reset();holdPosition_.reset();
 }
 void TrainingApplication::stopDrops(const char* reason) {
+    if(*reason) recordControlFailure(reason);
     if(dropTarget_) {
         session_.cancelTraining();pending_=false;settingsIntent_.reset();weightIntent_.reset();dropTarget_.reset();
     }
@@ -397,7 +410,10 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     // still update independently; there is nothing left to validate or send.
     if(dropsExhausted_) return;
     if(!fresh() || !r.twinKnown || !r.liveWeightSupported || r.minWeight<1 || r.autoLoadArmed) {
-        if(wasLoaded_ || dropTarget_) stopDrops("Drops stopped: state unavailable");
+        if(wasLoaded_ || dropTarget_) {
+            const auto reason=!session_.status().empty() ? "Drops stopped: "+session_.status() : "Drops stopped: state unavailable";
+            stopDrops(reason.c_str());
+        }
         return;
     }
     if (dropsCancelled_) return; // A failed unload must never restart automation.
@@ -406,6 +422,8 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
         if (session_.commandFailed() || !message_.empty() || r.settings.weight != *dropTarget_) {
             stopDrops("Drop unconfirmed; stopped");return;
         }
+        diagnostic("Drop base readback ticks="+std::to_string(*dropTarget_)+" forceTicks="+
+            (r.force ? std::to_string(*r.force) : "unknown")+"; resistance effect not verified");
         confirmedDropWeight_=*dropTarget_;++dropConfirmationRevision_;
         dropTarget_.reset(); ++dropsCompleted_;
     }
@@ -496,7 +514,10 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     const auto result=session_.setLiveWeight(s.weight);sent(result);
     if (result==TransportResult::Accepted) {
         settingsIntent_=s;dropTarget_ = s.weight;holdConsumed_=true;movementSeen_=false;
-    } else stopDrops("Drop request refused; stopped");
+    } else {
+        const auto reason=session_.status().empty() ? std::string("Drop request refused; stopped") : session_.status();
+        stopDrops(reason.c_str());
+    }
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
@@ -557,6 +578,10 @@ void TrainingApplication::tick(uint64_t now) {
            r.settings.weight!=settingsIntent_->weight || r.settings.magicMode!=settingsIntent_->magicMode ||
            !matches(r.settings.magic,settingsIntent_->magic) || !matches(r.settings.eccentric,settingsIntent_->eccentric)))
             message_="Settings not confirmed";
+        if(!message_.empty()) {
+            recordControlFailure(message_);
+            if(requestedLoad_) {loadRefusalMessage_=message_;++loadRefusalRevision_;}
+        }
         pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {
             auto actual = currentPreset(); actual.drops = presetIntent_->drops;

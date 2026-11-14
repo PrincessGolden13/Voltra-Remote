@@ -195,7 +195,8 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         data->continue_reading=s->hardware_.touch().hasPending();
         if(p.cancelled) {
             // A lost sample or old-screen gesture is never a synthetic click.
-            s->touchMoved_=true;s->touchDown_=false;s->wakeTouch_=false;
+            if(s->touchDown_) diagnostic("Touch cancelled during hold ms="+std::to_string(s->hardware_.nowMs()-s->touchStartedAt_));
+            s->touchMoved_=s->debugMoved_=true;s->touchDown_=false;s->wakeTouch_=false;
             lv_indev_wait_release(input);
             data->point={int(p.x*(s->width_-1)),int(p.y*(s->height_-1))};
             data->state=LV_INDEV_STATE_RELEASED;return;
@@ -207,7 +208,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
         if(p.pressed && !s->touchDown_) {
             s->touchStartX_=x;s->touchStartY_=y;s->touchMoved_=false;s->modeGestureUntil_=0;
-            s->touchStartedAt_=s->hardware_.nowMs();s->debugConsumed_=false;
+            s->touchStartedAt_=s->hardware_.nowMs();s->debugConsumed_=s->debugMoved_=false;
         }
         // Allow normal finger drift on controls (5% of the short display side:
         // 18 px on K5). Paged pickers keep the stricter 2.5% swipe rejection so
@@ -216,10 +217,15 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         const bool paged=s->page_==Screen::Devices || s->page_==Screen::Presets;
         const int tapSlop=std::max(1,std::min(s->width_,s->height_)/(paged ? 40 : 20));
         if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > tapSlop || std::abs(y-s->touchStartY_) > tapSlop)) s->touchMoved_=true;
+        // Debug is a screen-wide gesture, not a tile selection. Allow 10% drift
+        // (36 px on K5) without relaxing the stricter tap/swipe safety threshold.
+        const int debugSlop=std::max(1,std::min(s->width_,s->height_)/10);
+        if((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_)>debugSlop || std::abs(y-s->touchStartY_)>debugSlop)) s->debugMoved_=true;
         const auto holdNow=s->hardware_.nowMs();
-        if((p.pressed || s->touchDown_) && !s->touchMoved_ && !s->wakeTouch_ && !s->debugDialog_ &&
+        if((p.pressed || s->touchDown_) && !s->debugMoved_ && !s->wakeTouch_ && !s->debugDialog_ &&
            !s->debugConsumed_ && holdNow>=s->touchStartedAt_ && holdNow-s->touchStartedAt_>=debugHoldMs) {
             s->debugPending_=s->debugConsumed_=true;
+            diagnostic("Six-second debug hold recognized");
             lv_indev_wait_release(input);
         }
         if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_ && !s->debugConsumed_ && !s->debugDialog_) {
@@ -317,6 +323,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     activityAt_ = hardware_.nowMs();
     if(action==DismissConnection) {app_.leave();navigate(Screen::Devices);return;}
+    if(action==DismissControl) {navigate(app_.connected() ? Screen::Main : Screen::Devices);return;}
     rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
         const size_t count = (app_.devices().size()+3)/4;
@@ -370,6 +377,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         navigate(Screen::Main); return;
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
+    if (action == SendDebugLog) { debugPending_=true; return; }
     if(action==CheckUpdates) {if(updates_) updates_->check();return;}
     if(action==InstallUpdate) {
         if(updates_ && !app_.connected() && !app_.connecting() && !app_.pending() && updates_->install()) app_.setMaintenance(true);
@@ -959,6 +967,9 @@ void UiController::tick() {
             (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())));
     }
     app_.tick(now);
+    if(app_.loadRefusalRevision()!=loadRefusalRevision_ && !debugDialog_ && !debugPending_) {
+        loadRefusalRevision_=app_.loadRefusalRevision();navigate(Screen::ControlNotice);
+    }
     if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());
     if(reports_) reports_->tick(wifi_ && wifi_->status().connected && !wifi_->status().setupActive,
         !app_.connected() && !app_.connecting() && !app_.pending() && (!updates_ || !updates_->status().busy()));
