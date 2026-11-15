@@ -1,6 +1,6 @@
 # Foundation baseline
 
-## November 15 debug-report candidate v0.4.5
+## November 15 debug-report v0.4.5
 
 - CONFIRMED: baseline core at 2e76d66 and changed core/packet inspector build
   with CMake 3.31.6 and GNU 14.2.0. Existing pinned Ryan packet/upstream
@@ -17,6 +17,14 @@
   physical BLE/OTA/debug networking/certificate code only in Normal and mock
   transport only in Simulator. Public source excludes LocalConfig.h; no private
   bootstrap values were available here for byte-comparison checks.
+- CONFIRMED: [tag build 43766736376](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43766736376)
+  passes at v0.4.5 / 2e71053471b92d6e314e55388ec58e7437362672. The merged tree
+  matches the checked PR. The tagged Normal image has the same SHA-256 above;
+  its manifest, both image identities and USB/OTA Normal consistency pass.
+  [v0.4.5](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.5)
+  was published as the latest ordinary release on November 15. Public downloads
+  through the remote's latest-release manifest and version-pinned OTA image URLs
+  return v0.4.5 and pass identity, size and SHA-256 verification.
 - UNVERIFIED: physical dialog input/unload, Bluetooth handoff, upload retry and
   OTA settings retention. No Linux graphical pass or physical motor test was
   performed. The received e354d15a report has no session/failure context; it does

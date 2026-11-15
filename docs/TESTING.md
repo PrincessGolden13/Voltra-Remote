@@ -25,6 +25,14 @@ feedback; modal input during underlying page transitions; SEND save failure,
 pending-control handoff, close/reopen, missing Wi-Fi, upload failure/RETRY and
 rebooted queue without a new disconnect; OTA preferences retention.
 
+Publication follow-through: [v0.4.5 tag build 43766736376](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43766736376)
+passed at merged source 2e71053471b92d6e314e55388ec58e7437362672. Downloaded
+draft assets pass Normal manifest hash/length, Normal/Simulator identities and
+USB/OTA Normal consistency; the tagged Normal hash matches the reviewed image
+above. The ordinary release is published as latest. The public update feed and
+version-pinned firmware download were verified as v0.4.5 with matching image
+identity, size and hash. This is delivery evidence, not a physical OTA/unload trial.
+
 November 14 follow-up: [changes and evidence](BUG_FIXES_2026_11_14.md).
 Future cases (new test code still deferred): Settings debug access; visible hold
 countdown, 6+ second blank/control holds, drift independent of tap rejection,

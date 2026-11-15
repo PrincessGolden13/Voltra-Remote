@@ -43,7 +43,7 @@ that simultaneous Wi-Fi/BLE is impossible on the hardware.
 New test source remains deferred by the project brief. Physical touch, unload,
 Bluetooth release, Wi-Fi delivery and OTA retention require owner observation;
 no autonomous motor test or USB flashing is authorized or performed here.
-Build and existing-validator evidence is recorded in TESTING.md after execution.
+Build and existing-validator evidence is recorded in TESTING.md.
 
 CONFIRMED (build/artifacts): public Normal and isolated Simulator, offline core
 and package validation pass in GitHub Actions 43762944735 at source 3a71e94.
@@ -51,3 +51,9 @@ The downloaded archive matches GitHub's SHA-256 digest; both image descriptors,
 the Normal manifest length/hash and final-link simulator isolation were checked.
 The local baseline/changed core and existing pinned reference validators pass.
 See TESTING.md for sizes, hashes and evidence limits.
+
+CONFIRMED (publication): PR #4 merged at 2e71053, matching tag v0.4.5. Tag build
+43766736376 passes; reviewed draft assets match the Normal manifest and image
+identities. v0.4.5 is the latest published ordinary release. The remote's public
+latest-manifest URL and pinned OTA image URL return the expected version and
+verified size/SHA-256. This does not establish physical installation or behavior.
