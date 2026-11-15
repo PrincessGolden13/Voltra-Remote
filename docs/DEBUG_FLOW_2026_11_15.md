@@ -44,3 +44,10 @@ New test source remains deferred by the project brief. Physical touch, unload,
 Bluetooth release, Wi-Fi delivery and OTA retention require owner observation;
 no autonomous motor test or USB flashing is authorized or performed here.
 Build and existing-validator evidence is recorded in TESTING.md after execution.
+
+CONFIRMED (build/artifacts): public Normal and isolated Simulator, offline core
+and package validation pass in GitHub Actions 43762944735 at source 3a71e94.
+The downloaded archive matches GitHub's SHA-256 digest; both image descriptors,
+the Normal manifest length/hash and final-link simulator isolation were checked.
+The local baseline/changed core and existing pinned reference validators pass.
+See TESTING.md for sizes, hashes and evidence limits.
