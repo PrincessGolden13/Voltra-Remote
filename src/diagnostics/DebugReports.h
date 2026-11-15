@@ -11,8 +11,8 @@ class DebugReports {
 public:
     virtual ~DebugReports()=default;
     virtual ReportStatus status() const=0;
-    // Captured when the dialog opens, before navigation/reporting adds events.
-    // Only the Yes action may queue or persist it. No BLE operations here.
+    // Captured on SEND, including dialog unload actions and before BLE handoff.
+    // Only SEND may queue or persist it. No BLE operations in this service.
     virtual bool submit(const std::vector<EventLog::Event>& events,const std::string& context)=0;
     virtual void tick(bool networkReady,bool controlIdle)=0;
 };

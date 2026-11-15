@@ -211,7 +211,10 @@ void TrainingApplication::unload() {
     presetIntent_.reset(); settingsIntent_.reset(); resetDrops(); dropsCancelled_ = true;
     dropRestore_.reset(); // Explicit unload cancels any already queued restore.
     requestedLoad_ = false; weightIntent_.reset();
-    sent(session_.setLoaded(false));
+    const auto result=session_.setLoaded(false);
+    sent(result);
+    diagnostic("Unload request result="+std::to_string(int(result)));
+    if(result!=TransportResult::Accepted) recordControlFailure(message_.empty() ? "Unload request not accepted" : message_);
 }
 void TrainingApplication::autoLoad() {
     diagnostic("Explicit Auto Load action");

@@ -214,7 +214,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         // 18 px on K5). Paged pickers keep the stricter 2.5% swipe rejection so
         // a short attempted swipe cannot select a device or apply a preset.
         // Include release position, even if a busy frame skipped the movement.
-        const bool paged=s->page_==Screen::Devices || s->page_==Screen::Presets;
+        const bool paged=!s->debugDialog_ && (s->page_==Screen::Devices || s->page_==Screen::Presets);
         const int tapSlop=std::max(1,std::min(s->width_,s->height_)/(paged ? 40 : 20));
         if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > tapSlop || std::abs(y-s->touchStartY_) > tapSlop)) s->touchMoved_=true;
         // Debug is a screen-wide gesture, not a tile selection. Allow 10% drift
@@ -315,6 +315,7 @@ void UiController::navigate(Screen page) {
     if (page == Screen::Drops) { draftDrops_ = app_.drops(); dropField_ = 1; }
 }
 void UiController::act(int action, const std::string& id, bool held) {
+    if(debugDisconnectPending_ && action!=Unload) return;
     // Installation reserves the disconnected remote until failure/restart.
     // Unload is never gated, including if connection state unexpectedly changes.
     if(updates_ && action!=Unload) {
@@ -456,8 +457,11 @@ void UiController::act(int action, const std::string& id, bool held) {
 }
 void UiController::build() {
     scaleSignature_.clear();
-    if (touchDown_) lv_indev_wait_release(touch_);
-    hardware_.touch().discardPending();
+    // Rebuilding the obscured page must not cancel a press on the debug overlay.
+    if (!debugDialog_) {
+        if (touchDown_) lv_indev_wait_release(touch_);
+        hardware_.touch().discardPending();
+    }
     if (face_) lv_obj_delete(face_);
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
@@ -959,7 +963,7 @@ void UiController::tick() {
     EventLog::instance().clock(now);
     if(updates_) {
         const auto phase=updates_->status().phase;
-        app_.setMaintenance(phase==UpdatePhase::Installing || phase==UpdatePhase::Ready || (reports_ && reports_->status().busy()));
+        app_.setMaintenance(debugDisconnectPending_ || phase==UpdatePhase::Installing || phase==UpdatePhase::Ready || (reports_ && reports_->status().busy()));
         // Saved Wi-Fi gets the shared radio first at boot. Discovery resumes
         // after the bounded startup attempt/check; manual selection still works.
         const bool savedWifi=wifi_ && wifi_->status().saved;
@@ -967,13 +971,21 @@ void UiController::tick() {
             (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())));
     }
     app_.tick(now);
+    // SEND authorizes this handoff only after the snapshot is safely queued.
+    // Let an in-flight control (especially explicit unload) settle or time out
+    // before releasing BLE. Closing the dialog cannot cancel an approved send.
+    if(debugDisconnectPending_ && !app_.pending()) {
+        diagnostic("Debug report releasing Bluetooth");
+        app_.leave();debugDisconnectPending_=false;
+        navigate(Screen::Devices);
+    }
     if(app_.loadRefusalRevision()!=loadRefusalRevision_ && !debugDialog_ && !debugPending_) {
         loadRefusalRevision_=app_.loadRefusalRevision();navigate(Screen::ControlNotice);
     }
     if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());
     if(reports_) reports_->tick(wifi_ && wifi_->status().connected && !wifi_->status().setupActive,
         !app_.connected() && !app_.connecting() && !app_.pending() && (!updates_ || !updates_->status().busy()));
-    app_.setMaintenance((reports_ && reports_->status().busy()) || (updates_ &&
+    app_.setMaintenance(debugDisconnectPending_ || (reports_ && reports_->status().busy()) || (updates_ &&
         (updates_->status().phase==UpdatePhase::Installing || updates_->status().phase==UpdatePhase::Ready)));
     if(updates_) {
         const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
@@ -1036,12 +1048,13 @@ void UiController::tick() {
     if (pressed && !wasSleeping && !debugDialog_ && page_ == Screen::Devices && runtime_) {
         modeGestureUntil_ = now+3000; modeGestureClicks_ = 0;
     }
-    if (delta && !wasSleeping && !debugDialog_) {
+    if (delta && !wasSleeping && !debugDialog_ && !debugDisconnectPending_) {
         diagnostic("Dial delta="+std::to_string(delta)+" screen="+std::to_string(int(page_)));
         rotate(delta);
     }
-    if (pressed && !wasSleeping && !debugDialog_) {
-        if (page_ == Screen::Presets) act(ChoosePreset,"",false);
+    if (pressed && !wasSleeping) {
+        if (debugDialog_ || debugDisconnectPending_) { if(app_.connected()) unloadFromDebugDialog(); }
+        else if (page_ == Screen::Presets) act(ChoosePreset,"",false);
         else if (page_ == Screen::PresetNotice) act(Unload,"",false);
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
     }

@@ -1,5 +1,19 @@
 # Validation status and pending tests
 
+November 15 debug flow: [changes and evidence](DEBUG_FLOW_2026_11_15.md).
+PASS: baseline and changed offline core/packet inspector builds with CMake 3.31.6
+and GNU 14.2.0; pinned Ryan packet validator (203 SDK vectors, generated weights
+5..230 and 593 modifier packets) and upstream validator against SDK a53804e;
+the existing SDK chains-report fixture passes packet inspection and a one-byte
+CRC corruption is rejected. `git diff --check` passes. Firmware/package CI
+results will be recorded after completion. No Linux visual/interactive pass is
+claimed: the repository's desktop adapters require Windows/macOS. No new test
+source or physical motor tests were added. Owner checks still needed: UNLOAD on
+press/dial with pending or stale controls; confirmed vs failed/unconfirmed
+feedback; modal input during underlying page transitions; SEND save failure,
+pending-control handoff, close/reopen, missing Wi-Fi, upload failure/RETRY and
+rebooted queue without a new disconnect; OTA preferences retention.
+
 November 14 follow-up: [changes and evidence](BUG_FIXES_2026_11_14.md).
 Future cases (new test code still deferred): Settings debug access; visible hold
 countdown, 6+ second blank/control holds, drift independent of tap rejection,

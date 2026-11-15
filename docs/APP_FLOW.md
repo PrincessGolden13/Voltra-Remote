@@ -1,3 +1,8 @@
+> November 15 debug follow-up supersedes the manual-disconnect flow: show that
+> SEND disconnects Bluetooth and uploads over Wi-Fi, then perform the handoff
+> without another question. Preserve immediate overlay unload and show its
+> pending/confirmed/error state. See DEBUG_REPORTS.md and DEBUG_FLOW_2026_11_15.md.
+>
 > November 9 bug follow-up: retain settings across OTA; verify dim/sleep; release
 > BLE on returning to Devices; explain connection failures; keep the last 20
 > diagnostic events and offer consented submission after a six-second hold.
