@@ -29,15 +29,18 @@ private:
     FirmwareUpdate* updates_ = nullptr;
     DebugReports* reports_=nullptr;
     static constexpr uint64_t debugHoldMs=6000; // User-requested global diagnostic gesture.
-    lv_obj_t *debugDialog_=nullptr,*debugText_=nullptr,*debugYes_=nullptr,*debugUnload_=nullptr,*debugHint_=nullptr;
+    lv_obj_t *debugDialog_=nullptr,*debugText_=nullptr,*debugSend_=nullptr,*debugSendLabel_=nullptr,
+        *debugUnload_=nullptr,*debugControlStatus_=nullptr,*debugHint_=nullptr;
     bool debugPending_=false,debugConsumed_=false,debugSubmitted_=false,debugMoved_=false;
+    bool debugDisconnectPending_=false,debugUnloadRequested_=false;
     uint64_t touchStartedAt_=0;
-    std::vector<EventLog::Event> debugEvents_;
-    std::string debugContext_,lastDiagnosticMessage_;
+    std::string lastDiagnosticMessage_;
     uint64_t loadRefusalRevision_=0;
     void openDebugDialog();
     void closeDebugDialog();
     void updateDebugDialog();
+    void sendDebugReport();
+    void unloadFromDebugDialog();
     bool updatePromptShown_=false;
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;

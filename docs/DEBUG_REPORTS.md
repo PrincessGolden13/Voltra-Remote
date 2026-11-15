@@ -1,17 +1,24 @@
-# Diagnostic reports (v0.4.4)
+# Diagnostic reports (v0.4.5)
 
 Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
 screen for six seconds. A countdown appears after one second. The remote
-asks **Send last events for debugging?** Choose YES to save and send, or CLOSE / NO
-to dismiss without transmitting. Waking a sleeping screen consumes the first
+shows **SEND disconnects Bluetooth and uploads over Wi-Fi**. Tap SEND to save the
+report and release Bluetooth automatically, or CLOSE to dismiss without sending.
+There is no separate Bluetooth confirmation or manual-disconnect step. Sending
+does not unload the VOLTRA. Waking a sleeping screen consumes the first
 touch; lift and hold again. Ordinary 650 ms hold actions now execute on release
 before six seconds, so the debugging gesture cannot first trigger Auto Load.
 Drift up to 10% of the display's short side is allowed for debugging; larger
 movement cancels. Control taps keep their stricter movement limits. Unload
-remains available on the dialog when connected. Load refusals also have a
+remains available on the dialog when connected: its larger target acts on initial
+contact, and pressing the dial also unloads rather than toggling load. The dialog
+shows pending, device-reported unloaded, unknown or error status. Background page
+rebuilds do not discard dialog touches. Load refusals also have a
 Send debug log button and stay visible until dismissed.
 
-The last 20 bounded semantic events are kept in RAM, replacing the oldest. They
+The last 20 bounded semantic events are kept in RAM, replacing the oldest. The
+snapshot is captured on SEND before disconnecting, so dialog unload actions and
+their results can be included. They
 include user actions, connection outcomes, relevant state changes, protocol parse
 failures and displayed errors. Each message is limited to 256 bytes. No raw BLE
 payloads, bootstrap identities, Wi-Fi credentials, Bluetooth addresses or paired
@@ -23,14 +30,24 @@ the connection also retains its last numeric session snapshot. Weight command
 and readback events include measured force context where available, without
 claiming that register readback proves actual resistance.
 
-YES persists one approved snapshot in the separate `voltra-debug/pending` NVS key.
+SEND persists one approved snapshot in the separate `voltra-debug/pending` NVS key.
 It survives a restart or OTA. Unapproved ring history is RAM-only and resets at
 boot, avoiding continuous flash writes. An existing queued report is retained;
-another YES retries it instead of overwriting it. Upload waits for saved Wi-Fi
-and no VOLTRA connection, pending control or firmware update. It never disconnects
-a VOLTRA, unloads, or changes resistance automatically. Close the dialog and tap
-the VOLTRA name to release BLE when ready. Upload failure retains the snapshot;
-hold again and select YES to retry. Simulator delivery is disabled.
+another SEND retries it instead of overwriting it. Only a successful save/requeue
+authorizes the UI to release Bluetooth. Any pending control request is allowed
+to settle or time out first; closing the dialog does not cancel an approved send.
+A failed save keeps Bluetooth connected and offers RETRY. Upload waits for saved
+Wi-Fi and no VOLTRA connection, pending control or firmware update. Rebooting
+with a queued report does not authorize a new disconnect. Upload failure retains
+the snapshot and offers RETRY in the open dialog. A queued report without saved
+Wi-Fi tells the user to configure it in Settings. Simulator delivery and SEND
+handoff are disabled.
+
+Wi-Fi provides the Internet connection to the diagnostic inbox; the remote's BLE
+link is a local VOLTRA control link, not an Internet gateway. Current firmware
+pauses Wi-Fi during a VOLTRA connection to keep the shared radio available for
+control. Normal training remains offline. The reporting service itself never
+issues BLE or resistance commands; the UI owns the user-authorized handoff.
 
 On receipt, a short reference code appears. Include that code and a description
 of the symptom in the bug report. Delivery does not send an email. The inbox is
@@ -67,6 +84,9 @@ repository. Never place a private Sites bypass token in the public firmware.
 New test source remains deferred by the project brief. Existing builds/validators
 do not replace these observations: 650 ms hold/release vs six seconds; holding
 the weight must never load before debug confirmation; blank-screen holds, finger
-drift, cancellation, wake-only touch, overlay unload, queued upload after manual
-disconnect, reboot while queued, failed/retried uploads, and settings retention.
+drift, cancellation, wake-only touch, overlay/dial unload during background page
+rebuilds, pending/confirmed/failed unload feedback, save failure without disconnect,
+SEND during a pending control, close/reopen while queued, automatic handoff after
+SEND, no saved Wi-Fi, reboot while queued without a new disconnect, failed/retried
+uploads, and settings retention.
 No autonomous physical motor tests are allowed.

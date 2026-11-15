@@ -1,5 +1,30 @@
 # Validation status and pending tests
 
+November 15 debug flow: [changes and evidence](DEBUG_FLOW_2026_11_15.md).
+PASS: baseline and changed offline core/packet inspector builds with CMake 3.31.6
+and GNU 14.2.0; pinned Ryan packet validator (203 SDK vectors, generated weights
+5..230 and 593 modifier packets) and upstream validator against SDK a53804e;
+the existing SDK chains-report fixture passes packet inspection and a one-byte
+CRC corruption is rejected. The repository's existing inbound base-weight fixture
+also passes, and its corrupted CRC is rejected. `git diff --check` passes.
+PASS: [GitHub Actions 43762944735](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43762944735)
+at 3a71e948185eb4c5453bdc220f529cb32dfa5bb5: public Normal, isolated Simulator,
+offline core and release packaging. Downloaded artifact digest matches GitHub:
+`5a9d344ca4fae3c051cdfe186230f62896865c200d4b6b669b695e3cf9d52c74`.
+Normal is 1,935,008 bytes, SHA-256
+`21c2386b9c133ec1479dc21abe1fdfbc0c5b6348c175846e74b3f0f07dc97847`;
+Simulator is 977,232 bytes. Both independent image identities match v0.4.5 and
+their channels; Normal length/hash match the OTA manifest. ELF symbol inspection
+confirms physical BLE/OTA/debug upload/certificate code only in Normal and
+MockTransport only in Simulator. These are build/artifact checks, not execution
+of the new interaction flow. No Linux visual/interactive pass is
+claimed: the repository's desktop adapters require Windows/macOS. No new test
+source or physical motor tests were added. Owner checks still needed: UNLOAD on
+press/dial with pending or stale controls; confirmed vs failed/unconfirmed
+feedback; modal input during underlying page transitions; SEND save failure,
+pending-control handoff, close/reopen, missing Wi-Fi, upload failure/RETRY and
+rebooted queue without a new disconnect; OTA preferences retention.
+
 November 14 follow-up: [changes and evidence](BUG_FIXES_2026_11_14.md).
 Future cases (new test code still deferred): Settings debug access; visible hold
 countdown, 6+ second blank/control holds, drift independent of tap rejection,

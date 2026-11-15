@@ -1,5 +1,27 @@
 # Foundation baseline
 
+## November 15 debug-report candidate v0.4.5
+
+- CONFIRMED: baseline core at 2e76d66 and changed core/packet inspector build
+  with CMake 3.31.6 and GNU 14.2.0. Existing pinned Ryan packet/upstream
+  validators pass. Existing inbound fixtures pass framing/CRC inspection;
+  deliberately corrupted CRCs are rejected. No new test source was added.
+- CONFIRMED: [CI 43762944735](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43762944735)
+  at 3a71e948185eb4c5453bdc220f529cb32dfa5bb5 builds public Normal, isolated
+  Simulator, offline core and the release package. Downloaded artifact SHA-256
+  matches GitHub: `5a9d344ca4fae3c051cdfe186230f62896865c200d4b6b669b695e3cf9d52c74`.
+- CONFIRMED: Normal is 1,935,008 bytes, SHA-256
+  `21c2386b9c133ec1479dc21abe1fdfbc0c5b6348c175846e74b3f0f07dc97847`;
+  Simulator is 977,232 bytes. Both independent descriptors match v0.4.5 and
+  their channels; Normal length/hash match its manifest. ELF inspection finds
+  physical BLE/OTA/debug networking/certificate code only in Normal and mock
+  transport only in Simulator. Public source excludes LocalConfig.h; no private
+  bootstrap values were available here for byte-comparison checks.
+- UNVERIFIED: physical dialog input/unload, Bluetooth handoff, upload retry and
+  OTA settings retention. No Linux graphical pass or physical motor test was
+  performed. The received e354d15a report has no session/failure context; it does
+  not diagnose the earlier RP/load problem. See DEBUG_FLOW_2026_11_15.md.
+
 ## November 9 public source and firmware updates
 
 - CONFIRMED v0.4.1 (source 910ad9c): both GitHub main/tag builds and release

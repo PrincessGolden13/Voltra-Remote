@@ -44,7 +44,7 @@ void Esp32DebugReports::begin() {
 }
 bool Esp32DebugReports::submit(const std::vector<EventLog::Event>& events,const std::string& context) {
     if(active_) return false;
-    if(!payload_.empty()) {set(ReportPhase::Queued,"Previous report queued. Disconnect from VOLTRA to send over Wi-Fi.");return true;}
+    if(!payload_.empty()) {set(ReportPhase::Queued,"Previous report saved. Waiting for Wi-Fi.");return true;}
     uint8_t random[16];esp_fill_random(random,sizeof(random));id_=hex(random,sizeof(random));
     payload_="{\"schema\":1,\"id\":"+EventLog::quote(id_)+",\"firmware\":\"" VOLTRA_VERSION "\",\"context\":"+EventLog::quote(context.substr(0,2048))+",\"events\":[";
     const size_t start=events.size()>EventLog::capacity ? events.size()-EventLog::capacity : 0;
@@ -57,8 +57,8 @@ bool Esp32DebugReports::submit(const std::vector<EventLog::Event>& events,const 
     if(payload_.size()<=maximumReportBytes && nvs.begin("voltra-debug",false)) {
         saved=nvs.putString("pending",payload_.c_str())==payload_.size();nvs.end();
     }
-    if(!saved) {payload_.clear();set(ReportPhase::Error,"Could not save report. Hold 6s to retry.");return false;}
-    set(ReportPhase::Queued,"Report saved. Disconnect from VOLTRA to send over Wi-Fi.");return true;
+    if(!saved) {payload_.clear();set(ReportPhase::Error,"Could not save report.\nBluetooth kept connected. Tap RETRY.");return false;}
+    set(ReportPhase::Queued,"Report saved. Waiting for Wi-Fi.");return true;
 }
 void Esp32DebugReports::tick(bool networkReady,bool controlIdle) {
     permitted_=networkReady && controlIdle;
@@ -68,7 +68,7 @@ void Esp32DebugReports::tick(bool networkReady,bool controlIdle) {
     if(xTaskCreate([](void* arg) {
         auto* self=static_cast<Esp32DebugReports*>(arg);self->run();self->active_=false;vTaskDelete(nullptr);
     },"debug-report",workerStackBytes,this,1,nullptr)!=pdPASS) {
-        active_=false;set(ReportPhase::Error,"Could not start upload. Hold 6s to retry.");
+        active_=false;set(ReportPhase::Error,"Could not start upload.\nReport saved. Tap RETRY.");
     }
 }
 bool Esp32DebugReports::post(const char* path,const std::string& body,const std::string& token,std::string& response) {
@@ -103,7 +103,7 @@ bool Esp32DebugReports::post(const char* path,const std::string& body,const std:
     esp_http_client_cleanup(client);return ok && permitted_;
 }
 void Esp32DebugReports::run() {
-    const auto fail=[&] {set(ReportPhase::Error,"Upload failed; report retained. Check Wi-Fi, then hold 6s and choose Yes to retry.");};
+    const auto fail=[&] {set(ReportPhase::Error,"Upload failed; report saved.\nCheck Wi-Fi, then tap RETRY.");};
     if(std::time(nullptr)<earliestValidTime) {
         configTime(0,0,"time.cloudflare.com","pool.ntp.org");const uint32_t start=millis();
         while(permitted_ && std::time(nullptr)<earliestValidTime && uint32_t(millis()-start)<clockWaitMs) vTaskDelay(pdMS_TO_TICKS(100));
