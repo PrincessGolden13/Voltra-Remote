@@ -977,6 +977,7 @@ void UiController::tick() {
     if(debugDisconnectPending_ && !app_.pending()) {
         diagnostic("Debug report releasing Bluetooth");
         app_.leave();debugDisconnectPending_=false;
+        loadRefusalRevision_=app_.loadRefusalRevision();
         navigate(Screen::Devices);
     }
     if(app_.loadRefusalRevision()!=loadRefusalRevision_ && !debugDialog_ && !debugPending_) {

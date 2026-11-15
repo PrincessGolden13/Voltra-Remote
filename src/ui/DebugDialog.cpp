@@ -5,7 +5,8 @@ void UiController::openDebugDialog() {
     if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
     diagnostic("Debug report dialog opened");
     const auto phase=reports_ ? reports_->status().phase : ReportPhase::Idle;
-    debugSubmitted_=debugDisconnectPending_ || phase==ReportPhase::Queued || phase==ReportPhase::Sending || phase==ReportPhase::Error;
+    debugSubmitted_=debugDisconnectPending_ || phase==ReportPhase::Sending || phase==ReportPhase::Error ||
+        (phase==ReportPhase::Queued && !app_.connected() && !app_.connecting());
     debugUnloadRequested_=false;editDirty_=returnAfterEdit_=false;
     if(restButton_) lv_obj_add_flag(restButton_,LV_OBJ_FLAG_HIDDEN);
     debugDialog_=lv_obj_create(lv_layer_top());
