@@ -67,6 +67,13 @@ test. Ping runs asynchronously, is bounded and is cancelled on leaving the
 screen, changing networks, setup or BLE radio use. Simulator networking stays
 disabled. These changes are source behavior until physically verified.
 
+Policy constants: three ICMP requests, one-second interval/timeout per request,
+a six-second check deadline and at most 25 seconds waiting for saved Wi-Fi.
+IDF 4.4.7 provides ping/ping_sock.h and manages the worker task. Cancelled checks
+retain their callback context through on_ping_end, generation-check late results,
+and check session deletion before releasing the context. These are bounded
+resource/lifetime policies, not packet delivery guarantees.
+
 ## Limits and validation
 
 These changes preserve existing data rather than automatically formatting a

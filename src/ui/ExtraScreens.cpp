@@ -228,7 +228,7 @@ void UiController::updateExtra() {
                 case WifiConnectionCheck::Reachable:
                     check="Internet reachable\n8.8.8.8 replied"+(w.pingMs>=0 ? " in "+std::to_string(w.pingMs)+" ms" : "");break;
                 case WifiConnectionCheck::NoReply:check="Internet not confirmed\nNo reply from 8.8.8.8";break;
-                case WifiConnectionCheck::Error:check="Internet not confirmed\nPing test could not start";break;
+                case WifiConnectionCheck::Error:check="Internet not confirmed\nPing test failed";break;
                 case WifiConnectionCheck::Unavailable:check="Connection test unavailable";break;
                 default:check="Internet not tested";break;
             }
