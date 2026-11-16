@@ -2,6 +2,7 @@
 #include "controller/RuntimeMode.h"
 #include "FirmwareSlots.h"
 #include "FirmwareIdentity.h"
+#include "NvsProtection.h"
 #include <esp_ota_ops.h>
 #include <Arduino.h>
 namespace voltra::guition {
@@ -15,6 +16,7 @@ public:
 #endif
     }
     bool begin() {
+        if(!persistentStorageReady()) return false;
         // Simulator is a one-session opt-in. Restore the normal boot target now,
         // so power loss/reset never silently returns to synthetic devices.
         if(!simulated()) return true;
@@ -24,12 +26,14 @@ public:
     bool confirmStartup() {
         // Only after display/input, BLE (Normal) and the UI initialized. No motor
         // test or VOLTRA connection is part of firmware startup validation.
+        if(!persistentStorageReady()) return false;
         const auto* running=esp_ota_get_running_partition();esp_ota_img_states_t state;
         if(esp_ota_get_state_partition(running,&state)==ESP_OK && state==ESP_OTA_IMG_PENDING_VERIFY &&
            esp_ota_mark_app_valid_cancel_rollback()!=ESP_OK) return false;
         return simulated() || FirmwareSlots::rememberNormal();
     }
     bool switchMode() override {
+        if(!persistentStorageReady()) return false;
         if(!simulated() && !FirmwareSlots::rememberNormal()) return false;
         const auto* target=simulated() ? FirmwareSlots::savedNormal() :
             esp_partition_find_first(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_OTA_2,"simulator");

@@ -48,6 +48,16 @@ publish an update until a maintainer releases a version.
 
 ## Flash layout and recovery
 
+From v0.4.6, INSTALL first saves and reads back remote preferences and verifies
+the connected Wi-Fi credentials against their saved record. An unverifiable save
+blocks installation. Full NVS erases requested by the pinned Arduino/NimBLE
+startup recovery paths are refused in both embedded images; normal NVS sector
+garbage collection and application-slot erases continue. Failed/incompatible
+settings reads cannot silently overwrite the record with defaults. OTA acceptance
+is deferred through Arduino's verifyRollbackLater hook to the application's
+startup checks, including NVS initialization. See
+[scope, evidence and recovery limits](SETTINGS_RETENTION_2026_11_16.md).
+
 Layout 2 preserves NVS at 0x9000 (20 KiB) and OTA metadata at 0xe000 (8 KiB).
 Normal A is 0x10000 / 3 MiB, Normal B is 0x310000 / 3 MiB, Simulator is
 0x610000 / 2 MiB, and coredump is 0x810000 / 128 KiB. These are board constants,

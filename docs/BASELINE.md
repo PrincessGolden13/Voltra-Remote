@@ -1,5 +1,24 @@
 # Foundation baseline
 
+## November 16 settings-retention candidate v0.4.6
+
+- CONFIRMED: [CI 43885326367](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43885326367)
+  at 3b702fa49fb903c443d6e9ab6f614fb997b0c772 builds public Normal, isolated
+  Simulator, offline core and release package. Local core/packet inspector,
+  existing fixture and pinned packet/upstream validators also pass.
+- CONFIRMED: downloaded artifact SHA-256 matches GitHub:
+  `e4afe8884262c4811839aa6fa46c6cf2a097a329879515a33f073735f6b03579`.
+  Normal is 1,937,744 bytes, SHA-256
+  `d2663a251a68cd874f490b5ddfb2306202d40744dec39db1038207d1991b4940`;
+  Simulator is 980,400 bytes. Both descriptors, manifest length/hash and USB/OTA
+  Normal consistency pass. Both ELFs have strong GLOBAL definitions of
+  `__wrap_esp_partition_erase_range` and `verifyRollbackLater`. Physical/network
+  code remains exclusive to Normal, mock transport exclusive to Simulator.
+- UNVERIFIED: actual storage-fault/rollback recovery, Wi-Fi OK interactions and
+  settings survival on the owner's next physical OTA. No new test source,
+  graphical Linux pass or motor tests. Already-erased settings cannot be restored
+  by this change. See SETTINGS_RETENTION_2026_11_16.md for evidence and limits.
+
 ## November 15 debug-report v0.4.5
 
 - CONFIRMED: baseline core at 2e76d66 and changed core/packet inspector build

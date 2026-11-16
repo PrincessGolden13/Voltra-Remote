@@ -55,6 +55,11 @@ void setup() {
     Serial.printf("Firmware %s / slot %s\n",VOLTRA_VERSION,running ? running->label : "unknown");
     Serial.printf("Flash %u PSRAM %u\n",ESP.getFlashChipSize(),ESP.getPsramSize());
     if(!board.begin()) { Serial.println("Hardware init failed; no radio or machine commands");return; }
+    const bool storageReady=voltra::guition::persistentStorageReady();
+    if(!storageReady) {
+        Serial.println("Settings storage unavailable; existing data retained; Bluetooth disabled");
+        voltra::diagnostic("Settings storage unavailable; existing data retained");
+    }
 #ifndef VOLTRA_SIMULATOR
     transport.onDiagnostic([](const std::string& message){
         Serial.printf("%llu %s\n",static_cast<unsigned long long>(board.nowMs()),message.c_str());
@@ -64,6 +69,9 @@ void setup() {
            message.find("BLE establishment") == 0 || message.find("BLE target RSSI") == 0)
             voltra::diagnostic(message);
     });
+    // NimBLE also tries to format failed NVS. Keep it uninitialized on a
+    // storage fault, but still render the shared UI and its storage error.
+    if(storageReady) {
     if(!transport.begin()) {Serial.println("BLE init failed");return;}
 #if defined(VOLTRA_LOCAL_BOOTSTRAP_PROFILE) && VOLTRA_LOCAL_BOOTSTRAP_PROFILE
     Serial.println("Local bootstrap identity; load requires explicit input and fresh readiness");
@@ -77,6 +85,7 @@ void setup() {
     physicalSession=bootstrap ? new voltra::PhysicalSession(transport,bootstrap->finish,bootstrap->hello) :
         new voltra::PhysicalSession(transport,clientIdentity());
 #endif
+    } else physicalSession=new voltra::PhysicalSession(transport,std::array<uint8_t,16>{});
     auto& session=*physicalSession;
 #endif
     controller=new voltra::VoltraController(transport,{},&session);
@@ -84,19 +93,20 @@ void setup() {
 #ifdef VOLTRA_SIMULATOR
         transport.catalog(),false);
 #else
-        std::vector<voltra::DeviceEntry>{},true);
+        std::vector<voltra::DeviceEntry>{},storageReady);
 #endif
 #ifdef VOLTRA_SIMULATOR
     ui=new voltra::UiController(board,*application,&configuration,&bootMode);
 #else
     wifi.begin();updates.begin();reports.begin();ui=new voltra::UiController(board,*application,&configuration,&bootMode,&wifi,&updates,&reports);
+    if(!storageReady) ui->navigate(voltra::Screen::Wifi);
 #endif
 #ifdef VOLTRA_SIMULATOR
     Serial.println("Shared UI started. Serial: r=rep, h=hold, m=move, u=unload, d=devices");
 #else
     Serial.println("Shared UI started. Serial: d=devices, c=connect single available, v=check updates (no load command)");
 #endif
-    if(!bootMode.confirmStartup()) Serial.println("Firmware startup confirmation failed");
+    if(!storageReady || !bootMode.confirmStartup()) Serial.println("Firmware startup confirmation failed");
     if(!bootMode.begin()) Serial.println("Normal boot target unavailable; mode switching cannot be validated");
 }
 void loop() {
