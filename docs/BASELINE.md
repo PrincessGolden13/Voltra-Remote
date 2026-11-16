@@ -1,7 +1,14 @@
 # Foundation baseline
 
-## November 16 settings-retention candidate v0.4.6
+## November 16 settings-retention and Wi-Fi v0.4.6
 
+- CONFIRMED publication: [tag build 43891852006](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43891852006)
+  passes at v0.4.6 / 7cce754a82fcbe88bcddf8f959fa7d92599b0710. Tagged
+  assets pass both image descriptors, manifest size/hash and USB/OTA Normal
+  consistency. The Normal hash matches the final reviewed image below.
+  [v0.4.6](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.6)
+  is the latest ordinary release. The public latest-manifest and pinned OTA image
+  downloads were verified as v0.4.6, including identity, length and SHA-256.
 - CONFIRMED final ping/reset source: [CI 43890790858](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43890790858)
   at e1c1e637840d9b51588e36bbf2a514e9dee18b76 passes both public images, core
   and packaging. Artifact SHA-256 matches GitHub:

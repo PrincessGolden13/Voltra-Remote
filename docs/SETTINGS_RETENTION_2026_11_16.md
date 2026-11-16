@@ -103,3 +103,10 @@ and package checks. Final ELF inspection retains the strong NVS hooks and puts
 ping session APIs exclusively in Normal. Image identities/manifest/USB consistency
 pass; hashes/sizes are recorded in TESTING.md. Physical network replies and
 reset/setup interactions remain unverified.
+
+CONFIRMED publication: v0.4.6 / 7cce754 passes tag build 43891852006 and is the
+latest ordinary release. Reviewed tagged images match the expected identities,
+manifest hash/length and USB/OTA Normal contents. Public update-feed and pinned
+firmware downloads were verified. The owner's November 16 chat instruction to
+automatically publish this and future checked updates is recorded in AGENTS.md;
+installation and physical validation remain the owner's actions.

@@ -13,6 +13,12 @@ Normal consistency pass. Both ELFs retain the strong NVS/rollback hooks; only
 Normal links esp_ping_new_session/start/stop/delete_session/get_profile and
 physical BLE/OTA/debug networking. Simulator retains mock transport.
 These are compiled artifact checks, not live ICMP or UI-interaction validation.
+PASS publication: [v0.4.6 tag build 43891852006](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43891852006)
+at 7cce754a82fcbe88bcddf8f959fa7d92599b0710; reviewed tagged assets retain the
+same Normal hash above and pass identity/manifest/USB checks. The ordinary release
+is published as latest; public manifest and pinned OTA image download were
+verified with matching version, descriptor, length and SHA-256. No physical OTA
+or live ping trial was performed.
 Pending physical checks: current vs saved/disconnected SSID, opening before
 reconnect, ICMP reply/no reply/start failure, leaving during a check, BLE pause,
 reset during a check, completed setup showing only OK, and cancellation/failed
