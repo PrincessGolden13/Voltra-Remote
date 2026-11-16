@@ -1,12 +1,23 @@
 # Validation status and pending tests
 
 November 16: [settings retention and Wi-Fi completion](SETTINGS_RETENTION_2026_11_16.md).
-The later configured-network overview/ping/reset follow-up requires a new source
-build. Pending physical checks: current vs saved/disconnected SSID, opening before
+PASS final configured-network overview/ping/reset source:
+[CI 43890790858](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43890790858)
+at e1c1e637840d9b51588e36bbf2a514e9dee18b76: public Normal/Simulator, offline
+core and release packaging. Downloaded artifact matches GitHub digest
+`d95183fadee1a35b7bbf0a47c10bff4810ce5fefb142eef2524e2a97d53f7388`.
+Normal is 1,944,336 bytes, SHA-256
+`ee9ee18540014a36ede0db8661b8fc1cf8eaa738248bad19be552ef0bb622d68`;
+Simulator is 981,904 bytes. Both image identities, manifest size/hash and USB/OTA
+Normal consistency pass. Both ELFs retain the strong NVS/rollback hooks; only
+Normal links esp_ping_new_session/start/stop/delete_session/get_profile and
+physical BLE/OTA/debug networking. Simulator retains mock transport.
+These are compiled artifact checks, not live ICMP or UI-interaction validation.
+Pending physical checks: current vs saved/disconnected SSID, opening before
 reconnect, ICMP reply/no reply/start failure, leaving during a check, BLE pause,
 reset during a check, completed setup showing only OK, and cancellation/failed
 replacement keeping the prior network. The historical build below predates this
-follow-up; final-source evidence is recorded after execution.
+follow-up.
 PASS: local offline core/packet-inspector build, existing inbound fixture, pinned
 Ryan packet/upstream validators (203 SDK packets, weights 5..230, 593 modifier
 packets and SDK a53804e). No new test source was added.

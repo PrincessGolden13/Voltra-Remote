@@ -50,7 +50,13 @@ and `docs/FIRMWARE_UPDATES.md`. Builds and releases must use the public environm
   configuration. Group commits logically; no destructive Git operations.
 - Name and document necessary constants, units, provenance and tunable policies.
 
-## Standing publication preference (November 9, 2026)
+## Standing publication preference (reconfirmed November 16, 2026)
+
+The owner explicitly authorized in chat on November 16: automatically publish
+this update and all future updates when ready, without manual approval. This
+covers review-branch pushes, merging checked changes, release tags and publishing
+the validated ordinary release as latest. Required checks still apply; physical
+installation remains the owner's choice. This reconfirms the November 9 request.
 
 The owner explicitly requests publishing completed changes by default so they can
 check them on the physical remote from their phone. After required checks pass,

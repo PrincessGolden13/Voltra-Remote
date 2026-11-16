@@ -45,7 +45,9 @@ confirmation. Boot, reconnect, presets and updates never load resistance.
 Tap an off modifier tile to open its editor; tap an active tile to disable it,
 or hold and release to edit. The device name releases Bluetooth and returns to the
 picker, allowing the phone app to connect. The gear opens settings.
-Wi-Fi setup uses a temporary phone portal under Settings -> Wi-Fi.
+Settings -> Wi-Fi shows the saved/connected network, tests Internet reachability
+with a ping to Google DNS 8.8.8.8, and offers RESET WI-FI for another network.
+Setup uses a temporary phone portal; after a successful save, OK returns to Settings.
 
 Choose Settings -> Send debug log, or hold anywhere on an awake screen for six
 seconds, then tap SEND to send the last 20 diagnostic events. The notice explains

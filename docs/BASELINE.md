@@ -2,6 +2,15 @@
 
 ## November 16 settings-retention candidate v0.4.6
 
+- CONFIRMED final ping/reset source: [CI 43890790858](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43890790858)
+  at e1c1e637840d9b51588e36bbf2a514e9dee18b76 passes both public images, core
+  and packaging. Artifact SHA-256 matches GitHub:
+  `d95183fadee1a35b7bbf0a47c10bff4810ce5fefb142eef2524e2a97d53f7388`.
+  Normal is 1,944,336 bytes, SHA-256
+  `ee9ee18540014a36ede0db8661b8fc1cf8eaa738248bad19be552ef0bb622d68`;
+  Simulator is 981,904 bytes. Image/manifest/USB consistency and strong NVS hooks
+  pass; ping and physical/network implementations link only in Normal, mock
+  transport only in Simulator. Live network behavior remains unverified.
 - CONFIRMED: [CI 43885326367](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43885326367)
   at 3b702fa49fb903c443d6e9ab6f614fb997b0c772 builds public Normal, isolated
   Simulator, offline core and release package. Local core/packet inspector,

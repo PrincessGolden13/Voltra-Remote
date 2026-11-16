@@ -97,5 +97,9 @@ GitHub's digest. Both final ELFs contain strong GLOBAL erase-wrapper and deferre
 rollback-hook definitions. Image descriptors, manifest size/hash, USB/OTA Normal
 consistency and simulator isolation pass. No visual or physical interaction pass
 is claimed; the repository's desktop adapters require Windows/macOS.
-This build predates the subsequent configured-network overview/ping follow-up;
-its final-source build evidence is recorded separately in TESTING.md.
+This build predates the subsequent configured-network overview/ping follow-up.
+CONFIRMED final source: CI 43890790858 at e1c1e63 passes both public images, core
+and package checks. Final ELF inspection retains the strong NVS hooks and puts
+ping session APIs exclusively in Normal. Image identities/manifest/USB consistency
+pass; hashes/sizes are recorded in TESTING.md. Physical network replies and
+reset/setup interactions remain unverified.
