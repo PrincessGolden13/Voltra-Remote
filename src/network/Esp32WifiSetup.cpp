@@ -3,6 +3,7 @@
 #include "WifiPortalPage.h"
 #include <WiFi.h>
 #include <Preferences.h>
+#include <nvs.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <esp_wifi.h>
@@ -83,17 +84,43 @@ bool decode(const std::string& in,std::string& out) {
 }
 void Esp32WifiSetup::begin() {
     mutex_=xSemaphoreCreateMutex();if(!mutex_) return;
-    Preferences nvs;if(nvs.begin("voltra-net",true)) {
-        if(nvs.getBytesLength("credentials")==sizeof(saved_)) nvs.getBytes("credentials",&saved_,sizeof(saved_));
-        nvs.end();
+    // Distinguish a fresh remote from inaccessible or incompatible saved data.
+    nvs_handle_t handle;const auto opened=nvs_open("voltra-net",NVS_READONLY,&handle);
+    if(opened==ESP_OK) {
+        size_t size=0;const auto found=nvs_get_blob(handle,"credentials",nullptr,&size);
+        nvs_close(handle);
+        view_.storageReady=found==ESP_ERR_NVS_NOT_FOUND || (found==ESP_OK && size==sizeof(saved_) && readSaved(saved_));
+    } else view_.storageReady=opened==ESP_ERR_NVS_NOT_FOUND;
+    if(!view_.storageReady) {
+        saved_={};view_.message="Saved Wi-Fi unavailable; settings kept. Update blocked.";
+    } else {
+        view_.saved=saved_.ssid[0]!=0;view_.network=saved_.ssid;
+        view_.message=view_.saved ? "Saved network" : "Wi-Fi not configured";
     }
-    if(saved_.version!=1 || !memchr(saved_.ssid,0,sizeof(saved_.ssid)) || !memchr(saved_.password,0,sizeof(saved_.password))) saved_={};
-    view_.saved=saved_.ssid[0]!=0;view_.network=saved_.ssid;
-    view_.message=view_.saved ? "Saved network" : "Wi-Fi not configured";
     WiFi.persistent(false);WiFi.setAutoReconnect(false);
 }
+bool Esp32WifiSetup::sameCredentials(const Credentials& a,const Credentials& b) {
+    return a.version==b.version && std::memcmp(a.ssid,b.ssid,sizeof(a.ssid))==0 &&
+        std::memcmp(a.password,b.password,sizeof(a.password))==0;
+}
+bool Esp32WifiSetup::readSaved(Credentials& value) const {
+    Preferences nvs;if(!nvs.begin("voltra-net",true)) return false;
+    const bool read=nvs.getType("credentials")==PT_BLOB && nvs.getBytesLength("credentials")==sizeof(value) &&
+        nvs.getBytes("credentials",&value,sizeof(value))==sizeof(value);
+    nvs.end();
+    return read && value.version==1 && value.ssid[0] && memchr(value.ssid,0,sizeof(value.ssid)) &&
+        memchr(value.password,0,sizeof(value.password));
+}
+bool Esp32WifiSetup::prepareForUpdate() {
+    const auto w=status();
+    if(!w.storageReady || !w.connected || !w.saved || w.setupActive || connecting_ || submitted_) return false;
+    Credentials persisted;
+    const bool verified=readSaved(persisted) && sameCredentials(persisted,saved_);
+    if(!verified) {Lock lock(mutex_);view_.message="Wi-Fi save could not be verified. Update blocked.";}
+    return verified;
+}
 WifiSetupStatus Esp32WifiSetup::status() const {
-    if(!mutex_) {WifiSetupStatus result;result.message="Wi-Fi unavailable";return result;}
+    if(!mutex_) {WifiSetupStatus result;result.storageReady=false;result.message="Wi-Fi unavailable";return result;}
     Lock lock(mutex_);return view_;
 }
 void Esp32WifiSetup::connect(const Credentials& c,bool candidate) {
@@ -103,7 +130,7 @@ void Esp32WifiSetup::connect(const Credentials& c,bool candidate) {
     Lock lock(mutex_);connecting_=true;view_.connected=false;view_.network=c.ssid;view_.message="Connecting to Wi-Fi…";
 }
 bool Esp32WifiSetup::start() {
-    if(!mutex_ || !radioAvailable_) return false;
+    if(!mutex_ || !radioAvailable_ || !status().storageReady) return false;
     if(server_) return true;
     if(connecting_) {WiFi.disconnect(false,false);Lock lock(mutex_);connecting_=false;view_.connected=false;}
     attempted_=true; // Editing must not race an automatic saved-network attempt.
@@ -125,10 +152,11 @@ bool Esp32WifiSetup::start() {
     dns_.start(53,"*",ip);
     setupAt_=nowMs();finishAt_=0;
     std::printf("Wi-Fi portal: temporary open AP started; no password or PIN\n");
-    Lock lock(mutex_);view_.setupActive=true;view_.setupNetwork=ap;
+    Lock lock(mutex_);view_.setupActive=true;view_.setupComplete=false;view_.setupNetwork=ap;
     view_.message="Connect your phone to setup Wi-Fi";return true;
 }
 void Esp32WifiSetup::stop() {
+    if(!mutex_ || !status().storageReady) return;
     // Stop the HTTP task before taking its shared-data mutex.
     if(server_) {httpd_stop(server_);server_=nullptr;}
     dns_.stop();if(scanning_) esp_wifi_scan_stop();WiFi.scanDelete();WiFi.softAPdisconnect(false);finishAt_=0;
@@ -139,6 +167,7 @@ void Esp32WifiSetup::stop() {
 }
 void Esp32WifiSetup::tick(bool radioAvailable) {
     if(!mutex_) return;
+    if(!status().storageReady) return;
     radioAvailable_=radioAvailable;
     if(!radioAvailable) {
         if(server_) stop();
@@ -192,10 +221,13 @@ void Esp32WifiSetup::tick(bool radioAvailable) {
             if(candidateActive_) {
                 Preferences nvs;saved=nvs.begin("voltra-net",false);
                 if(saved) {saved=nvs.putBytes("credentials",&candidate_,sizeof(candidate_))==sizeof(candidate_);nvs.end();}
+                Credentials persisted;
+                saved=saved && readSaved(persisted) && sameCredentials(persisted,candidate_);
                 if(saved) saved_=candidate_;
             }
             Lock lock(mutex_);connecting_=false;view_.connected=true;view_.saved=saved;
             view_.address=WiFi.localIP().toString().c_str();view_.message=saved ? "Connected and saved" : "Connected; could not save network";
+            if(candidateActive_ && saved) view_.setupComplete=true;
             if(candidateActive_ && saved) finishAt_=nowMs()+successCloseMs;
             candidateActive_=false;memset(candidate_.password,0,sizeof(candidate_.password));
         } else if(nowMs()-connectAt_>=connectTimeoutMs) {
@@ -277,6 +309,7 @@ esp_err_t Esp32WifiSetup::configure(httpd_req_t* req) {
         if(!haveToken || token!=self->token_ || token.empty() || !self->view_.setupActive) return reject("Setup expired. Reopen the setup page.");
         if(self->submitted_ || self->connecting_) return reject("A connection is already being checked.");
         self->submittedSsid_=ssid;self->submittedPassword_=password;self->submitted_=true;self->scanRequested_=false;
+        self->view_.setupComplete=false;
         self->view_.connected=false;self->view_.message="Connecting…";
     }
     return reply(req,"{\"message\":\"Connecting. Stay on the setup Wi-Fi.\"}");

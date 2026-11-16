@@ -381,20 +381,35 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == SendDebugLog) { debugPending_=true; return; }
     if(action==CheckUpdates) {if(updates_) updates_->check();return;}
     if(action==InstallUpdate) {
-        if(updates_ && !app_.connected() && !app_.connecting() && !app_.pending() && updates_->install()) app_.setMaintenance(true);
+        if(updates_ && !app_.connected() && !app_.connecting() && !app_.pending()) {
+            if(!saveConfiguration()) return;
+            if(!wifi_ || !wifi_->prepareForUpdate()) {value(message_,"Wi-Fi not safely saved; update blocked");return;}
+            if(updates_->install()) app_.setMaintenance(true);
+        }
         return;
     }
-    if (action == CloseSettings) { if(page_==Screen::Wifi && wifi_) wifi_->stop();saveConfiguration(); navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return; }
+    if (action == CloseSettings) {
+        if(page_==Screen::Wifi && wifi_) wifi_->stop();
+        else if(!saveConfiguration()) return;
+        navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return;
+    }
     if(action==WifiSetupToggle) {
-        if(wifi_ && !app_.connected() && !app_.connecting()) {
-            if(wifi_->status().setupActive) wifi_->stop();else wifi_->start();
+        if(wifi_) {
+            const auto w=wifi_->status();
+            if(w.setupComplete || (w.connected && w.saved) || !w.storageReady) {
+                wifi_->stop();navigate(Screen::Settings);
+            } else if(w.setupActive) {wifi_->stop();navigate(Screen::Settings);}
+            else if(!app_.connected() && !app_.connecting()) wifi_->start();
         }
         return;
     }
     if (action >= ThemeField && action <= SleepField) { settingsField_ = action-ThemeField; return; }
     if (action >= OpenWifi && action <= OpenReset) {
         navigate(action == OpenWifi ? Screen::Wifi : action == OpenUpdates ? Screen::Updates : action == OpenAbout ? Screen::About : Screen::Reset);
-        if(action==OpenWifi && wifi_ && !app_.connected() && !app_.connecting()) wifi_->start();
+        if(action==OpenWifi && wifi_ && !app_.connected() && !app_.connecting()) {
+            const auto w=wifi_->status();
+            if(!w.saved && !w.connected && w.storageReady) wifi_->start();
+        }
         return;
     }
     if (action == ConfirmReset) {
@@ -468,7 +483,7 @@ void UiController::build() {
     center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
-    wifiBody_=wifiButton_=nullptr;
+    wifiBody_=wifiButton_=wifiBack_=nullptr;
     updateBody_=updateCheck_=updateInstall_=nullptr;
     for (auto& item : settingsValues_) item = nullptr;
     for (auto& item : liveValues_) item = nullptr;

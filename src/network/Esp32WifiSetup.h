@@ -15,6 +15,7 @@ public:
     bool start() override;
     void stop() override;
     void tick(bool radioAvailable) override;
+    bool prepareForUpdate() override;
 private:
     struct Credentials { uint32_t version=1; char ssid[33]{}; char password[65]{}; };
     Credentials saved_{}, candidate_{};
@@ -27,6 +28,8 @@ private:
     httpd_handle_t server_=nullptr;
     DNSServer dns_;
     void connect(const Credentials&,bool candidate);
+    bool readSaved(Credentials&) const;
+    static bool sameCredentials(const Credentials&,const Credentials&);
     static esp_err_t page(httpd_req_t*);
     static esp_err_t networks(httpd_req_t*);
     static esp_err_t rescan(httpd_req_t*);

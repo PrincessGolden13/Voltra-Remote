@@ -18,8 +18,9 @@ uint32_t UiController::limitAccent() const {
     constexpr uint32_t colors[] = {0x45e5ff,0xff79cb,0xffcb60,0xbf95ff,0x64efb5,0xb7ee64,0x65cfff,0xff8273,0xffffff};
     return colors[config_.theme];
 }
-void UiController::saveConfiguration() {
-    if (store_ && !store_->save(config_)) text(message_,"Could not save settings");
+bool UiController::saveConfiguration() {
+    if (store_ && !store_->save(config_)) {text(message_,"Could not save settings");return false;}
+    return true;
 }
 void UiController::separator(int y,int inset) {
     auto* line = lv_obj_create(face_); lv_obj_remove_style_all(line);
@@ -151,7 +152,8 @@ void UiController::buildExtra() {
     }
     label(face_,page_ == Screen::Settings ? "SETTINGS" : page_ == Screen::Reset ? "FACTORY RESET?" :
         page_ == Screen::Wifi ? "WI-FI" : page_ == Screen::Updates ? "UPDATES" : "ABOUT",width_*70/100,height_*12/100,heading);
-    action(LV_SYMBOL_LEFT,77,19,10,10,CloseSettings);
+    auto* back=action(LV_SYMBOL_LEFT,77,19,10,10,CloseSettings);
+    if(page_==Screen::Wifi) wifiBack_=back;
     if (page_ == Screen::Settings) {
         const char* names[]={"Theme", "Rest alert", "Dim", "Sleep"};
         for(int i=0;i<4;++i) {
@@ -199,12 +201,18 @@ void UiController::updateExtra() {
         if(!wifi_) text(wifiBody_,"Phone setup is available\nin Normal mode on\nthe physical remote.");
         else {
             const auto w=wifi_->status();
-            text(wifiBody_,w.setupActive ? "Join on your phone:\n"+w.setupNetwork+"\nNo password\n\nOpen 192.168.4.1\nChoose your home Wi-Fi" :
+            const bool complete=w.setupComplete || (w.connected && w.saved);
+            if(complete || !w.storageReady) lv_obj_add_flag(wifiBack_,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_remove_flag(wifiBack_,LV_OBJ_FLAG_HIDDEN);
+            text(wifiBody_,!w.storageReady ? "Saved settings unavailable.\nExisting data has been kept.\n\nRestart the remote to retry.\nFirmware updates are blocked." :
+                complete ? "Wi-Fi settings saved.\n"+w.network+(w.connected ? "\n\nConnected\n"+w.address : "\n\nWaiting to reconnect") :
+                w.setupActive ? "Join on your phone:\n"+w.setupNetwork+"\nNo password\n\nOpen 192.168.4.1\nChoose your home Wi-Fi" :
                 w.connected ? "Connected to\n"+w.network+"\n\n"+w.address :
                 w.saved ? "Saved Wi-Fi\n"+w.network+"\n\nUse your phone to change\nthis remote's network." :
                     "Use your phone to connect\nthis remote to Wi-Fi.\n\nChoose a 2.4 GHz network.\nCredentials stay on the remote.");
             text(status_,w.message);
-            text(lv_obj_get_child(wifiButton_,0),w.setupActive ? "STOP SETUP" : "RESTART SETUP");
+            text(lv_obj_get_child(wifiButton_,0),complete || !w.storageReady ? "OK" :
+                w.setupActive ? "CANCEL" : w.saved ? "CHANGE NETWORK" : "SET UP WI-FI");
         }
     }
     if(page_ == Screen::Live) {

@@ -14,4 +14,7 @@ env.Append(CPPDEFINES=[
     ("VOLTRA_VERSION", '\\"' + version + '\\"'),
     ("VOLTRA_UPDATE_REPOSITORY", '\\"' + config["repository"] + '\\"'),
 ])
-env.Append(LINKFLAGS=["-Wl,--undefined=voltraFirmwareIdentity"])
+env.Append(LINKFLAGS=[
+    "-Wl,--undefined=voltraFirmwareIdentity",
+    "-Wl,--wrap=esp_partition_erase_range",
+])

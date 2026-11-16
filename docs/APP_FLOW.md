@@ -1,3 +1,9 @@
+> November 16 settings follow-up: retain saved Wi-Fi and remote preferences across
+> OTA. Successful Wi-Fi setup has only OK, returning to Settings; do not reopen
+> setup or offer Restart setup after success. Check durable saves before OTA and
+> protect existing settings from automatic storage formatting. See
+> SETTINGS_RETENTION_2026_11_16.md.
+>
 > November 15 debug follow-up supersedes the manual-disconnect flow: show that
 > SEND disconnects Bluetooth and uploads over Wi-Fi, then perform the handoff
 > without another question. Preserve immediate overlay unload and show its

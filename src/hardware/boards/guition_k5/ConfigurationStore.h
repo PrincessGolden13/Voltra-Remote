@@ -1,6 +1,7 @@
 #pragma once
 #include "state/RemoteConfiguration.h"
 #include <Preferences.h>
+#include <nvs.h>
 namespace voltra::guition {
 // A single remote-wide NVS blob. No machine identifiers, load state or base weight.
 class ConfigurationStore final : public RemoteConfigurationStore {
@@ -8,12 +9,16 @@ class ConfigurationStore final : public RemoteConfigurationStore {
     bool writable_=true;
 public:
     RemoteConfiguration load() override {
-        RemoteConfiguration c;Preferences nvs;if(!nvs.begin("voltra-ui",true)) return c;
-        const size_t bytes=nvs.getBytesLength("config");
-        if(bytes<headerWords*4 || bytes>(headerWords+99*recipeWords)*4 || bytes%4) {
-            writable_=bytes==0;nvs.end();return c;
+        RemoteConfiguration c;writable_=true;
+        nvs_handle_t handle;const auto opened=nvs_open("voltra-ui",NVS_READONLY,&handle);
+        if(opened!=ESP_OK) {writable_=opened==ESP_ERR_NVS_NOT_FOUND;return c;}
+        size_t bytes=0;const auto found=nvs_get_blob(handle,"config",nullptr,&bytes);
+        if(found==ESP_ERR_NVS_NOT_FOUND) {nvs_close(handle);return c;}
+        if(found!=ESP_OK || bytes<headerWords*4 || bytes>(headerWords+99*recipeWords)*4 || bytes%4) {
+            writable_=false;nvs_close(handle);return c;
         }
-        std::vector<int32_t> data(bytes/4);const bool read=nvs.getBytes("config",data.data(),bytes)==bytes;nvs.end();
+        std::vector<int32_t> data(bytes/4);size_t actual=bytes;
+        const bool read=nvs_get_blob(handle,"config",data.data(),&actual)==ESP_OK && actual==bytes;nvs_close(handle);
         if(!read) {writable_=false;return c;}
         // An older firmware must not overwrite a future schema with defaults.
         if(data[0]!=1 && data[0]!=version) {writable_=false;return c;}
@@ -21,13 +26,14 @@ public:
         if(data[2]>=0 && data[2]<=3599) c.restAlertSeconds=data[2];
         if(data[3]>=0 && data[3]<=120) c.dimMinutes=data[3];
         if(data[4]>=0 && data[4]<=120) c.sleepMinutes=data[4];
-        if(data[5]<0 || data[5]>99 || data.size()!=size_t(headerWords+data[5]*recipeWords)) return c;
+        if(data[1]<0 || data[1]>8 || data[2]<0 || data[2]>3599 || data[3]<0 || data[3]>120 || data[4]<0 || data[4]>120 ||
+           data[5]<0 || data[5]>99 || data.size()!=size_t(headerWords+data[5]*recipeWords)) {writable_=false;return c;}
         for(int i=0;i<data[5];++i) {
             const auto* d=data.data()+headerWords+i*recipeWords;
             if(d[0]<0 || d[0]>2 || d[1]<0 || d[1]>1 || d[2]<0 || d[2]>10000 || d[3]<0 || d[3]>1 ||
                d[4]<0 || d[4]>1 || d[5]<0 || d[5]>10000 || d[6]<0 || d[6]>1 || d[7]<0 || d[7]>1 ||
                d[8]<0 || d[8]>1 || d[9]<0 || d[9]>1 || d[10]<-10000 || d[10]>10000 ||
-               d[11]<0 || d[11]>9 || d[12]<0 || d[12]>80 || d[13]<1 || d[13]>9) continue;
+               d[11]<0 || d[11]>9 || d[12]<0 || d[12]>80 || d[13]<1 || d[13]>9) {writable_=false;return c;}
             Preset p;p.mode=MagicMode(d[0]);p.magic={bool(d[1]),d[2],bool(d[3])};p.eccentric={bool(d[4]),d[5],bool(d[6])};
             p.unit=WeightUnit(d[7]);p.drops={bool(d[8]),DropMode(d[9]),d[10],d[11],d[12],d[13]};
             if(data[0]==1 && p.unit==WeightUnit::Kilograms) {
@@ -51,7 +57,12 @@ public:
         }
         Preferences nvs;if(!nvs.begin("voltra-ui",false)) return false;
         const size_t bytes=data.size()*4;
-        const bool saved=nvs.putBytes("config",data.data(),bytes)==bytes;nvs.end();return saved;
+        std::vector<int32_t> persisted(data.size());
+        const bool unchanged=nvs.getType("config")==PT_BLOB && nvs.getBytesLength("config")==bytes &&
+            nvs.getBytes("config",persisted.data(),bytes)==bytes && persisted==data;
+        const bool saved=(unchanged || nvs.putBytes("config",data.data(),bytes)==bytes) &&
+            nvs.getBytesLength("config")==bytes && nvs.getBytes("config",persisted.data(),bytes)==bytes && persisted==data;
+        nvs.end();return saved;
     }
 };
 }

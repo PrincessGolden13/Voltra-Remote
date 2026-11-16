@@ -1,5 +1,13 @@
 # Validation status and pending tests
 
+November 16: [settings retention and Wi-Fi completion](SETTINGS_RETENTION_2026_11_16.md).
+PASS: local offline core/packet-inspector build, existing inbound fixture, pinned
+Ryan packet/upstream validators (203 SDK packets, weights 5..230, 593 modifier
+packets and SDK a53804e). No new test source was added. Public Normal/Simulator
+builds and final-link erase-wrapper/rollback-hook checks are recorded after CI.
+Physical settings survival, Wi-Fi OK navigation, failed saves and NVS fault/
+rollback behavior remain unverified; no physical motor tests are performed.
+
 November 15 debug flow: [changes and evidence](DEBUG_FLOW_2026_11_15.md).
 PASS: baseline and changed offline core/packet inspector builds with CMake 3.31.6
 and GNU 14.2.0; pinned Ryan packet validator (203 SDK vectors, generated weights
