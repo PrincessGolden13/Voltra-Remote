@@ -106,7 +106,7 @@ void setup() {
 #else
     Serial.println("Shared UI started. Serial: d=devices, c=connect single available, v=check updates (no load command)");
 #endif
-    if(!bootMode.confirmStartup()) Serial.println("Firmware startup confirmation failed");
+    if(!storageReady || !bootMode.confirmStartup()) Serial.println("Firmware startup confirmation failed");
     if(!bootMode.begin()) Serial.println("Normal boot target unavailable; mode switching cannot be validated");
 }
 void loop() {
