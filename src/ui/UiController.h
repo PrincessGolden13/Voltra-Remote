@@ -106,7 +106,8 @@ private:
     Preset saveDraft_;
     lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
     lv_obj_t* holdBar_ = nullptr;
-    lv_obj_t *wifiBody_=nullptr,*wifiButton_=nullptr,*wifiBack_=nullptr;
+    lv_obj_t *wifiBody_=nullptr,*wifiButton_=nullptr,*wifiReset_=nullptr,*wifiBack_=nullptr;
+    bool wifiConfiguring_=false;
     lv_obj_t *updateBody_=nullptr,*updateCheck_=nullptr,*updateInstall_=nullptr;
     lv_obj_t* settingsValues_[4]{};
     lv_obj_t* liveValues_[3]{};

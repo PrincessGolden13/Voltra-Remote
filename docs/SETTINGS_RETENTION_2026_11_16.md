@@ -41,11 +41,31 @@ became STOP SETUP/RESTART SETUP even after saved connection success. Success was
 also obscured by the still-active hotspot's instructions for fifteen seconds.
 That is a misleading/disruptive UI path; no credential-delete operation was found
 behind Restart setup. Saved credentials now prevent automatic portal reopening.
-Connected-and-saved or completed setup shows the saved network and exactly one
-button, OK, which stops the temporary hotspot and returns to Settings. There is
+Newly completed setup shows the saved network and exactly one button, OK, which
+stops the temporary hotspot and returns to Settings. There is
 no extra back button after success. Before success, a back arrow remains and CANCEL exits
 setup without overwriting the stored network. A disconnected saved network can
 be changed explicitly; a failed candidate does not overwrite the previous one.
+
+## Configured network overview and ping
+
+The owner's later follow-up adds a separate overview when reopening Wi-Fi with
+an existing connection. It shows the current SSID when connected, or explicitly
+labels a saved network as disconnected. Opening this screen requests an ICMP
+test to Google Public DNS 8.8.8.8; it waits for the saved station connection
+instead of starting a portal. Pending, checking, reachable, no-reply and failed/
+unavailable states stay separate from Wi-Fi association. A reply establishes
+reachability to this public IP, not DNS resolution or reachability to every
+service. No reply leaves Internet connectivity unconfirmed, since ICMP can be
+filtered. This test sends no credentials, SSID or diagnostic report.
+
+The overview offers RESET WI-FI, opening the phone portal for a new network.
+It keeps the last saved credentials until a replacement connects and is saved;
+cancellation or failure must not erase them. After this setup succeeds, only OK
+is shown again. Returning later opens the overview and repeats the connection
+test. Ping runs asynchronously, is bounded and is cancelled on leaving the
+screen, changing networks, setup or BLE radio use. Simulator networking stays
+disabled. These changes are source behavior until physically verified.
 
 ## Limits and validation
 
@@ -70,3 +90,5 @@ GitHub's digest. Both final ELFs contain strong GLOBAL erase-wrapper and deferre
 rollback-hook definitions. Image descriptors, manifest size/hash, USB/OTA Normal
 consistency and simulator isolation pass. No visual or physical interaction pass
 is claimed; the repository's desktop adapters require Windows/macOS.
+This build predates the subsequent configured-network overview/ping follow-up;
+its final-source build evidence is recorded separately in TESTING.md.

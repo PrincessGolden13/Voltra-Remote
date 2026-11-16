@@ -1,6 +1,12 @@
 # Validation status and pending tests
 
 November 16: [settings retention and Wi-Fi completion](SETTINGS_RETENTION_2026_11_16.md).
+The later configured-network overview/ping/reset follow-up requires a new source
+build. Pending physical checks: current vs saved/disconnected SSID, opening before
+reconnect, ICMP reply/no reply/start failure, leaving during a check, BLE pause,
+reset during a check, completed setup showing only OK, and cancellation/failed
+replacement keeping the prior network. The historical build below predates this
+follow-up; final-source evidence is recorded after execution.
 PASS: local offline core/packet-inspector build, existing inbound fixture, pinned
 Ryan packet/upstream validators (203 SDK packets, weights 5..230, 593 modifier
 packets and SDK a53804e). No new test source was added.

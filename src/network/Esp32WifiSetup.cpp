@@ -12,11 +12,17 @@
 #include <vector>
 #include <cctype>
 #include <cstdio>
+#include <atomic>
+#include <new>
 #include <lwip/sockets.h>
 namespace voltra {
 namespace {
 constexpr uint64_t setupTimeoutMs=300000,connectTimeoutMs=20000,successCloseMs=15000;
 constexpr uint64_t scanTimeoutMs=15000; // Bound an async scan before accepting credentials.
+// User-requested Google DNS address; numeric ICMP does not depend on DNS/TLS.
+constexpr char connectionCheckAddress[]="8.8.8.8";
+constexpr uint32_t connectionCheckCount=3,connectionCheckTimeoutMs=1000,connectionCheckIntervalMs=1000;
+constexpr uint64_t connectionCheckDeadlineMs=6000,connectionCheckWifiWaitMs=25000;
 // Same fixed IPv4 address/subnet advertised by the setup AP and captive DNS.
 constexpr uint32_t setupAddress=0xc0a80401u,setupNetmask=0xffffff00u;
 uint64_t nowMs(){return uint64_t(esp_timer_get_time())/1000;}
@@ -82,6 +88,103 @@ bool decode(const std::string& in,std::string& out) {
     }return true;
 }
 }
+struct Esp32WifiSetup::PingCheck {
+    Esp32WifiSetup* owner;
+    uint32_t generation;
+    esp_ping_handle_t session=nullptr;
+    std::atomic<bool> done{false};
+    uint64_t startedAt=0;
+    int replies=0,lastMs=-1;
+};
+void Esp32WifiSetup::requestConnectionCheck() {
+    if(!mutex_) return;
+    const auto w=status();
+    if(w.setupActive && w.setupComplete) stop();
+    invalidateConnectionCheck(WifiConnectionCheck::Waiting,true);
+    Lock lock(mutex_);
+    pingRequestedAt_=nowMs();
+    if(!view_.storageReady || !view_.saved || !radioAvailable_ || view_.setupActive) {
+        pingRequested_=false;view_.connectionCheck=WifiConnectionCheck::Unavailable;
+    }
+}
+void Esp32WifiSetup::cancelConnectionCheck() {
+    if(mutex_) invalidateConnectionCheck(WifiConnectionCheck::Idle);
+}
+void Esp32WifiSetup::invalidateConnectionCheck(WifiConnectionCheck phase,bool keepRequest) {
+    // stop() is asynchronous: retain the callback context until on_ping_end.
+    // The generation prevents an old callback publishing into a newer check.
+    {Lock lock(mutex_);
+        ++pingGeneration_;pingRequested_=keepRequest;
+        view_.connectionCheck=phase;view_.pingReplies=0;view_.pingMs=-1;
+    }
+    if(ping_ && !ping_->done.load(std::memory_order_acquire)) esp_ping_stop(ping_->session);
+}
+void Esp32WifiSetup::pingSuccess(esp_ping_handle_t session,void* arg) {
+    auto* check=static_cast<PingCheck*>(arg);
+    uint32_t ms=0;ip_addr_t reply{},target{};
+    if(esp_ping_get_profile(session,ESP_PING_PROF_TIMEGAP,&ms,sizeof(ms))!=ESP_OK ||
+       esp_ping_get_profile(session,ESP_PING_PROF_IPADDR,&reply,sizeof(reply))!=ESP_OK ||
+       !ipaddr_aton(connectionCheckAddress,&target) || !ip_addr_cmp(&reply,&target)) return;
+    ++check->replies;check->lastMs=int(ms);
+    auto* self=check->owner;Lock lock(self->mutex_);
+    if(check->generation!=self->pingGeneration_ || !self->pingRequested_) return;
+    self->view_.pingReplies=check->replies;self->view_.pingMs=check->lastMs;
+}
+void Esp32WifiSetup::pingFinished(esp_ping_handle_t,void* arg) {
+    auto* check=static_cast<PingCheck*>(arg);auto* self=check->owner;
+    {Lock lock(self->mutex_);
+        if(check->generation==self->pingGeneration_ && self->pingRequested_) {
+            self->pingRequested_=false;
+            self->view_.connectionCheck=check->replies ? WifiConnectionCheck::Reachable : WifiConnectionCheck::NoReply;
+            self->view_.pingReplies=check->replies;self->view_.pingMs=check->lastMs;
+        }
+    }
+    // Last access to context by the callback; main-loop cleanup acquires this.
+    check->done.store(true,std::memory_order_release);
+}
+void Esp32WifiSetup::tickConnectionCheck() {
+    if(ping_ && ping_->done.load(std::memory_order_acquire)) {
+        // IDF queues deletion by clearing INIT; no callbacks follow this end.
+        // Retain the context if deletion was not accepted, and retry next tick.
+        if(esp_ping_delete_session(ping_->session)!=ESP_OK) return;
+        delete ping_;ping_=nullptr;
+    }
+    const auto w=status();
+    if(w.connectionCheck==WifiConnectionCheck::Checking && ping_ && nowMs()-ping_->startedAt>=connectionCheckDeadlineMs) {
+        invalidateConnectionCheck(WifiConnectionCheck::Error);return;
+    }
+    bool requested;
+    {Lock lock(mutex_);requested=pingRequested_;}
+    if(!requested) return;
+    if(!w.storageReady || !radioAvailable_ || w.setupActive || !w.saved) {
+        invalidateConnectionCheck(WifiConnectionCheck::Unavailable);return;
+    }
+    if(!w.connected || WiFi.status()!=WL_CONNECTED) {
+        if(nowMs()-pingRequestedAt_>=connectionCheckWifiWaitMs) invalidateConnectionCheck(WifiConnectionCheck::Unavailable);
+        return;
+    }
+    if(ping_) return; // A cancelled session is still retiring; never reuse it.
+    auto* check=new(std::nothrow) PingCheck;
+    if(!check) {invalidateConnectionCheck(WifiConnectionCheck::Error);return;}
+    check->owner=this;
+    {Lock lock(mutex_);check->generation=pingGeneration_;view_.connectionCheck=WifiConnectionCheck::Checking;}
+    esp_ping_config_t config=ESP_PING_DEFAULT_CONFIG();
+    config.count=connectionCheckCount;config.timeout_ms=connectionCheckTimeoutMs;
+    config.interval_ms=connectionCheckIntervalMs;config.data_size=16;
+    ipaddr_aton(connectionCheckAddress,&config.target_addr);
+    esp_ping_callbacks_t callbacks{};callbacks.cb_args=check;
+    callbacks.on_ping_success=pingSuccess;callbacks.on_ping_end=pingFinished;
+    if(esp_ping_new_session(&config,&callbacks,&check->session)!=ESP_OK) {
+        delete check;invalidateConnectionCheck(WifiConnectionCheck::Error);return;
+    }
+    ping_=check;check->startedAt=nowMs();
+    if(esp_ping_start(check->session)!=ESP_OK) {
+        // A rejected start has no end callback; retire through the same checked
+        // delete path on the next tick rather than discarding its context here.
+        check->done.store(true,std::memory_order_release);
+        invalidateConnectionCheck(WifiConnectionCheck::Error);
+    }
+}
 void Esp32WifiSetup::begin() {
     mutex_=xSemaphoreCreateMutex();if(!mutex_) return;
     // Distinguish a fresh remote from inaccessible or incompatible saved data.
@@ -112,6 +215,7 @@ bool Esp32WifiSetup::readSaved(Credentials& value) const {
         memchr(value.password,0,sizeof(value.password));
 }
 bool Esp32WifiSetup::prepareForUpdate() {
+    cancelConnectionCheck();
     const auto w=status();
     if(!w.storageReady || !w.connected || !w.saved || w.setupActive || connecting_ || submitted_) return false;
     Credentials persisted;
@@ -124,6 +228,8 @@ WifiSetupStatus Esp32WifiSetup::status() const {
     Lock lock(mutex_);return view_;
 }
 void Esp32WifiSetup::connect(const Credentials& c,bool candidate) {
+    bool requested;{Lock lock(mutex_);requested=pingRequested_;}
+    invalidateConnectionCheck(requested ? WifiConnectionCheck::Waiting : WifiConnectionCheck::Idle,requested);
     WiFi.disconnect(false,false);candidate_=c;candidateActive_=candidate;
     WiFi.mode(server_ ? WIFI_AP_STA : WIFI_STA);WiFi.begin(c.ssid,c.password);
     connectAt_=nowMs();attempted_=true;
@@ -131,6 +237,8 @@ void Esp32WifiSetup::connect(const Credentials& c,bool candidate) {
 }
 bool Esp32WifiSetup::start() {
     if(!mutex_ || !radioAvailable_ || !status().storageReady) return false;
+    cancelConnectionCheck();
+    if(server_ && status().setupComplete) stop();
     if(server_) return true;
     if(connecting_) {WiFi.disconnect(false,false);Lock lock(mutex_);connecting_=false;view_.connected=false;}
     attempted_=true; // Editing must not race an automatic saved-network attempt.
@@ -157,23 +265,42 @@ bool Esp32WifiSetup::start() {
 }
 void Esp32WifiSetup::stop() {
     if(!mutex_ || !status().storageReady) return;
+    cancelConnectionCheck();
     // Stop the HTTP task before taking its shared-data mutex.
     if(server_) {httpd_stop(server_);server_=nullptr;}
     dns_.stop();if(scanning_) esp_wifi_scan_stop();WiFi.scanDelete();WiFi.softAPdisconnect(false);finishAt_=0;
-    if(!mutex_) return;
+    // Leaving setup cannot let an unapproved/in-flight replacement save later.
+    // Successful OK has already cleared candidateActive_ and keeps the live STA.
+    const auto w=status();
+    const bool cancelledCandidate=candidateActive_ || submitted_ || (w.connected && !w.saved);
+    if(cancelledCandidate) WiFi.disconnect(false,false);
     Lock lock(mutex_);view_.setupActive=false;view_.setupNetwork.clear();
+    if(cancelledCandidate) {
+        connecting_=candidateActive_=false;candidate_={};
+        view_.connected=false;view_.saved=saved_.ssid[0]!=0;
+        view_.network=saved_.ssid;view_.address.clear();view_.setupComplete=false;
+        view_.message=view_.saved ? "Setup cancelled. Saved network kept." : "Setup cancelled.";
+    }
+    if(!view_.connected && saved_.ssid[0]) attempted_=false;
     scanRequested_=scanning_=scanFailed_=false;
     submitted_=false;submittedPassword_.clear();token_.clear();
 }
 void Esp32WifiSetup::tick(bool radioAvailable) {
     if(!mutex_) return;
-    if(!status().storageReady) return;
     radioAvailable_=radioAvailable;
+    if(!status().storageReady) {
+        invalidateConnectionCheck(WifiConnectionCheck::Unavailable);tickConnectionCheck();return;
+    }
     if(!radioAvailable) {
+        invalidateConnectionCheck(WifiConnectionCheck::Unavailable);
         if(server_) stop();
         if(WiFi.getMode()!=WIFI_OFF) {WiFi.disconnect(false,false);WiFi.mode(WIFI_OFF);}
-        Lock lock(mutex_);connecting_=false;candidateActive_=false;attempted_=false;
-        view_.connected=false;view_.message="Wi-Fi paused during VOLTRA use";return;
+        {Lock lock(mutex_);connecting_=false;candidateActive_=false;attempted_=false;
+            view_.connected=false;view_.address.clear();view_.network=saved_.ssid;
+            view_.connectionCheck=WifiConnectionCheck::Unavailable;
+            view_.message="Wi-Fi paused during VOLTRA use";
+        }
+        tickConnectionCheck();return;
     }
     if(!server_ && !attempted_ && saved_.ssid[0]) connect(saved_,false);
     if(server_) {
@@ -233,13 +360,17 @@ void Esp32WifiSetup::tick(bool radioAvailable) {
         } else if(nowMs()-connectAt_>=connectTimeoutMs) {
             WiFi.disconnect(false,false);Lock lock(mutex_);connecting_=false;candidateActive_=false;
             memset(candidate_.password,0,sizeof(candidate_.password));view_.connected=false;
+            view_.address.clear();view_.network=saved_.ssid;
             view_.message="Connection failed. Check network and password.";
         }
     }
     if(!connecting_ && status().connected && WiFi.status()!=WL_CONNECTED) {
+        invalidateConnectionCheck(WifiConnectionCheck::Unavailable);
         Lock lock(mutex_);view_.connected=false;view_.address.clear();view_.message="Wi-Fi connection lost";
+        view_.network=saved_.ssid;
         attempted_=false; // One new saved-network attempt; a failed join stays failed.
     }
+    tickConnectionCheck();
 }
 esp_err_t Esp32WifiSetup::page(httpd_req_t* req) {
     if(!setupClient(req)) return wrongNetwork(req,true);

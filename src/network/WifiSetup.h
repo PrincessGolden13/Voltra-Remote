@@ -1,10 +1,13 @@
 #pragma once
 #include <string>
 namespace voltra {
+enum class WifiConnectionCheck { Idle, Waiting, Checking, Reachable, NoReply, Error, Unavailable };
 struct WifiSetupStatus {
     bool setupActive=false, connected=false, saved=false;
     bool setupComplete=false, storageReady=true;
     std::string network, address, setupNetwork, message;
+    WifiConnectionCheck connectionCheck=WifiConnectionCheck::Idle;
+    int pingReplies=0, pingMs=-1;
 };
 // Remote networking only. No VOLTRA/controller access, no credentials in UI
 // configuration, and no dependency on any board GPIO or Bluetooth transport.
@@ -17,5 +20,8 @@ public:
     virtual void tick(bool radioAvailable)=0;
     // Installation must not restart with credentials that only exist in RAM.
     virtual bool prepareForUpdate() { return false; }
+    // Explicit screen-open check; implementations must not block UI/control work.
+    virtual void requestConnectionCheck() {}
+    virtual void cancelConnectionCheck() {}
 };
 }

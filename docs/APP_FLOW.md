@@ -1,3 +1,9 @@
+> November 16 Wi-Fi follow-up: opening an already configured Wi-Fi screen shows
+> the current network, a bounded ping to Google DNS 8.8.8.8 and RESET WI-FI for
+> a new connection. A newly completed setup still shows only OK, returning to
+> Settings. This supersedes the older rule that every saved connection shows
+> only OK. See SETTINGS_RETENTION_2026_11_16.md.
+>
 > November 16 settings follow-up: retain saved Wi-Fi and remote preferences across
 > OTA. Successful Wi-Fi setup has only OK, returning to Settings; do not reopen
 > setup or offer Restart setup after success. Check durable saves before OTA and
