@@ -3,8 +3,18 @@
 November 16: [settings retention and Wi-Fi completion](SETTINGS_RETENTION_2026_11_16.md).
 PASS: local offline core/packet-inspector build, existing inbound fixture, pinned
 Ryan packet/upstream validators (203 SDK packets, weights 5..230, 593 modifier
-packets and SDK a53804e). No new test source was added. Public Normal/Simulator
-builds and final-link erase-wrapper/rollback-hook checks are recorded after CI.
+packets and SDK a53804e). No new test source was added.
+PASS: [CI 43885326367](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43885326367)
+at 3b702fa49fb903c443d6e9ab6f614fb997b0c772: public Normal, isolated Simulator,
+offline core and release packaging. Downloaded artifact matches GitHub digest
+`e4afe8884262c4811839aa6fa46c6cf2a097a329879515a33f073735f6b03579`.
+Normal is 1,937,744 bytes, SHA-256
+`d2663a251a68cd874f490b5ddfb2306202d40744dec39db1038207d1991b4940`;
+Simulator is 980,400 bytes. OTA/USB Normal images match; independent descriptors
+and manifest size/hash pass. Both ELF files contain GLOBAL (not weak) functions
+`__wrap_esp_partition_erase_range` and `verifyRollbackLater`; Normal/Simulator
+backend isolation is retained. These checks establish compiled wiring and image
+delivery artifacts, not execution of storage-fault recovery or UI interactions.
 Physical settings survival, Wi-Fi OK navigation, failed saves and NVS fault/
 rollback behavior remain unverified; no physical motor tests are performed.
 

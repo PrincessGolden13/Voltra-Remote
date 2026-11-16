@@ -57,9 +57,16 @@ old slot. Do not claim guaranteed recovery under that scenario. Ordinary valid-N
 OTA retains the same storage layout and readable legacy settings.
 
 New test source remains deferred. Builds and existing validators are recorded
-in TESTING.md after execution. Physical checks still required: saved Wi-Fi,
+in TESTING.md. Physical checks still required: saved Wi-Fi,
 theme, rest alert, dim/sleep, presets and remembered devices across reboot and
 OTA; OK immediately after successful save and after the hotspot closes; reopening
 Wi-Fi without starting setup; cancellation/failed replacement preserving the old
 network; save failure blocking OTA; NVS fault/rollback behavior. No physical motor
 commands, USB flashing or raw private storage downloads are part of this change.
+
+CONFIRMED (build/artifacts): CI 43885326367 at source 3b702fa builds both public
+board images, offline core and release package. The downloaded ZIP matches
+GitHub's digest. Both final ELFs contain strong GLOBAL erase-wrapper and deferred
+rollback-hook definitions. Image descriptors, manifest size/hash, USB/OTA Normal
+consistency and simulator isolation pass. No visual or physical interaction pass
+is claimed; the repository's desktop adapters require Windows/macOS.
