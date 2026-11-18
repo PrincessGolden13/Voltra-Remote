@@ -18,6 +18,7 @@ public:
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
     bool busy() const override { return waitingWrite_.has_value() || !writes_.empty() || target_.has_value(); }
+    bool unloading() const override;
     bool commandFailed() const override { return commandFailed_; }
     const std::string& status() const override { return status_; }
     std::string diagnosticState() const override;

@@ -1,5 +1,14 @@
 # Validation status and pending tests
 
+November 18 v0.4.8: [unload/reset report 5a65d590](UNLOAD_RESET_2026_11_18.md).
+PASS baseline: offline core/packet inspector with CMake 3.31.6 and GNU 14.2.0;
+existing inbound base-weight fixture accepts its valid CRC and rejects corruption;
+pinned Ryan packet validator passes 203 SDK packets, weights 5..230 and 593
+modifier packets; upstream validator against SDK a53804e passes. New test source
+remains deferred. Changed public firmware/package results follow after CI.
+Physical unload/reset timing and subsequent Load/Auto Load remain unverified;
+no physical motor command or USB operation is performed.
+
 November 18: [hold duration, debug hint and report bb697e8f](HOLD_LOAD_2026_11_18.md).
 PASS: local offline core/packet-inspector build, existing inbound fixture and
 pinned Ryan validators (203 SDK packets, weights 5..230, 593 modifier packets,

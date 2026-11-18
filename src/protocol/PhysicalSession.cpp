@@ -324,13 +324,14 @@ void PhysicalSession::apply(const Frame& f) {
         pairedReadSupported_=pairedReadSupported_ || decoded.count(pairedDevice)!=0;
         autoUnloadReadSupported_=autoUnloadReadSupported_ || decoded.count(autoUnloadHoldTime)!=0;
     }
-    bool acknowledgedMagic=false,acknowledgedEccentric=false;
+    bool acknowledgedMagic=false,acknowledgedEccentric=false,motorObserved=false;
     for(const auto& pair:decoded) {
         if(pair.first==motor) {
             if(f.command==0x0f) directMotor_=Observed{pair.second,now_};
             // Ignore only the documented stale loaded-idle echo; genuine
             // single-field changes, unloads and unknown states still invalidate.
             else if(count>1 && motorMode(pair.second)==1 && freshDirectMotorMode()==5) continue;
+            motorObserved=true;
         }
         if(pair.first==voidLock || pair.first==mountLock || pair.first==twin || pair.first==remoteCoworker ||
            pair.first==pairedDevice || pair.first==motor || pair.first==autoLoadStatus || pair.first==base) {
@@ -344,17 +345,9 @@ void PhysicalSession::apply(const Frame& f) {
         // Only normalized parameter values; never serial numbers or BLE identities.
         if(changed && pair.first==pairedDevice) Serial.printf("VOLTRA paired endpoint present = %u\n",unsigned(pair.second!=0));
         else if(changed) Serial.printf("VOLTRA param %u = %lld\n",unsigned(pair.first),static_cast<long long>(pair.second));
-        if(waitingWrite_ && waitingWrite_->first==pair.first && now_>=waitingAt_ &&
-           (pair.first==motor || (f.command==0x0f && now_-waitingAt_>=settingsSettleMs))) {
-            // Motor writes and readbacks have different enums on current devices:
-            // explicit unload command 4 is confirmed by unloaded readback 0.
-            const auto observed=pair.first==motor ? motorMode(pair.second) : std::optional<int64_t>(pair.second);
-            const bool unloaded=pair.first==motor && waitingWrite_->second==4 && observed==0;
-            const bool loaded=pair.first==motor && waitingWrite_->second==5 && observed==1;
-            const auto autoState=fresh(autoLoadStatus);
-            const bool autoArmed=pair.first==motor && waitingWrite_->second==38 && observed==autoLoadMotorMode &&
-                autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
-            if(unloaded || loaded || autoArmed || observed==waitingWrite_->second) {
+        if(pair.first!=motor && waitingWrite_ && waitingWrite_->first==pair.first && now_>=waitingAt_ &&
+           f.command==0x0f && now_-waitingAt_>=settingsSettleMs) {
+            if(pair.second==waitingWrite_->second) {
                 diagnostic("Device readback id="+std::to_string(pair.first)+" value="+std::to_string(pair.second)+
                     " source="+(f.command==0x0f ? std::string("read") : std::string("push")));
                 if(pair.first==accessoryDisplayPercent) unitSwitchAt_=now_;
@@ -362,6 +355,26 @@ void PhysicalSession::apply(const Frame& f) {
                 acknowledgedEccentric=acknowledgedEccentric || pair.first==eccentric || pair.first==percentParameter(false);
                 waitingWrite_.reset();
             }
+        }
+    }
+    // Evaluate motor confirmation after the whole response: the map visits
+    // motor before Auto Load status. Report 5a65d590 showed motor 0 arriving
+    // while cached status 14 still described the preceding loaded sequence.
+    // Unload completes only on a direct response containing BOTH reset values;
+    // never combine a motor push/read with an older cached status (even 0).
+    if(waitingWrite_ && waitingWrite_->first==motor && now_>=waitingAt_ && motorObserved) {
+        const auto observed=motorMode(decoded.at(motor));
+        const auto autoState=fresh(autoLoadStatus);
+        const bool unloaded=waitingWrite_->second==4 && f.command==0x0f && observed==0 &&
+            decoded.count(autoLoadStatus) && decoded.at(autoLoadStatus)==0;
+        const bool loaded=waitingWrite_->second==5 && (observed==1 || observed==5);
+        const bool autoArmed=waitingWrite_->second==38 && (observed==38 ||
+            (observed==autoLoadMotorMode && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete));
+        if(unloaded || loaded || autoArmed) {
+            diagnostic("Device readback id="+std::to_string(motor)+" value="+std::to_string(decoded.at(motor))+
+                " source="+(f.command==0x0f ? std::string("read") : std::string("push"))+
+                (unloaded ? " Auto Load status=0" : ""));
+            waitingWrite_.reset();
         }
     }
     updateReport();
@@ -511,6 +524,9 @@ void PhysicalSession::updateReport() {
         report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
 }
 TrainingReport PhysicalSession::trainingReport() const { return report_; }
+bool PhysicalSession::unloading() const {
+    return waitingWrite_ && waitingWrite_->first==motor && waitingWrite_->second==4;
+}
 SessionReadiness PhysicalSession::readiness() const {
     SessionReadiness r;
     r.validated=accepted_;r.capabilities.weightTraining=fresh(workout)==1 ? Knowledge::Yes : Knowledge::Unknown;
@@ -518,7 +534,7 @@ SessionReadiness PhysicalSession::readiness() const {
     const auto cable=fresh(position),zero=fresh(offset);
     r.cableZero=cable && zero && std::abs(*cable-*zero)<=cableZeroToleranceCm;
     r.twinSafe=standalone();r.minWeightLbs=5;
-    r.ready=accepted_ && activated_ && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
+    r.ready=accepted_ && activated_ && !unloading() && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
         fresh(mountLock)==securedMount && loadSafetyStatusSupported() && fresh(autoLoadStatus)==0;
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!activated_) r.reason="Waiting for VOLTRA activation status";
@@ -530,7 +546,9 @@ SessionReadiness PhysicalSession::readiness() const {
     else if(fresh(mountLock)!=securedMount) r.reason="Secure VOLTRA mounting lock";
     else if(!fresh(voidLock)) r.reason="Waiting for fresh VOLTRA safety status";
     else if(!loadSafetyStatusSupported()) r.reason="Safety status "+std::to_string(*fresh(voidLock))+" unrecognized; send debug log";
+    else if(unloading()) r.reason="Unloading; wait for device confirmation";
     else if(!fresh(autoLoadStatus)) r.reason="Reading Auto Load status; try again";
+    else if(freshMotorMode()==0 && fresh(autoLoadStatus)==autoLoadComplete) r.reason="Waiting for Auto Load reset; tap again when ready";
     else if(fresh(autoLoadStatus)!=0) r.reason="Finish or cancel Auto Load on VOLTRA";
     else if(!freshDirectMotorMode()) r.reason="Reading VOLTRA motor status; try again";
     else if(!cable || !zero) r.reason="Reading cable position; try again";
@@ -654,6 +672,7 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
     // Explicit unload remains available even if state is unknown or another request is pending.
     entryHandled_=true; // Cancel any connection-time mode entry too.
     cancelWrites("");
+    status_="Unloading; wait for device confirmation";
     return writeParameter(motor,4,2) ? TransportResult::Accepted : TransportResult::Failed;
 }
 TransportResult PhysicalSession::triggerAutoLoad() {
@@ -671,7 +690,7 @@ TransportResult PhysicalSession::triggerAutoLoad() {
 void PhysicalSession::pollState(size_t group) {
     pollAt_[group]=now_;
     switch(group) {
-    case 0:read({base,motor,workout,unit});break;
+    case 0:read({base,motor,workout,unit,autoLoadStatus});break;
     case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false),mountain,accessoryDisplayPercent});break;
     case 2:
         if(pairedReadSupported_) read({childLock,otaState,twin,remoteCoworker,maxForce,pairedDevice});
@@ -681,8 +700,8 @@ void PhysicalSession::pollState(size_t group) {
     case 4:
         // Probe newer fields separately first. Only a successful direct read
         // permits joining the five critical groups, preserving their bandwidth.
-        if(autoUnloadReadSupported_) read({autoLoadStatus,mountLock,voidLock,autoUnloadHoldTime});
-        else read({autoLoadStatus,mountLock,voidLock});
+        if(autoUnloadReadSupported_) read({mountLock,voidLock,autoUnloadHoldTime});
+        else read({mountLock,voidLock});
         break;
     }
 }
@@ -770,7 +789,9 @@ void PhysicalSession::tick(uint64_t now) {
             return;
         }
         if(waitingWrite_) {
-            read({waitingWrite_->first});return;
+            if(waitingWrite_->first==motor) read({motor,autoLoadStatus});
+            else read({waitingWrite_->first});
+            return;
         }
         if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();liveBefore_.reset();}
         if(!telemetrySubscribed_) {

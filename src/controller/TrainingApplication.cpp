@@ -194,6 +194,11 @@ void TrainingApplication::toggleWeight() {
     if (!fresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
         unload(); return;
     }
+    if(session_.unloading()) {
+        // A second tap during the device's reset is not a new load intent.
+        // Keep the pending feedback, without opening a failure dialog or replay.
+        message_.clear();diagnostic("Weight action ignored: unload pending");return;
+    }
     const auto e = session_.readiness();
     if (pending() || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = r.minWeight>0 && r.settings.weight < r.minWeight ? "Set at least "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
@@ -218,6 +223,9 @@ void TrainingApplication::unload() {
 }
 void TrainingApplication::autoLoad() {
     diagnostic("Explicit Auto Load action");
+    if(session_.unloading()) {
+        message_.clear();diagnostic("Auto Load action ignored: unload pending");return;
+    }
     const auto r = report(); const auto e = session_.readiness();
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; recordLoadRefusal();return;
