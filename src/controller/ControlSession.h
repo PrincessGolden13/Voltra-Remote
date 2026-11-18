@@ -18,6 +18,7 @@ public:
     virtual void tick(uint64_t) {}
     virtual bool accepted() const { return true; }
     virtual bool busy() const { return false; }
+    virtual bool unloading() const { return false; }
     virtual bool commandFailed() const { return false; }
     virtual const std::string& status() const { static const std::string empty; return empty; }
     virtual std::string diagnosticState() const { return status(); }
