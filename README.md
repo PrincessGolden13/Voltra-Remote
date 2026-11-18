@@ -36,9 +36,11 @@ Read the dated [application flow](docs/APP_FLOW.md) and
 [validation record](docs/TESTING.md) for the distinction between implementation,
 simulator behavior and actual hardware observations. Real Twin work is deferred.
 
-Turn the dial to edit weight. Tap the main number to load/unload; hold for at least
-650 ms and release before six seconds to request the device's existing Auto Load
-behavior. An unloaded number is darker;
+Turn the dial to edit weight. Tap the main number to load/unload. When unloaded,
+hold until the circular indicator completes at two seconds, then release to
+request Auto Load. The ring appears after 300 ms; releasing an incomplete hold
+cancels it. Auto Load shows pull/hold guidance and the device's countdown when
+available; tap the weight to cancel. An unloaded number is darker;
 confirmed loaded weight is bright. Pending intent stays distinct from device
 confirmation. Boot, reconnect, presets and updates never load resistance.
 

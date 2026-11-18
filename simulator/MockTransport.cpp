@@ -104,6 +104,7 @@ void MockTransport::setProfile(SimulatorProfile profile) {
     profile_ = profile; sent_ = false; pendingSettings_.reset(); pendingLoaded_.reset(); pendingAuto_ = false;
     auto& r = devices_[active_].state;
     r.loaded = profile == SimulatorProfile::Loaded; r.autoLoadArmed = false;
+    r.autoLoadPhase.reset();r.autoLoadCountdownMs.reset();r.autoLoadCountdownAtMs=0;
     r.twinKnown = profile != SimulatorProfile::TwinUnknown;
     r.moving = r.held = false; r.rep = 0; r.repsStarted = false; restSince_ = 0;
     r.force.reset(); r.setNumber.reset(); r.completedSets.reset(); r.lastSetReps.reset(); r.restSeconds.reset();
@@ -125,20 +126,27 @@ void MockTransport::poll(uint64_t now) {
                 restSince_ = now; state.restSeconds = 0;
             }
             state.loaded = *pendingLoaded_; state.autoLoadArmed = false;
+            state.autoLoadPhase.reset();state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
             if (!state.loaded) { state.moving = state.held = false; state.repsStarted = false; }
             pendingLoaded_.reset(); sent_ = false;
         }
-        if (pendingAuto_) { state.autoLoadArmed = true; pendingAuto_ = false; sent_ = false; heldSince_ = 0; }
+        if (pendingAuto_) { state.autoLoadArmed = true;state.autoLoadPhase=11; pendingAuto_ = false; sent_ = false; heldSince_ = 0; }
         // Synthetic device behavior, not a remote timer that issues a load.
         if (state.autoLoadArmed && state.held) {
             if (!heldSince_) heldSince_ = now;
+            state.autoLoadPhase=12;state.autoLoadCountdownMs=int(3000-std::min<uint64_t>(3000,now-heldSince_));
+            state.autoLoadCountdownAtMs=now;
             if (now-heldSince_ >= 3000) {
                 state.loaded = true; state.autoLoadArmed = false; sent_ = false;
+                state.autoLoadPhase=14;state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
                 state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;
                 state.restSeconds.reset(); restSince_ = 0;
             }
-        } else heldSince_ = 0;
+        } else {
+            heldSince_ = 0;state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
+            if(state.autoLoadArmed) state.autoLoadPhase=11;
+        }
     }
     if (sent_ && (profile_ == SimulatorProfile::Stale || now-lastMs_ < notificationIntervalMs)) return;
     if (sent_ && (pendingSettings_ || pendingLoaded_ || pendingAuto_)) return;

@@ -1,5 +1,18 @@
 # Validation status and pending tests
 
+November 18 v0.4.8 follow-up: [Auto Load visual feedback](AUTO_LOAD_FEEDBACK_2026_11_18.md).
+The owner confirms an actual Auto Load trial succeeds but remote progress/armed
+feedback is missing. New UI and read-only countdown changes require a fresh
+public firmware/package check; the earlier 7e13632 artifact below predates them.
+No new automated test source or physical motor operation is performed.
+PASS changed offline core/packet inspector and existing pinned Ryan/SDK validators.
+Real LVGL9.3 headless renders at360/466/480 inspect half/full touch hold, Starting,
+armed guidance, received device countdown, release, cancellation and loaded return.
+The temporary Linux adapter delegates to the existing shared SimulatorApp and
+DesktopHardwarePlatform with synthetic pointer/time input; it does not establish
+a graphical Linux desktop host or physical behavior. No clipping/overlap remains
+in these scenes; cancel/loaded return restores modifiers and scale labels.
+
 November 18 v0.4.8: [unload/reset report 5a65d590](UNLOAD_RESET_2026_11_18.md).
 PASS baseline: offline core/packet inspector with CMake 3.31.6 and GNU 14.2.0;
 existing inbound base-weight fixture accepts its valid CRC and rejects corruption;

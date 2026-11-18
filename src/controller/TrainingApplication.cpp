@@ -126,7 +126,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     dropStart_.reset();dropRestore_.reset();
     if (!selected_.empty()) dropSettings_[selected_].enabled = false;
     controller_.disconnect(); selected_.clear(); name_.clear();
-    pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_ = failure; resetDrops();
+    pending_ = requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset(); settingsIntent_.reset(); message_ = failure; resetDrops();
 }
 bool TrainingApplication::fresh() const {
     const auto r = report();
@@ -205,6 +205,7 @@ void TrainingApplication::toggleWeight() {
             !e.reason.empty() ? e.reason : "Device not ready"; recordLoadRefusal();return;
     }
     const auto result = session_.setLoaded(true);
+    autoLoadRequested_=false;
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
     diagnostic("Load request result="+std::to_string(int(result)));
     if(result!=TransportResult::Accepted) recordLoadRefusal();
@@ -215,7 +216,7 @@ void TrainingApplication::unload() {
     // route an editor's unload target through a toggle that could load instead.
     presetIntent_.reset(); settingsIntent_.reset(); resetDrops(); dropsCancelled_ = true;
     dropRestore_.reset(); // Explicit unload cancels any already queued restore.
-    requestedLoad_ = false; weightIntent_.reset();
+    requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset();
     const auto result=session_.setLoaded(false);
     sent(result);
     diagnostic("Unload request result="+std::to_string(int(result)));
@@ -234,6 +235,7 @@ void TrainingApplication::autoLoad() {
     // A new explicit Auto Load starts a new execution sequence, preserving the
     // selected local recipe. Countdown reports cannot inherit an old set/hold.
     if(result == TransportResult::Accepted) resetDrops();
+    autoLoadRequested_ = result == TransportResult::Accepted;
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
     diagnostic("Auto Load request result="+std::to_string(int(result)));
     if(result!=TransportResult::Accepted) recordLoadRefusal();
@@ -551,7 +553,7 @@ void TrainingApplication::tick(uint64_t now) {
         confirmedDropWeight_.reset();
         dropStart_.reset();dropRestore_.reset();
         if(!selected_.empty()) dropSettings_[selected_].enabled=false;
-        connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = false; weightIntent_.reset(); resetDrops(); return;
+        connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset(); resetDrops(); return;
     }
     if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();
@@ -595,7 +597,7 @@ void TrainingApplication::tick(uint64_t now) {
             recordControlFailure(message_);
             if(requestedLoad_) {loadRefusalMessage_=message_;++loadRefusalRevision_;}
         }
-        pending_ = requestedLoad_ = false; weightIntent_.reset(); settingsIntent_.reset();
+        pending_ = requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {
             auto actual = currentPreset(); actual.drops = presetIntent_->drops;
             if (!session_.commandFailed() && r.revision > sentRevision_ && fresh() && !r.loaded &&

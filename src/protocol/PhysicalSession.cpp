@@ -16,6 +16,11 @@ constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentri
 constexpr uint16_t mountain=0x556f, accessoryDisplayPercent=0x5569;
 constexpr uint16_t legacyChainsPercent=20873, legacyEccentricPercent=20874;
 constexpr uint16_t autoLoadEnabled=21272, autoLoadSafetyEnabled=21389, autoLoadStatus=21447;
+// Android da514d2 catalog and kirby 8e1ea1c capture: uint16 ms, 3000..0.
+// Optional display telemetry; never infer load completion from zero alone.
+constexpr uint16_t autoLoadCountdown=21448;
+constexpr int autoLoadCountdownMaximumMs=3000;
+constexpr uint64_t autoLoadPollIntervalMs=250,autoLoadCountdownFreshMs=500;
 // kirby 8e1ea1c captured Auto Load remaining in mode 35 after completion.
 // Status 13 is still engaging; only 14 permits the loaded base-register path.
 constexpr int autoLoadMotorMode=35, autoLoadWaiting=11, autoLoadComplete=14;
@@ -104,6 +109,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
     values_.clear();directMotor_.reset();seen_.clear();report_={};firmware_.clear();
     pairedReadSupported_=autoUnloadReadSupported_=false;
+    autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
     trainingSeen_=false;
@@ -323,6 +329,7 @@ void PhysicalSession::apply(const Frame& f) {
     if(f.command==0x0f) {
         pairedReadSupported_=pairedReadSupported_ || decoded.count(pairedDevice)!=0;
         autoUnloadReadSupported_=autoUnloadReadSupported_ || decoded.count(autoUnloadHoldTime)!=0;
+        autoLoadCountdownSupported_=autoLoadCountdownSupported_ || decoded.count(autoLoadCountdown)!=0;
     }
     bool acknowledgedMagic=false,acknowledgedEccentric=false,motorObserved=false;
     for(const auto& pair:decoded) {
@@ -456,6 +463,16 @@ void PhysicalSession::updateReport() {
         repAt_=motionAt_=0;motionRevision_=repRevision_=0;
     }
     report_.loaded=loaded;report_.autoLoadArmed=*m==38 || (knownAuto && *autoState!=autoLoadComplete);
+    report_.autoLoadPhase.reset();report_.autoLoadCountdownMs.reset();report_.autoLoadCountdownAtMs=0;
+    if(knownAuto || (*m==38 && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete))
+        report_.autoLoadPhase=int(*autoState);
+    const auto countdown=values_.find(autoLoadCountdown);
+    if(report_.autoLoadArmed && report_.autoLoadPhase==12 && countdown!=values_.end() &&
+       countdown->second.at>=values_[autoLoadStatus].at &&
+       now_>=countdown->second.at && now_-countdown->second.at<=autoLoadCountdownFreshMs &&
+       countdown->second.value>=0 && countdown->second.value<=autoLoadCountdownMaximumMs) {
+        report_.autoLoadCountdownMs=int(countdown->second.value);report_.autoLoadCountdownAtMs=countdown->second.at;
+    }
     // This profile recognizes only verified absence, never active Twin roles,
     // peer readiness, combined limits or routing.
     report_.twinKnown=standalone();report_.twin=false;
@@ -565,7 +582,7 @@ std::string PhysicalSession::diagnosticState() const {
     // Numeric state only. Never include the client identity, BLE address, name,
     // Wi-Fi details, or paired-device identifier (only its presence is retained).
     for(const auto id:{motor,workout,base,unit,maxForce,position,offset,childLock,otaState,
-                       mountLock,voidLock,autoLoadStatus,autoLoadEnabled,autoLoadSafetyEnabled,twin,remoteCoworker,pairedDevice}) {
+                       mountLock,voidLock,autoLoadStatus,autoLoadCountdown,autoLoadEnabled,autoLoadSafetyEnabled,twin,remoteCoworker,pairedDevice}) {
         text+=" "+std::to_string(id)+"=";
         const auto it=values_.find(id);
         if(it==values_.end()) text+="missing";
@@ -690,7 +707,10 @@ TransportResult PhysicalSession::triggerAutoLoad() {
 void PhysicalSession::pollState(size_t group) {
     pollAt_[group]=now_;
     switch(group) {
-    case 0:read({base,motor,workout,unit,autoLoadStatus});break;
+    case 0:
+        if(autoLoadCountdownSupported_) read({base,motor,workout,unit,autoLoadStatus,autoLoadCountdown});
+        else read({base,motor,workout,unit,autoLoadStatus});
+        break;
     case 1:read({chains,eccentric,inverse,extraMode,percentParameter(true),percentParameter(false),mountain,accessoryDisplayPercent});break;
     case 2:
         if(pairedReadSupported_) read({childLock,otaState,twin,remoteCoworker,maxForce,pairedDevice});
@@ -767,6 +787,16 @@ void PhysicalSession::tick(uint64_t now) {
             pollState(size_t(oldest-pollAt_.begin()));return;
         }
         if(enterTrainingOnConnect()) return;
+        // Follow the device's countdown without starving the critical groups
+        // above. This emits reads only, never a resistance trigger or retry.
+        const bool followingAuto=report_.autoLoadArmed || (waitingWrite_ && waitingWrite_->first==motor && waitingWrite_->second==38);
+        if(followingAuto && now_-autoLoadPollAt_>=autoLoadPollIntervalMs) {
+            autoLoadPollAt_=now_;
+            if(autoLoadCountdownSupported_) read({motor,autoLoadStatus,autoLoadCountdown});
+            else if(!autoLoadCountdownProbed_) {autoLoadCountdownProbed_=true;read({autoLoadCountdown});}
+            else read({motor,autoLoadStatus});
+            return;
+        }
         if(!waitingWrite_ && target_ && (targetImmediate_ || now_-targetAt_>=settingsQuietMs)) {
             const int display=target_->magic.percent ? 1 : 0;
             if(fresh(accessoryDisplayPercent)!=display) {
@@ -794,6 +824,11 @@ void PhysicalSession::tick(uint64_t now) {
             return;
         }
         if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();liveBefore_.reset();}
+        if(!autoLoadCountdownProbed_) {
+            // Probe optional display telemetry alone; an unsupported register
+            // must never invalidate the required core-state response.
+            autoLoadCountdownProbed_=true;read({autoLoadCountdown});return;
+        }
         if(!telemetrySubscribed_) {
             Bytes payload{1,0};
             if(telemetrySetup_++==0) {

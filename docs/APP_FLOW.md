@@ -275,6 +275,14 @@ status target provides unload/cancel on editor screens.
 
 ## Evidence boundary
 
+November 18 follow-up: the owner confirms Auto Load works on the machine and
+requests clearer hold/armed feedback. Weight touch now uses a 300 ms tap boundary
+and a 2000 ms Auto Load hold, with progress appearing after 300 ms; an intermediate
+release cancels. Release at completion sends the one-shot trigger. Other ordinary
+holds remain 650 ms and six-second debug still suppresses earlier control actions.
+This replaces the weight-specific 650 ms rule above. See
+[Auto Load feedback](AUTO_LOAD_FEEDBACK_2026_11_18.md) for references and state scope.
+
 The user's five supplied visual mockups guide the native LVGL presentation:
 cyan rings and active ticks, white active numbers, dark inactive numbers,
 pink EO accents, circular device/mode selectors, and outlined Apply buttons.
