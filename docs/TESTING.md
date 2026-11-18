@@ -4,13 +4,24 @@ November 18: [hold duration, debug hint and report bb697e8f](HOLD_LOAD_2026_11_1
 PASS: local offline core/packet-inspector build, existing inbound fixture and
 pinned Ryan validators (203 SDK packets, weights 5..230, 593 modifier packets,
 SDK a53804e consistency). New test source remains deferred. Public Normal,
-isolated Simulator, package and image results are recorded after execution.
+isolated Simulator, package and image results follow.
+PASS: [CI 44321393881](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44321393881)
+at 7948fdc28ad16c28af636b0a8d9a43569fb58ec6: public Normal, isolated Simulator,
+offline core and release package. Downloaded artifact digest matches GitHub:
+`2fab58410ea6dadb302c20b83b2b488dc530b763db79cbd1e10bc0f53d798710`.
+Normal is 1,945,184 bytes, SHA-256
+`389e00dc38527d4c838182778e5cfe69eb2e765f58bb5c6a7a5c8c2af5c72174`;
+Simulator is 982,720 bytes. Image descriptors, manifest length/hash and USB/OTA
+Normal consistency pass. ELF inspection confirms physical BLE/protocol/network
+implementations only in Normal and mock transport only in Simulator; both retain
+strong NVS protection and deferred rollback hooks. This is build/artifact evidence,
+not a behavioral test of the new status predicate, touch logic or physical motor.
 These checks do not establish physical load safety/compatibility. Required owner
-observations: status0 under otherwise-ready conditions, status6 unchanged,
+observations: status 0 under otherwise-ready conditions, status 6 unchanged,
 missing/stale/other status blocked, hold/release vs tap, delayed release processing,
-preset override, wake/movement/stale cancellation, no hint before3s, hint after3s,
+preset override, wake/movement/stale cancellation, no hint before 3 s, hint after 3 s,
 and a six-second debug hold without a preceding load. Live-write status policy
-and active-mode5 restrictions are unchanged. No physical motor or USB test ran.
+and active-mode 5 restrictions are unchanged. No physical motor or USB test ran.
 
 November 16: [settings retention and Wi-Fi completion](SETTINGS_RETENTION_2026_11_16.md).
 PASS final configured-network overview/ping/reset source:

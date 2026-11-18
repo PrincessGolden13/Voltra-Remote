@@ -1,5 +1,25 @@
 # Foundation baseline
 
+## November 18 hold/load candidate v0.4.7
+
+- CONFIRMED: [CI 44321393881](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44321393881)
+  at 7948fdc28ad16c28af636b0a8d9a43569fb58ec6 passes public Normal, isolated
+  Simulator, offline core and packaging. Local core, existing inbound fixture
+  and pinned packet/upstream validators pass; no new test source was added.
+- CONFIRMED: artifact digest matches GitHub:
+  `2fab58410ea6dadb302c20b83b2b488dc530b763db79cbd1e10bc0f53d798710`.
+  Normal is 1,945,184 bytes, SHA-256
+  `389e00dc38527d4c838182778e5cfe69eb2e765f58bb5c6a7a5c8c2af5c72174`;
+  Simulator is 982,720 bytes. Both descriptors, manifest/USB consistency and
+  backend isolation pass; strong NVS/rollback hooks remain in both images.
+- CONFIRMED report cause: bb697e8f dispatched Auto Load and tap Load, but the
+  exact-6 policy refused fresh status 0. The catalog default supports a bounded
+  explicit-load 0/6 compatibility inference; no general lock-bit decoder or
+  physical compatibility pass is claimed. See HOLD_LOAD_2026_11_18.md.
+- UNVERIFIED: physical status-0 load/Auto Load, timestamp-based hold classification,
+  preset override, the three-second hint and six-second consumption. No physical
+  motor/USB or Linux visual test was performed. Live-write eligibility is unchanged.
+
 ## November 16 settings-retention and Wi-Fi v0.4.6
 
 - CONFIRMED publication: [tag build 43891852006](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43891852006)
