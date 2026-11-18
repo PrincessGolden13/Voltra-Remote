@@ -2,8 +2,8 @@
 
 November 18 v0.4.8 follow-up: [Auto Load visual feedback](AUTO_LOAD_FEEDBACK_2026_11_18.md).
 The owner confirms an actual Auto Load trial succeeds but remote progress/armed
-feedback is missing. New UI and read-only countdown changes require a fresh
-public firmware/package check; the earlier 7e13632 artifact below predates them.
+feedback is missing. The new UI and read-only countdown changes were built and
+checked separately; the earlier 7e13632 artifact predates them.
 No new automated test source or physical motor operation is performed.
 PASS changed offline core/packet inspector and existing pinned Ryan/SDK validators.
 Real LVGL9.3 headless renders at360/466/480 inspect half/full touch hold, Starting,
@@ -23,13 +23,22 @@ hashes/partition map and USB/OTA Normal consistency pass. ELF inspection confirm
 physical implementations only in Normal and mocks only in Simulator; both retain
 strong NVS and deferred rollback hooks. Merge cfd23d2 has the identical tree.
 These are offline source/build/artifact checks, not new physical verification.
+PASS publication: [tag build44342205239](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44342205239)
+at v0.4.8 /89d1dcac168cac133baa1b5e0152e73447c254da passes public Normal,
+Simulator, offline core and packaging. Downloaded artifact digest matches GitHub:
+`e72b01f99d31f566ea66c069c35fab76ddcab7d8467a324509cb4c0c0af76556`.
+Both descriptors, manifest, USB/OTA consistency, backend isolation and strong
+NVS/rollback hooks pass; Normal and Simulator hashes match the reviewed build.
+The owner approved publication in chat. Release v0.4.8 is published as latest;
+the public latest-feed manifest and version-pinned image return0.4.8 with matching
+identity, length and SHA-256. No physical installation or motor trial was performed.
 
 November 18 v0.4.8: [unload/reset report 5a65d590](UNLOAD_RESET_2026_11_18.md).
 PASS baseline: offline core/packet inspector with CMake 3.31.6 and GNU 14.2.0;
 existing inbound base-weight fixture accepts its valid CRC and rejects corruption;
 pinned Ryan packet validator passes 203 SDK packets, weights 5..230 and 593
 modifier packets; upstream validator against SDK a53804e passes. New test source
-remains deferred. Changed public firmware/package results follow after CI.
+remains deferred. Final public firmware/package results are recorded above.
 Physical unload/reset timing and subsequent Load/Auto Load remain unverified;
 no physical motor command or USB operation is performed.
 
