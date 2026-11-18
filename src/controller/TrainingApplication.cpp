@@ -605,7 +605,7 @@ void TrainingApplication::tick(uint64_t now) {
         }
     }
     constexpr uint64_t pendingHintDelayMs = 250;
-    if (pending_ && now-sentAt_ >= pendingHintDelayMs && message_.empty()) message_ = "Awaiting device";
+    if (pending_ && !session_.unloading() && now-sentAt_ >= pendingHintDelayMs && message_.empty()) message_ = "Awaiting device";
     if (fresh() && r.loaded && !observedLoaded_) {
         startingWeight_ = r.settings.weight;
         if(!pending_) message_.clear(); // A confirmed external load resolves a prior load refusal.
