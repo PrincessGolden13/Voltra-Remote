@@ -49,6 +49,9 @@ Settings -> Wi-Fi shows the saved/connected network, tests Internet reachability
 with a ping to Google DNS 8.8.8.8, and offers RESET WI-FI for another network.
 Setup uses a temporary phone portal; after a successful save, OK returns to Settings.
 
+Ordinary holds, including Auto Load and preset override, act when you release.
+Debug guidance stays hidden for the first three seconds of a hold.
+
 Choose Settings -> Send debug log, or hold anywhere on an awake screen for six
 seconds, then tap SEND to send the last 20 diagnostic events. The notice explains
 that SEND disconnects Bluetooth for Wi-Fi delivery; no separate disconnect prompt

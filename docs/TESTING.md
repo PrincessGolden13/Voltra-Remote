@@ -1,5 +1,17 @@
 # Validation status and pending tests
 
+November 18: [hold duration, debug hint and report bb697e8f](HOLD_LOAD_2026_11_18.md).
+PASS: local offline core/packet-inspector build, existing inbound fixture and
+pinned Ryan validators (203 SDK packets, weights 5..230, 593 modifier packets,
+SDK a53804e consistency). New test source remains deferred. Public Normal,
+isolated Simulator, package and image results are recorded after execution.
+These checks do not establish physical load safety/compatibility. Required owner
+observations: status0 under otherwise-ready conditions, status6 unchanged,
+missing/stale/other status blocked, hold/release vs tap, delayed release processing,
+preset override, wake/movement/stale cancellation, no hint before3s, hint after3s,
+and a six-second debug hold without a preceding load. Live-write status policy
+and active-mode5 restrictions are unchanged. No physical motor or USB test ran.
+
 November 16: [settings retention and Wi-Fi completion](SETTINGS_RETENTION_2026_11_16.md).
 PASS final configured-network overview/ping/reset source:
 [CI 43890790858](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/43890790858)

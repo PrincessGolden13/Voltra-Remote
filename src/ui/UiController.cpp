@@ -30,20 +30,28 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
     lv_obj_add_event_cb(obj, [](lv_event_t* e) {
         auto* b = static_cast<Binding*>(lv_event_get_user_data(e));
         const auto code = lv_event_get_code(e);
-        if (code == LV_EVENT_PRESSED) b->held = false;
         if (b->ui->touchMoved_ || b->ui->debugConsumed_ || b->ui->debugDialog_) {
             if(code==LV_EVENT_RELEASED) std::printf("Touch cancelled by movement: action=%d\n",b->action);
             return;
         }
         const bool supportsHold = b->action == Weight || b->action == Magic || b->action == EO ||
             b->action == Drops || b->action == ChoosePreset || b->action == Select;
-        if (code == LV_EVENT_LONG_PRESSED && supportsHold) {
-            b->held = true;
-        } else if (code == LV_EVENT_CLICKED) {
+        if (code == LV_EVENT_CLICKED) {
             // Commit ordinary holds on release. A six-second debug hold consumes
-            // the entire gesture, including the earlier Auto Load threshold.
-            diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(b->held));
-            b->ui->act(b->action, b->id, b->held);
+            // the entire gesture. LVGL can miss LONG_PRESSED if a busy frame
+            // crosses the threshold and the next sample is already a release.
+            const auto end=b->ui->touchEventAt_;
+            const auto elapsed=end>=b->ui->touchStartedAt_ ? end-b->ui->touchStartedAt_ : 0;
+            if(elapsed>=debugHoldMs) {
+                // Cover crossing six seconds between the read callback and
+                // this event. A debug-length release can never load first.
+                b->ui->debugPending_=b->ui->debugConsumed_=true;
+                diagnostic("Six-second debug hold recognized on release");
+                lv_indev_wait_release(b->ui->touch_);return;
+            }
+            const bool held=supportsHold && elapsed>=controlHoldMs;
+            diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(held)+" durationMs="+std::to_string(elapsed));
+            b->ui->act(b->action, b->id, held);
         }
     }, LV_EVENT_ALL, bindings_.back().get());
 }
@@ -189,9 +197,10 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
     });
     touch_ = lv_indev_create(); lv_indev_set_type(touch_, LV_INDEV_TYPE_POINTER);
     lv_indev_set_display(touch_, display_); lv_indev_set_user_data(touch_, this);
-    lv_indev_set_long_press_time(touch_, 650);
+    lv_indev_set_long_press_time(touch_, uint16_t(controlHoldMs));
     lv_indev_set_read_cb(touch_, [](lv_indev_t* input, lv_indev_data_t* data) {
         auto* s = static_cast<UiController*>(lv_indev_get_user_data(input)); const auto p = s->hardware_.touch().sample();
+        s->touchEventAt_=p.sampledAtMs ? p.sampledAtMs : s->hardware_.nowMs();
         data->continue_reading=s->hardware_.touch().hasPending();
         if(p.cancelled) {
             // A lost sample or old-screen gesture is never a synthetic click.
@@ -208,7 +217,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
         if(p.pressed && !s->touchDown_) {
             s->touchStartX_=x;s->touchStartY_=y;s->touchMoved_=false;s->modeGestureUntil_=0;
-            s->touchStartedAt_=s->hardware_.nowMs();s->debugConsumed_=s->debugMoved_=false;
+            s->touchStartedAt_=s->touchEventAt_;s->debugConsumed_=s->debugMoved_=false;
         }
         // Allow normal finger drift on controls (5% of the short display side:
         // 18 px on K5). Paged pickers keep the stricter 2.5% swipe rejection so
@@ -221,7 +230,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         // (36 px on K5) without relaxing the stricter tap/swipe safety threshold.
         const int debugSlop=std::max(1,std::min(s->width_,s->height_)/10);
         if((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_)>debugSlop || std::abs(y-s->touchStartY_)>debugSlop)) s->debugMoved_=true;
-        const auto holdNow=s->hardware_.nowMs();
+        const auto holdNow=s->touchEventAt_;
         if((p.pressed || s->touchDown_) && !s->debugMoved_ && !s->wakeTouch_ && !s->debugDialog_ &&
            !s->debugConsumed_ && holdNow>=s->touchStartedAt_ && holdNow-s->touchStartedAt_>=debugHoldMs) {
             s->debugPending_=s->debugConsumed_=true;

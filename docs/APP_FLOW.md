@@ -1,3 +1,11 @@
+> November 18 hold/load follow-up: ordinary hold actions use capture-time press
+> duration on release, preserving the six-second debug-only gesture. Show no
+> debug hint before three seconds, then "Keep holding to send a debug log".
+> Report bb697e8f identifies the fresh status-0 load refusal. Explicit load and
+> Auto Load accept only fresh catalog-default 0 or previously observed 6, with
+> all other readiness requirements unchanged. Live-write eligibility remains
+> unchanged. See HOLD_LOAD_2026_11_18.md for scope and evidence limits.
+>
 > November 16 Wi-Fi follow-up: opening an already configured Wi-Fi screen shows
 > the current network, a bounded ping to Google DNS 8.8.8.8 and RESET WI-FI for
 > a new connection. A newly completed setup still shows only OK, returning to

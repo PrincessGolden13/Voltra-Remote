@@ -1,5 +1,12 @@
 # November 9 source audit: Twin and safety status
 
+November 18 follow-up: [new report and bounded load compatibility correction](HOLD_LOAD_2026_11_18.md)
+supersedes the exact-6 explicit-load policy below. The new report proves that fresh
+0 caused refusal of both dispatched Auto Load and tap Load. The Android catalog
+defines 0 as the parameter default; no general bit decoder has been established.
+Only fresh exact 0/6 are accepted for explicit-load readiness. Other checks and
+the previous live-write profile remain unchanged.
+
 The user requested a wider source audit before arranging another physical
 diagnostic session. References were cloned outside this repository. Investigation
 began at public v0.4.1; ignored build/pre-nov9-bugfix contains its binaries. The

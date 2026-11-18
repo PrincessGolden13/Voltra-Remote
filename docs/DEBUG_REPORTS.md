@@ -1,13 +1,17 @@
-# Diagnostic reports (v0.4.5)
+# Diagnostic reports (v0.4.7)
 
 Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
-screen for six seconds. A countdown appears after one second. The remote
+screen for six seconds. No debug hint appears before three seconds; then it says
+**Keep holding to send a debug log**. The remote
 shows **SEND disconnects Bluetooth and uploads over Wi-Fi**. Tap SEND to save the
 report and release Bluetooth automatically, or CLOSE to dismiss without sending.
 There is no separate Bluetooth confirmation or manual-disconnect step. Sending
 does not unload the VOLTRA. Waking a sleeping screen consumes the first
-touch; lift and hold again. Ordinary 650 ms hold actions now execute on release
-before six seconds, so the debugging gesture cannot first trigger Auto Load.
+touch; lift and hold again. Ordinary holds (at least 650 ms, typically about two
+seconds) execute on release before six seconds, so the debugging gesture cannot
+first trigger Auto Load. Capture timestamps classify the hold even if rendering
+or GATT work skips LVGL's separate long-press event, without counting processing
+delay as time held. Lost, stale or moved samples remain cancelled.
 Drift up to 10% of the display's short side is allowed for debugging; larger
 movement cancels. Control taps keep their stricter movement limits. Unload
 remains available on the dialog when connected: its larger target acts on initial
