@@ -29,6 +29,8 @@ private:
     FirmwareUpdate* updates_ = nullptr;
     DebugReports* reports_=nullptr;
     static constexpr uint64_t controlHoldMs=650; // Existing ordinary hold threshold; dispatch on release.
+    static constexpr uint64_t autoLoadHintMs=300; // A weight hold becomes visible and no longer counts as a tap.
+    static constexpr uint64_t autoLoadHoldMs=2000; // User-requested touch hold; independent of VOLTRA's cable countdown.
     static constexpr uint64_t debugHintMs=3000; // Leave ordinary ~2-second holds unobstructed.
     static constexpr uint64_t debugHoldMs=6000; // User-requested global diagnostic gesture.
     lv_obj_t *debugDialog_=nullptr,*debugText_=nullptr,*debugSend_=nullptr,*debugSendLabel_=nullptr,
@@ -52,6 +54,9 @@ private:
     lv_indev_t* touch_ = nullptr;
     lv_obj_t *face_ = nullptr, *weight_ = nullptr, *title_ = nullptr, *status_ = nullptr,
         *hint_ = nullptr, *message_ = nullptr, *arc_ = nullptr, *unit_ = nullptr, *limit_ = nullptr;
+    lv_obj_t *autoLoadArc_=nullptr,*autoLoadTitle_=nullptr,*autoLoadPrompt_=nullptr;
+    bool weightHoldActive_=false,weightAutoLoadGesture_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
+    void updateAutoLoadFeedback();
     lv_obj_t *miniArc_[3]{}, *miniValue_[3]{}, *modeLabels_[3]{}, *choice_[3]{};
     lv_obj_t *tiles_[3]{};
     lv_obj_t *stairs_[3]{};
@@ -106,7 +111,7 @@ private:
     void updateRestAlert(uint64_t now);
     uint64_t dropCueRevision_=0, dropCueUntil_=0;
     Preset saveDraft_;
-    lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
+    lv_obj_t *presetTile_ = nullptr, *presetValue_ = nullptr, *presetCaption_=nullptr, *stats_ = nullptr, *start_ = nullptr, *nextWeight_ = nullptr;
     lv_obj_t* holdBar_ = nullptr;
     lv_obj_t *wifiBody_=nullptr,*wifiButton_=nullptr,*wifiReset_=nullptr,*wifiBack_=nullptr;
     bool wifiConfiguring_=false;

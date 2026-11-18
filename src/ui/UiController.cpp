@@ -30,6 +30,15 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
     lv_obj_add_event_cb(obj, [](lv_event_t* e) {
         auto* b = static_cast<Binding*>(lv_event_get_user_data(e));
         const auto code = lv_event_get_code(e);
+        if(b->action==Weight) {
+            if(code==LV_EVENT_PRESSED) {
+                b->ui->weightHoldActive_=true;
+                const auto r=b->ui->app_.report();
+                b->ui->weightUnloadGesture_=!b->ui->app_.fresh() || r.loaded || r.autoLoadArmed || b->ui->app_.pending();
+                b->ui->weightAutoLoadGesture_=!b->ui->weightUnloadGesture_ && r.autoLoadSupported;
+            }
+            else if(code==LV_EVENT_RELEASED || code==LV_EVENT_PRESS_LOST) b->ui->weightHoldActive_=false;
+        }
         if (b->ui->touchMoved_ || b->ui->debugConsumed_ || b->ui->debugDialog_) {
             if(code==LV_EVENT_RELEASED) std::printf("Touch cancelled by movement: action=%d\n",b->action);
             return;
@@ -49,7 +58,20 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                 diagnostic("Six-second debug hold recognized on release");
                 lv_indev_wait_release(b->ui->touch_);return;
             }
-            const bool held=supportsHold && elapsed>=controlHoldMs;
+            if(b->action==Weight) {
+                const auto r=b->ui->app_.report();
+                // Unload/cancel takes precedence over gesture classification,
+                // including when a loaded/armed press becomes unloaded before
+                // release. A hold can never turn that cancellation into Load.
+                if(b->ui->weightUnloadGesture_ || !b->ui->app_.fresh() || r.loaded || r.autoLoadArmed || b->ui->app_.pending()) {
+                    diagnostic("Weight release unloads/cancels current request");
+                    b->ui->app_.unload();return;
+                }
+                if(elapsed>=autoLoadHintMs && (!b->ui->weightAutoLoadGesture_ || elapsed<autoLoadHoldMs)) {
+                    diagnostic("Weight hold cancelled before Auto Load threshold");return;
+                }
+            }
+            const bool held=supportsHold && elapsed>=(b->action==Weight ? autoLoadHoldMs : controlHoldMs);
             diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(held)+" durationMs="+std::to_string(elapsed));
             b->ui->act(b->action, b->id, held);
         }
@@ -303,6 +325,7 @@ void UiController::readTouch() {
     lv_indev_read(touch_);
 }
 void UiController::navigate(Screen page) {
+    weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=false;
     if(page_==Screen::Wifi && page!=Screen::Wifi && wifi_) wifi_->cancelConnectionCheck();
     diagnostic("Screen="+std::to_string(int(page)));
     modeGestureUntil_ = 0;
@@ -495,8 +518,10 @@ void UiController::build() {
     if (face_) lv_obj_delete(face_);
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
+    autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
+    weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=autoFeedbackVisible_=false;
     center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
-    presetTile_ = presetValue_ = stats_ = start_ = nextWeight_ = nullptr;
+    presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
     wifiBody_=wifiButton_=wifiReset_=wifiBack_=nullptr;
     updateBody_=updateCheck_=updateInstall_=nullptr;
@@ -641,14 +666,26 @@ void UiController::build() {
         }
         presetTile_ = disc(face_, width_*72/100, height_*61/100, width_*19/100, accent(), false);
         bind(presetTile_, OpenPresets);
-        auto* presetCaption=label(face_, LV_SYMBOL_SAVE, width_*19/100, height_*55/100, medium); bind(presetCaption,OpenPresets);
-        style::set_align(presetCaption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(presetCaption,width_*72/100);
+        presetCaption_=label(face_, LV_SYMBOL_SAVE, width_*19/100, height_*55/100, medium); bind(presetCaption_,OpenPresets);
+        style::set_align(presetCaption_,LV_ALIGN_TOP_LEFT); lv_obj_set_x(presetCaption_,width_*72/100);
         presetValue_ = label(presetTile_, "P", width_*18/100, 0, &lv_font_montserrat_18);
         style::center(presetValue_);
         stats_ = label(face_, "", width_*64/100, height_*82/100, &lv_font_montserrat_18);
         lv_obj_set_y(battery_,height_*94/100);
         message_ = label(face_, "", width_*68/100, height_*88/100, small); color(message_, soft);
         lv_obj_add_flag(hint_,LV_OBJ_FLAG_HIDDEN);
+        // VOLTRA's circular hold cue, adapted to the remote's cyan palette.
+        // Decorative objects pass touches through to the weight/cancel target.
+        autoLoadArc_=arc(face_,width_*50/100,accent());
+        style::align(autoLoadArc_,LV_ALIGN_TOP_MID,0,height_*24/100);
+        lv_arc_set_rotation(autoLoadArc_,270);lv_arc_set_bg_angles(autoLoadArc_,0,360);
+        style::set_arc_width(autoLoadArc_,std::max(4,width_/70),LV_PART_MAIN);
+        style::set_arc_width(autoLoadArc_,std::max(4,width_/70),LV_PART_INDICATOR);
+        autoLoadTitle_=label(face_,"",width_*56/100,height_*30/100,medium);
+        autoLoadPrompt_=label(face_,"",width_*46/100,height_*59/100,small);
+        lv_label_set_long_mode(autoLoadPrompt_,LV_LABEL_LONG_WRAP);
+        color(autoLoadTitle_,accent());color(autoLoadPrompt_,bright);
+        for(auto* item:{autoLoadArc_,autoLoadTitle_,autoLoadPrompt_}) lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
         return;
     }
     if (page_ == Screen::Magic) {
@@ -877,6 +914,7 @@ void UiController::update() {
             r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
             preview ? "Setting weight..." : atMaximum ? "MAX" : "");
         color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
+        updateAutoLoadFeedback();
         return;
     }
     value(status_, !app_.fresh() ? "Unknown / tap to unload" :
@@ -940,6 +978,87 @@ void UiController::update() {
             color(choice_[i],int(draftMode_) == i ? bright : muted);
         }
     }
+}
+void UiController::updateAutoLoadFeedback() {
+    if(page_!=Screen::Main || !autoLoadArc_) return;
+    const auto r=app_.report();
+    const auto now=hardware_.nowMs();
+    const auto elapsed=touchEventAt_>=touchStartedAt_ ? touchEventAt_-touchStartedAt_ : 0;
+    const bool holding=weightHoldActive_ && weightAutoLoadGesture_ && touchDown_ && !touchMoved_ && !wakeTouch_ && !debugConsumed_ &&
+        elapsed>=autoLoadHintMs && elapsed<debugHoldMs && app_.fresh() && !r.loaded && !r.autoLoadArmed &&
+        !app_.pending() && r.autoLoadSupported;
+    const bool starting=app_.autoLoadRequested() && !r.loaded && !r.autoLoadArmed;
+    const bool armed=app_.fresh() && r.autoLoadArmed;
+    const bool visible=(holding || starting || armed) && !debugDialog_ && !debugPending_;
+    for(auto* item:{autoLoadArc_,autoLoadTitle_,autoLoadPrompt_}) {
+        if(visible) lv_obj_remove_flag(item,LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
+    }
+    if(visible || autoFeedbackVisible_) {
+        // Replace the unavailable modifier controls with a focused circular
+        // state. The original weight hit region remains the cancel/unload target.
+        for(auto* item:{modeLabels_[0],modeLabels_[2],dropTitle_,presetTile_,presetCaption_,stats_}) if(item) {
+            if(visible) lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_remove_flag(item,LV_OBJ_FLAG_HIDDEN);
+        }
+        const bool supported[]={std::any_of(r.magicSupported.begin(),r.magicSupported.end(),[](bool b){return b;}),
+            r.eccentricSupported,true};
+        for(int i=0;i<3;++i) {
+            if(visible || !supported[i]) lv_obj_add_flag(tiles_[i],LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_remove_flag(tiles_[i],LV_OBJ_FLAG_HIDDEN);
+            if(stairs_[i]) {
+                if(visible || app_.drops().mode==DropMode::RestPause) lv_obj_add_flag(stairs_[i],LV_OBJ_FLAG_HIDDEN);
+                else lv_obj_remove_flag(stairs_[i],LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        if(visible) {
+            lv_obj_add_flag(status_,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
+        } else lv_obj_remove_flag(status_,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(title_,height_*(visible ? 17 : 21)/100);
+        lv_obj_set_y(center_,height_*(visible ? 38 : 35)/100);
+        const int scale=std::min(width_*(visible ? 390 : 560)/480,
+            width_*(visible ? 40 : 64)/100*256/std::max(1,int(lv_obj_get_width(weight_))));
+        lv_obj_set_style_transform_scale(weight_,scale,0);
+    }
+    autoFeedbackVisible_=visible;
+    if(!visible) return;
+
+    value(autoLoadTitle_,"AUTO LOAD");
+    style::set_arc_color(autoLoadArc_,lv_color_hex(accent()),LV_PART_INDICATOR);
+    color(autoLoadTitle_,accent());
+    if(holding) {
+        lv_arc_set_rotation(autoLoadArc_,270);
+        lv_arc_set_value(autoLoadArc_,int(std::min<uint64_t>(elapsed,autoLoadHoldMs)*1000/autoLoadHoldMs));
+        style::set_opa(autoLoadArc_,LV_OPA_COVER,0);
+        value(autoLoadPrompt_,elapsed>=autoLoadHoldMs ? "Release for\nAuto Load" : "Keep holding...");
+        value(message_,elapsed>=autoLoadHoldMs ? "Release to start" : "Release early to cancel");
+    } else if(starting) {
+        // This is request feedback, never a claim of device confirmation.
+        lv_arc_set_rotation(autoLoadArc_,int(now%1200)*360/1200);
+        lv_arc_set_value(autoLoadArc_,260);
+        style::set_opa(autoLoadArc_,LV_OPA_COVER,0);
+        value(autoLoadPrompt_,"Starting...");
+        value(message_,"Tap weight to cancel");
+    } else {
+        lv_arc_set_rotation(autoLoadArc_,270);lv_arc_set_value(autoLoadArc_,1000);
+        const auto wave=now%1600;
+        const auto pulse=wave<800 ? wave : 1600-wave;
+        style::set_opa(autoLoadArc_,lv_opa_t(96+pulse*159/800),0);
+        std::string prompt="Pull cable and\nhold still";
+        if(r.autoLoadPhase==12) {
+            prompt="Hold still";
+            if(r.autoLoadCountdownMs && now>=r.autoLoadCountdownAtMs && now-r.autoLoadCountdownAtMs<=500) {
+                // Show only received countdown values. Do not decrement a
+                // local clock or substitute the two-second touch-hold timer.
+                const int tenths=(*r.autoLoadCountdownMs+99)/100;
+                prompt+="\n"+std::to_string(tenths/10)+"."+std::to_string(tenths%10)+"s";
+            }
+        } else if(r.autoLoadPhase==13) prompt="Engaging...";
+        value(autoLoadPrompt_,prompt);
+        value(message_,"Tap weight to cancel");
+    }
+    color(message_,soft);
 }
 void UiController::largeValue(const std::string& text) {
     if(!weight_) return;
@@ -1106,6 +1225,7 @@ void UiController::tick() {
         if(!lastDiagnosticMessage_.empty()) diagnostic("Status: "+(app_.connecting() ? std::string("Connecting to VOLTRA") : lastDiagnosticMessage_));
     }
     lv_timer_handler();
+    updateAutoLoadFeedback(); // Input callbacks may have released/cancelled the hold.
     if(debugPending_) {debugPending_=false;openDebugDialog();}
     updateDebugDialog();
     // Navigation is deferred until after input callbacks return.

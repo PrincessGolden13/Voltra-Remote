@@ -34,6 +34,10 @@ struct TrainingReport {
     // absent means unavailable. The remote never changes this configuration.
     std::optional<int> autoUnloadHoldSeconds;
     bool twinKnown = false, twin = false, loaded = false, autoLoadArmed = false;
+    // Read-only Auto Load feedback: 11 waiting, 12 countdown, 13 engaging,
+    // 14 complete on the captured profile. Never authorizes a load command.
+    std::optional<int> autoLoadPhase, autoLoadCountdownMs;
+    uint64_t autoLoadCountdownAtMs = 0;
     bool telemetryValid = false, moving = false, held = false;
     uint32_t rep = 0;
     uint64_t revision = 0, receivedAtMs = 0;

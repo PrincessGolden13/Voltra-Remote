@@ -1,5 +1,12 @@
 # Constants and configurable policies
 
+November 18 Auto Load feedback: the weight tap/hold boundary is 300 ms and full
+hold is 2000 ms; other control holds remain 650 ms. These are UI policies, not
+device engagement timers. Physical countdown21448 is read-only uint16 ms0..3000
+(Android da514d2/Kirby8e1ea1c), polled every250 ms while pending/armed behind
+critical reads, and displayed only within500 ms of observation. See
+AUTO_LOAD_FEEDBACK_2026_11_18.md for evidence and cancellation rules.
+
 November 9 update constants are named in `src/update/Esp32FirmwareUpdate.cpp`
 and `hardware/boards/guition_k5/FirmwareSlots.h`: 15 s startup opportunity, 10 s
 clock/socket/manifest windows, 180 s firmware transfer, 2 s restart notice,

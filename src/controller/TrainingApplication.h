@@ -38,6 +38,8 @@ public:
     }
     bool fresh() const;
     bool pending() const { return pending_ || session_.busy() || dropRestore_.has_value(); }
+    // Pending intent only; machine-confirmed arming lives in TrainingReport.
+    bool autoLoadRequested() const { return pending_ && autoLoadRequested_; }
     const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
     void adjustWeight(int delta);
     void toggleWeight();
@@ -80,7 +82,7 @@ private:
     uint64_t restSetRevision_ = 0;
     std::optional<uint64_t> restSince_;
     DropSetProgress dropProgress_;
-    bool scanned_ = false, pending_ = false, requestedLoad_ = false;
+    bool scanned_ = false, pending_ = false, requestedLoad_ = false, autoLoadRequested_ = false;
     bool automaticSelection_ = false;
     bool maintenance_ = false;
     bool discoveryPaused_ = false;

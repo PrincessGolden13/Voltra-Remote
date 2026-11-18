@@ -1,4 +1,4 @@
-# Diagnostic reports (v0.4.7)
+# Diagnostic reports (v0.4.8)
 
 Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
 screen for six seconds. No debug hint appears before three seconds; then it says
@@ -7,8 +7,10 @@ shows **SEND disconnects Bluetooth and uploads over Wi-Fi**. Tap SEND to save th
 report and release Bluetooth automatically, or CLOSE to dismiss without sending.
 There is no separate Bluetooth confirmation or manual-disconnect step. Sending
 does not unload the VOLTRA. Waking a sleeping screen consumes the first
-touch; lift and hold again. Ordinary holds (at least 650 ms, typically about two
-seconds) execute on release before six seconds, so the debugging gesture cannot
+touch; lift and hold again. The unloaded weight has a two-second Auto Load hold
+with a circular progress indicator after 300 ms; releasing an incomplete hold
+cancels it. Other ordinary holds remain 650 ms. Actions execute on release
+before six seconds, so the debugging gesture cannot
 first trigger Auto Load. Capture timestamps classify the hold even if rendering
 or GATT work skips LVGL's separate long-press event, without counting processing
 delay as time held. Lost, stale or moved samples remain cancelled.
@@ -86,7 +88,8 @@ repository. Never place a private Sites bypass token in the public firmware.
 ## Pending physical checks / future regression coverage
 
 New test source remains deferred by the project brief. Existing builds/validators
-do not replace these observations: 650 ms hold/release vs six seconds; holding
+do not replace these observations: two-second weight hold/release, other 650 ms
+holds vs six seconds; holding
 the weight must never load before debug confirmation; blank-screen holds, finger
 drift, cancellation, wake-only touch, overlay/dial unload during background page
 rebuilds, pending/confirmed/failed unload feedback, save failure without disconnect,
