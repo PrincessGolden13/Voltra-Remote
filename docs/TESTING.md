@@ -12,6 +12,17 @@ The temporary Linux adapter delegates to the existing shared SimulatorApp and
 DesktopHardwarePlatform with synthetic pointer/time input; it does not establish
 a graphical Linux desktop host or physical behavior. No clipping/overlap remains
 in these scenes; cancel/loaded return restores modifiers and scale labels.
+PASS: [CI44330719778](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44330719778)
+at aae14dce22b6f38ff16fff3df1b23e4d06d156c7 builds public Normal, isolated
+Simulator, offline core and release packaging. Reviewed archive digest matches
+GitHub: `0e1282c2b67380f7a3bbe00d5db0c5abcc2ddbe17d61f17dab2ecd7bafa0e277`.
+Normal is 1,951,136 bytes, SHA-256
+`12d896fe75842b4e13a14f78ee2778d76c8ad905395d30f2f6e140d42c72ce61`;
+Simulator is 987,488 bytes. Both descriptors, manifest length/hash, all USB bundle
+hashes/partition map and USB/OTA Normal consistency pass. ELF inspection confirms
+physical implementations only in Normal and mocks only in Simulator; both retain
+strong NVS and deferred rollback hooks. Merge cfd23d2 has the identical tree.
+These are offline source/build/artifact checks, not new physical verification.
 
 November 18 v0.4.8: [unload/reset report 5a65d590](UNLOAD_RESET_2026_11_18.md).
 PASS baseline: offline core/packet inspector with CMake 3.31.6 and GNU 14.2.0;

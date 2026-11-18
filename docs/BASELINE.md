@@ -1,5 +1,20 @@
 # Foundation baseline
 
+## November 18 Auto Load feedback and unload reset v0.4.8
+
+- CONFIRMED (owner): Auto Load reaches the expected state on VOLTRA; the remote
+  lacked useful hold/armed feedback. See AUTO_LOAD_FEEDBACK_2026_11_18.md.
+- CONFIRMED: source review preserves unload priority, the two-second latched
+  gesture, six-second debugging and all load guards. Actual LVGL headless renders
+  inspect hold/starting/armed/countdown/cancel/loaded scenes at 360/466/480.
+- CONFIRMED: CI44330719778 at aae14dc passes both public firmware builds, offline
+  core and release packaging. Download digest, descriptors, manifest, USB/OTA and
+  backend isolation pass; final hashes are recorded in TESTING.md. Merge cfd23d2
+  matches the checked tree. Earlier CI44327915449 predates the new feedback UI.
+- UNVERIFIED: new visual/touch behavior on the physical board, countdown telemetry
+  compatibility and unload/reset timing. No physical motor or USB operation and
+  no new automated test source. Publication verification follows separately.
+
 ## November 18 hold/load v0.4.7
 
 - CONFIRMED publication: [tag build 44322395772](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44322395772)
