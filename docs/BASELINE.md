@@ -753,3 +753,21 @@ remain explicit future milestones.
   it and entering its password reaches "Connected and saved" ("yep, worked
   great now"). Scope is this phone/remote trial. Refresh, hidden networks and
   reconnection after a remote power cycle were not separately confirmed.
+
+## November 17, 2026: public v0.4.6 USB installation
+
+- CONFIRMED on the owner's remote: flipping the USB-C plug at the remote selected
+  the main ESP32-S3 / 16 MiB processor. The other orientation exposes its secondary
+  ESP32; no firmware was written to that processor. See HARDWARE_COMPATIBILITY.md.
+- Installed the official v0.4.6 GitHub USB bundle after checking its asset and
+  image SHA-256 digests. A complete current 16 MiB private recovery copy was
+  assembled using device-verified unchanged regions and reads of changed sectors;
+  its full-image MD5 matched the device before writing. Partition bounds matched.
+- All five installed images passed independent device digest checks. The NVS
+  settings range (0x9000 through 0xdfff) remained byte-for-byte unchanged by the
+  installation, verified before restarting. Recovery copies and serial receipts
+  remain in ignored local build directories and were not published.
+- Passive startup capture confirmed Normal firmware 0.4.6, retained device-local
+  bootstrap, shared UI startup and a successful GitHub check reporting the latest
+  firmware. No resistance commands were sent. Training behavior and full wireless
+  firmware-download reliability were not tested by this installation.

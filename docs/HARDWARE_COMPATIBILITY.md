@@ -77,3 +77,25 @@ A 2 MB factory recovery image (offsets 0 through 0x1fffff) has since been read a
 verified against flash: esptool verify_flash reported digest matched. All planned
 writable partitions are confined to that region, including crash dumps. The rest
 of the 16 MB flash is left untouched. This is a region backup, not a full backup.
+
+## November 17: two processors selected by USB-C orientation
+
+CONFIRMED (owner action, Windows enumeration and read-only chip queries): the
+same physical remote exposes different processors when the USB-C plug at the
+remote is flipped 180 degrees. One orientation enumerated CH340 (VID 1A86,
+PID 7523), COM4, with ESP32-U4WDH and 4 MB flash. Its existing application header
+identified chip ID 0 and project TAIJI_KNOB_32. No firmware was written to it.
+Flipping the plug restored VID 303A/PID 1001 on COM3; esptool independently
+identified ESP32-S3 and 16 MB flash. COM numbers are observations, not identifiers.
+
+The CH340 driver requirement belongs to the secondary processor's interface.
+The main native USB Serial/JTAG interface uses the existing Windows driver.
+Do not infer that the owner connected a different remote from the CH340 port
+or the secondary processor's chip/flash report. Select and verify the main
+processor before any application update. Never force an ESP32-S3 image onto
+the secondary ESP32 or erase its factory firmware.
+
+CONFIRMED (independent board-project documentation): the same orientation
+selection is described in [prompt-knob-firmware's flashing guide at e8f3e021](https://github.com/andrew-malitchuk/prompt-knob-firmware/blob/e8f3e021e1545c3030b50c96e99c7c1520c674b6/docs/hardware/usb-flashing.md).
+Its general Windows co-processor driver advice is not used here; the observed
+secondary interface is CH340. No upstream source was copied into this project.
