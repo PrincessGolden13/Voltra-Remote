@@ -1,5 +1,15 @@
 # Safety contract
 
+November 18: explicit-load readiness supports fresh EP_VOID_LOCK 0 (catalog
+default and value in report bb697e8f) or 6 (previous successful Black observation).
+This is a narrow compatibility inference, not a manufacturer-confirmed decoded
+safe/no-fault enum. Missing/stale/other values stay blocked; mounting, activation,
+child-lock, mode, motor, limits and required peer/cable evidence remain required.
+No lock/mask/configuration write, force command, retry or load reassertion was
+added. Live settings/dropset writes retain their preceding status-6 profile.
+See HOLD_LOAD_2026_11_18.md. Six-second debug holds remain action-exclusive;
+ordinary control holds execute on release, never earlier during the debug hold.
+
 Current status (October 24): Normal firmware implements real single-device
 settings, shared modifier units and explicit guarded loading/unloading. The user
 confirmed remote-tap loading on Black after the mounting-state check. Auto Load's

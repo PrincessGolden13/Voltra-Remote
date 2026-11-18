@@ -220,13 +220,15 @@ void TrainingApplication::autoLoad() {
     diagnostic("Explicit Auto Load action");
     const auto r = report(); const auto e = session_.readiness();
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
-        message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; return;
+        message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; recordLoadRefusal();return;
     }
     const auto result = session_.triggerAutoLoad();
     // A new explicit Auto Load starts a new execution sequence, preserving the
     // selected local recipe. Countdown reports cannot inherit an old set/hold.
     if(result == TransportResult::Accepted) resetDrops();
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
+    diagnostic("Auto Load request result="+std::to_string(int(result)));
+    if(result!=TransportResult::Accepted) recordLoadRefusal();
 }
 void TrainingApplication::toggleModifier(bool magic) {
     const auto r = report();

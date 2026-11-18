@@ -209,7 +209,7 @@ TouchPoint Board::sample() {
     auto captured=touchCurrent_;
     if(touchCount_) {captured=touchQueue_[touchHead_];touchHead_=(touchHead_+1)%touchQueueCapacity;--touchCount_;}
     portEXIT_CRITICAL(&touchMux_);
-    const auto point=captured.point;
+    auto point=captured.point;point.sampledAtMs=captured.at;
     if(point.cancelled && !deliveredTouch_.cancelled)
         diagnostic("Touch cancelled reason="+std::to_string(captured.cancelReason));
     if(point.pressed!=deliveredTouch_.pressed || point.cancelled!=deliveredTouch_.cancelled)

@@ -21,19 +21,21 @@ public:
     void readTouch();
     void navigate(Screen); // Also used by the offline render preview.
 private:
-    struct Binding { UiController* ui; int action; std::string id; bool held = false; };
+    struct Binding { UiController* ui; int action; std::string id; };
     HardwarePlatform& hardware_;
     TrainingApplication& app_;
     RuntimeMode* runtime_ = nullptr;
     WifiSetup* wifi_ = nullptr;
     FirmwareUpdate* updates_ = nullptr;
     DebugReports* reports_=nullptr;
+    static constexpr uint64_t controlHoldMs=650; // Existing ordinary hold threshold; dispatch on release.
+    static constexpr uint64_t debugHintMs=3000; // Leave ordinary ~2-second holds unobstructed.
     static constexpr uint64_t debugHoldMs=6000; // User-requested global diagnostic gesture.
     lv_obj_t *debugDialog_=nullptr,*debugText_=nullptr,*debugSend_=nullptr,*debugSendLabel_=nullptr,
         *debugUnload_=nullptr,*debugControlStatus_=nullptr,*debugHint_=nullptr;
     bool debugPending_=false,debugConsumed_=false,debugSubmitted_=false,debugMoved_=false;
     bool debugDisconnectPending_=false,debugUnloadRequested_=false;
-    uint64_t touchStartedAt_=0;
+    uint64_t touchStartedAt_=0,touchEventAt_=0;
     std::string lastDiagnosticMessage_;
     uint64_t loadRefusalRevision_=0;
     void openDebugDialog();

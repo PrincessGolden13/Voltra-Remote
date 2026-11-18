@@ -85,6 +85,7 @@ private:
     const char* updateBlockReason() const;
     bool standalone() const;
     bool settingsReady() const;
+    bool loadSafetyStatusSupported() const;
     bool controlContextReady() const;
     bool liveWeightReady() const;
     bool liveAccessoriesExpected() const;

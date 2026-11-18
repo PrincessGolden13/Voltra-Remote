@@ -25,9 +25,14 @@ constexpr uint16_t fitnessRestTime=21377; // Android da514d2 catalog: uint16 sec
 // Android da514d2: AUTO_UNLOAD_HOLDING_TIME, uint8 0..10. Official Cortex
 // training-control documents seconds and zero=off. Read only, never a write.
 constexpr uint16_t autoUnloadHoldTime=21525;
-// Black, Oct 24: user released/resecured mount, 2 -> 1 -> 2. Keep the
-// successful profile's companion void-lock value exact; its bits are unmapped.
-constexpr int securedMount=2, observedVoidLock=6;
+// Black, Oct 24: user released/resecured mount, 2 -> 1 -> 2.
+constexpr int securedMount=2;
+// Android da514d2 paramInfo.csv defines EP_VOID_LOCK's default as 0; Black's
+// successful Oct 24 profile reported 6. Nov 18 report bb697e8f shows fresh 0
+// being refused despite the other known readiness fields. This exact allowlist
+// is a bounded default/observed-profile inference, NOT a decoded bitmask.
+// Missing/stale/other values remain blocked. Never write the lock or its mask.
+constexpr int defaultVoidLock=0, observedVoidLock=6;
 // Black, Oct 31: OTA_STATUS=0x0105 while the user confirmed an update was
 // ready to install and Weight Training remained open. Pending availability
 // is not an active installation. No other nonzero status is authorized here.
@@ -163,6 +168,10 @@ bool PhysicalSession::controlContextReady() const {
     return connected_ && accepted_ && standalone() &&
         fresh(workout)==1 && u && (*u==0 || *u==1) && maximum && *maximum>0 &&
         fresh(base).has_value() && fresh(childLock)==0 && updateAllowsControls() && modifiersKnown();
+}
+bool PhysicalSession::loadSafetyStatusSupported() const {
+    const auto value=fresh(voidLock);
+    return value && (*value==defaultVoidLock || *value==observedVoidLock);
 }
 bool PhysicalSession::liveWeightReady() const {
     // The source-validated loaded-idle register path changes base only. Mode 5
@@ -510,7 +519,7 @@ SessionReadiness PhysicalSession::readiness() const {
     r.cableZero=cable && zero && std::abs(*cable-*zero)<=cableZeroToleranceCm;
     r.twinSafe=standalone();r.minWeightLbs=5;
     r.ready=accepted_ && activated_ && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
-        fresh(mountLock)==securedMount && fresh(voidLock)==observedVoidLock && fresh(autoLoadStatus)==0;
+        fresh(mountLock)==securedMount && loadSafetyStatusSupported() && fresh(autoLoadStatus)==0;
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!activated_) r.reason="Waiting for VOLTRA activation status";
     else if(!fresh(twin) || !fresh(remoteCoworker) || (values_.count(pairedDevice) && !fresh(pairedDevice))) r.reason="Reading VOLTRA link status; try again";
@@ -520,7 +529,7 @@ SessionReadiness PhysicalSession::readiness() const {
     else if(!settingsReady()) r.reason="Control state unavailable";
     else if(fresh(mountLock)!=securedMount) r.reason="Secure VOLTRA mounting lock";
     else if(!fresh(voidLock)) r.reason="Waiting for fresh VOLTRA safety status";
-    else if(fresh(voidLock)!=observedVoidLock) r.reason="Safety status "+std::to_string(*fresh(voidLock))+" unrecognized; send debug log";
+    else if(!loadSafetyStatusSupported()) r.reason="Safety status "+std::to_string(*fresh(voidLock))+" unrecognized; send debug log";
     else if(!fresh(autoLoadStatus)) r.reason="Reading Auto Load status; try again";
     else if(fresh(autoLoadStatus)!=0) r.reason="Finish or cancel Auto Load on VOLTRA";
     else if(!freshDirectMotorMode()) r.reason="Reading VOLTRA motor status; try again";
@@ -538,7 +547,7 @@ std::string PhysicalSession::diagnosticState() const {
     // Numeric state only. Never include the client identity, BLE address, name,
     // Wi-Fi details, or paired-device identifier (only its presence is retained).
     for(const auto id:{motor,workout,base,unit,maxForce,position,offset,childLock,otaState,
-                       mountLock,voidLock,autoLoadStatus,twin,remoteCoworker,pairedDevice}) {
+                       mountLock,voidLock,autoLoadStatus,autoLoadEnabled,autoLoadSafetyEnabled,twin,remoteCoworker,pairedDevice}) {
         text+=" "+std::to_string(id)+"=";
         const auto it=values_.find(id);
         if(it==values_.end()) text+="missing";
