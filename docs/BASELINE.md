@@ -1,7 +1,14 @@
 # Foundation baseline
 
-## November 18 hold/load candidate v0.4.7
+## November 18 hold/load v0.4.7
 
+- CONFIRMED publication: [tag build 44322395772](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44322395772)
+  passes at v0.4.7 / c0ba428206ec36c328fbf6d010fa5e846f5ddfd7. Reviewed tag
+  assets pass independent image identities, manifest hash/length and USB/OTA
+  Normal consistency; the Normal hash matches the reviewed image below.
+  [v0.4.7](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.7)
+  is the latest ordinary release. Public latest manifest and pinned firmware
+  downloads return v0.4.7 with matching descriptor, length and SHA-256.
 - CONFIRMED: [CI 44321393881](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44321393881)
   at 7948fdc28ad16c28af636b0a8d9a43569fb58ec6 passes public Normal, isolated
   Simulator, offline core and packaging. Local core, existing inbound fixture

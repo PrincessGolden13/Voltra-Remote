@@ -16,6 +16,12 @@ Normal consistency pass. ELF inspection confirms physical BLE/protocol/network
 implementations only in Normal and mock transport only in Simulator; both retain
 strong NVS protection and deferred rollback hooks. This is build/artifact evidence,
 not a behavioral test of the new status predicate, touch logic or physical motor.
+PASS publication: [v0.4.7 tag build 44322395772](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44322395772)
+at c0ba428206ec36c328fbf6d010fa5e846f5ddfd7. Tagged asset descriptors, manifest
+length/hash and USB/OTA Normal consistency pass; Normal hash matches above.
+The release is published as latest. Public latest-feed and version-pinned firmware
+downloads were verified as v0.4.7 with correct identity, length and SHA-256.
+No physical installation/load/hold trial was part of publication.
 These checks do not establish physical load safety/compatibility. Required owner
 observations: status 0 under otherwise-ready conditions, status 6 unchanged,
 missing/stale/other status blocked, hold/release vs tap, delayed release processing,
