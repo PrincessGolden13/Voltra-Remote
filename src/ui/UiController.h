@@ -45,6 +45,16 @@ private:
     void updateDebugDialog();
     void sendDebugReport();
     void unloadFromDebugDialog();
+    static constexpr uint8_t lowBatteryPercent=10, batteryRearmPercent=15;
+    static constexpr uint64_t batteryAlertIdleMs=600;
+    bool lowBatteryEpisode_=false, lowBatteryPending_=false, batteryUnloadRequested_=false;
+    uint8_t batteryAlertPercent_=0;
+    uint64_t batteryInteractionAt_=0;
+    lv_obj_t *batteryAlertDialog_=nullptr,*batteryAlertValue_=nullptr,*batteryAlertText_=nullptr,*batteryAlertUnload_=nullptr;
+    std::optional<uint8_t> remoteBatteryPercent() const;
+    void updateBatteryAlert(uint64_t now);
+    void openBatteryAlert();
+    void closeBatteryAlert(bool acknowledged);
     bool updatePromptShown_=false;
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;

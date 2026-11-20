@@ -12,12 +12,14 @@ public:
         result.displayWidth = result.displayHeight = size_;
         result.displayShape = DisplayShape::Round;
         result.touchAvailable = result.rotaryAvailable = result.rotaryPressAvailable = true;
+        result.batteryAvailable=battery_ && *battery_<=100;
         return result; // No physical BLE capability in a simulator.
     }
     Display& display() override { return *this; }
     TouchInput& touch() override { return *this; }
     RotaryInput& rotary() override { return *this; }
-    std::optional<uint8_t> batteryPercent() const override { return 75; } // Explicit simulated remote battery.
+    std::optional<uint8_t> batteryPercent() const override { return battery_; }
+    void previewBattery(std::optional<uint8_t> percent) { battery_=percent; } // Explicit simulated remote reading.
     uint16_t width() const override { return size_; }
     uint16_t height() const override { return size_; }
     uint64_t nowMs() const override {
@@ -48,6 +50,7 @@ private:
     int delta_ = 0;
     bool pressed_ = false;
     std::optional<uint64_t> previewMs_;
+    std::optional<uint8_t> battery_=75;
     std::chrono::steady_clock::time_point start_ = std::chrono::steady_clock::now();
 };
 }

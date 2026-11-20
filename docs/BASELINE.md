@@ -1,5 +1,17 @@
 # Foundation baseline
 
+## November 20 remote battery alert addition
+
+- Implemented remote-battery warning at10% or below, queued through Live and
+  known active sets, acknowledged once until a known15% recovery. Explicit unload
+  stays accessible; modal input cannot toggle the obscured weight control.
+- Passive K518 GPIO1 ADC cache uses the source/schematic-backed divide-by-two
+  rail input and an inferred LiPo estimate. USB-range, invalid and stale readings
+  are unavailable. See REMOTE_BATTERY_2026_11_20.md for evidence and limitations.
+- Static review and real LVGL previews pass; public firmware builds follow.
+  Owner hardware calibration and actual threshold timing remain unverified.
+  This is added to the held v0.4.10 draft and does not resolve its Twin blocker.
+
 ## November 20 paired navigation and target correction v0.4.10
 
 - RELEASE HELD: the owner clarified that both icons must resolve the actual

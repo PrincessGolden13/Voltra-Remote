@@ -1,5 +1,25 @@
 # Validation status and pending tests
 
+November 20 v0.4.10 addition: [remote battery alert/estimate](REMOTE_BATTERY_2026_11_20.md).
+PASS static review: source is the remote hardware's valid optional reading only,
+not VOLTRA/peer battery. Queue at <=10%, defer Live/pending-Live/known active sets,
+other modals, gestures, connection resolution and critical work. OK acknowledges
+one episode; known >=15% rearms. Unknown/invalid readings defer without losing a
+pending warning. Modal input cannot reach underlying weight/load controls; explicit
+UNLOAD remains available. Board-owned ADC cache uses no I2C or power writes.
+PASS real LVGL previews at360/466/480: threshold10 alert, deferred Live then
+set-over display and explicit unload confirmation. Extended360 previews cover
+active set on Settings, dismiss/no jitter nag,15->10 rearm, unknown/255, held touch
+and encoder-input consumption.
+Separate360/466/480 loaded-rest previews retain loaded=true and repsStarted=true
+while changing the fresh setActive report to false: Live returns to Main and the
+warning appears with OK/UNLOAD, with zero control calls. An unload is not required
+to receive the deferred warning after a confirmed set end.
+No new automated test source or physical battery/motor operation. Physical rail
+values, estimate calibration and exact threshold timing on the owner's unit remain
+unverified. Public firmware/build results follow; existing Twin publication hold
+remains in effect.
+
 November 20 v0.4.10: [one paired control and quieter screens](TWIN_PRESENTATION_2026_11_20.md)
 and [reported target-resistance correction](LIVE_TARGET_SOURCE_2026_11_20.md).
 UNRELEASED: the owner requires actual current-master resolution for every pair.

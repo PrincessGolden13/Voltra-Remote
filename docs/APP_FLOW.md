@@ -1,3 +1,10 @@
+> November 20 battery follow-up: warn when the remote's valid battery estimate
+> reaches 10% or below. Queue the warning throughout Live or a known active set;
+> show it after the set on an idle screen. OK acknowledges once for that low
+> episode; a known recovery to 15% rearms it. Preserve explicit UNLOAD and block
+> underlying gestures while the alert is open. Missing/USB-range readings cannot
+> trigger a warning. See REMOTE_BATTERY_2026_11_20.md for the board profile.
+>
 > November 20 Twin follow-up: paired overlapping named circles are one selection
 > with consistent availability across both rings. Save pair navigation metadata
 > across restarts, resetting live freshness/readiness. Weight Training shows only
