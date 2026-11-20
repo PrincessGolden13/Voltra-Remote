@@ -13,7 +13,11 @@
 - UNRESOLVED: current Twin host/follower, peer safety, combined limits and A003.
   Twin resistance controls remain blocked; this does not claim full Twin repair.
   Physical Live LCD agreement and fresh Twin/reselection observations remain needed.
-  No physical commands or new test source. Public CI/publication results follow.
+  No physical commands or new test source.
+- CONFIRMED: CI44755705290 at d29a578 passes both public firmware builds, offline
+  core and packaging. Artifact digest, image identities, manifest, USB/OTA and
+  ELF isolation/NVS hooks pass. Normal is 1,968,944 bytes; exact hashes are in
+  TESTING.md. Merge325bf0a has the checked tree. Publication follows separately.
 
 ## November 18 Auto Load feedback and unload reset v0.4.8
 

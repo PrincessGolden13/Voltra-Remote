@@ -18,7 +18,19 @@ own-identity mismatch quarantine and scope expiry between callbacks.
 Physical checks remain: A7 compatibility/name matching, quick reselection, direct
 16003 agreement with VOLTRA's changing LCD and report delivery. Physical Twin
 role/peer safety/limits/A003 are unresolved; this release does not enable controls
-or claim the user's Twin adjustment failure is fully repaired. CI/artifacts follow.
+or claim the user's Twin adjustment failure is fully repaired.
+PASS: [CI44755705290](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44755705290)
+at d29a5780bb82761d8f85b93a50afdae1901c1f87 builds public Normal, isolated
+Simulator, offline core and packaging. Downloaded artifact digest matches GitHub:
+`df0451f0fd5b4eb2e50f53ae406cff313fbc8108e08717b2c01f56ddb57a61ad`.
+Normal is 1,968,944 bytes, SHA-256
+`ac20394991e42991c3bfcc9c27f9e0d1e220f6cb60660b6c4b0ca670fe4d4df5`;
+Simulator is 999,856 bytes, SHA-256
+`016369d5c84d4237d4b97fc027dd509a3edefbecd35d1e142f1d2b9674986357`.
+Both descriptors, manifest identity/size/hash, USB images/hashes/partition map and
+USB/OTA Normal consistency pass. ELF defined symbols confirm backend isolation
+and strong NVS protection/deferred rollback hooks. Merge325bf0a matches the checked
+tree. Artifact receipts are kept in ignored build/review-v049.
 
 November 18 v0.4.8 follow-up: [Auto Load visual feedback](AUTO_LOAD_FEEDBACK_2026_11_18.md).
 The owner confirms an actual Auto Load trial succeeds but remote progress/armed
