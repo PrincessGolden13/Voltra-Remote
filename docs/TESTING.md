@@ -31,6 +31,18 @@ Both descriptors, manifest identity/size/hash, USB images/hashes/partition map a
 USB/OTA Normal consistency pass. ELF defined symbols confirm backend isolation
 and strong NVS protection/deferred rollback hooks. Merge325bf0a matches the checked
 tree. Artifact receipts are kept in ignored build/review-v049.
+PASS publication: [tag build44756585032](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44756585032)
+at v0.4.9 /d84fb4b18c12520e6ec8dcac57b0164593bb783e passes public Normal,
+isolated Simulator, offline core and packaging. Downloaded artifact digest matches
+GitHub: `1437d4b2fa391cae72053f3bb92fa5df24819cfba5aeb1c83f00e2c319f5241d`.
+Both descriptors, manifest, USB images/partition map and USB/OTA consistency pass;
+Normal and Simulator images exactly match the reviewed build above. Tag receipts
+are in ignored build/review-v049-tag. Release v0.4.9 was published as the latest
+ordinary release on November 20 at 14:51:17 UTC under the owner's standing request.
+The downloaded public latest-feed manifest and pinned v0.4.9 image pass board,
+channel, layout, version, descriptor, length and SHA-256 checks; the firmware
+exactly matches the reviewed tagged image. No physical installation or motor
+trial was performed. The physical Twin/control and Live limits above still apply.
 
 November 18 v0.4.8 follow-up: [Auto Load visual feedback](AUTO_LOAD_FEEDBACK_2026_11_18.md).
 The owner confirms an actual Auto Load trial succeeds but remote progress/armed

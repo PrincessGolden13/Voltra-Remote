@@ -17,7 +17,14 @@
 - CONFIRMED: CI44755705290 at d29a578 passes both public firmware builds, offline
   core and packaging. Artifact digest, image identities, manifest, USB/OTA and
   ELF isolation/NVS hooks pass. Normal is 1,968,944 bytes; exact hashes are in
-  TESTING.md. Merge325bf0a has the checked tree. Publication follows separately.
+  TESTING.md. Merge325bf0a has the checked tree.
+- CONFIRMED publication: [tag build44756585032](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44756585032)
+  passes at v0.4.9 /d84fb4b18c12520e6ec8dcac57b0164593bb783e. Tagged assets
+  pass identity, manifest and USB/OTA checks and exactly match the reviewed images.
+  [v0.4.9](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.9)
+  is published as latest; downloaded public feed/pinned-image identity, size and
+  SHA-256 pass. Physical installation, Twin control and Live LCD agreement remain
+  unverified as described above; publication does not resolve the missing mapping.
 
 ## November 18 Auto Load feedback and unload reset v0.4.8
 
