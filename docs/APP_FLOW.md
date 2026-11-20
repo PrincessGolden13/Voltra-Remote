@@ -1,3 +1,11 @@
+> November 20 Twin follow-up: paired overlapping named circles are one selection
+> with consistent availability across both rings. Save pair navigation metadata
+> across restarts, resetting live freshness/readiness. Weight Training shows only
+> the paired names at the top: no Twin caption, TOTAL label, extra dial glyph or
+> technical host/peer banner. Absolute combined-LB settings use a two-pound grid.
+> See TWIN_PRESENTATION_2026_11_20.md. Live uses separate reported target resistance,
+> superseding the v0.4.9 runtime-wire source; see LIVE_TARGET_SOURCE_2026_11_20.md.
+>
 > November 18 hold/load follow-up: ordinary hold actions use capture-time press
 > duration on release, preserving the six-second debug-only gesture. Show no
 > debug hint before three seconds, then "Keep holding to send a debug log".

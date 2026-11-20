@@ -56,8 +56,19 @@ private:
     bool pairedReadSupported_=false,autoUnloadReadSupported_=false;
     bool autoLoadCountdownProbed_=false,autoLoadCountdownSupported_=false;
     uint64_t autoLoadPollAt_=0;
-    bool liveWeightProbed_=false,liveWeightReadSupported_=false;
-    uint64_t liveWeightPollAt_=0;
+    bool liveWeightProbed_=false;
+    // The terse runtime target belongs to one exact standalone loaded context.
+    // A settings/core/topology transition cannot reuse an earlier rep's target.
+    struct RuntimeTargetObservation {
+        int tenthsLb;
+        uint64_t at;
+        int64_t motor,workout,unit,base;
+    };
+    std::optional<RuntimeTargetObservation> runtimeTarget_;
+    unsigned runtimeTargetFrames_=0;
+    uint16_t runtimeTargetSource_=0;
+    size_t runtimeTargetBytes_=0;
+    bool runtimeTargetShapeValid_=false;
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;

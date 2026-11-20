@@ -1,5 +1,24 @@
 # Validation status and pending tests
 
+November 20 v0.4.10: [one paired control and quieter screens](TWIN_PRESENTATION_2026_11_20.md)
+and [reported target-resistance correction](LIVE_TARGET_SOURCE_2026_11_20.md).
+PASS: existing offline core/packet inspector build and pinned Ryan validators
+(203 SDK packets, weight5..230,593 modifier packets, SDK identity consistency).
+Four published CRC-valid independent B4 captures decode a6LB reported target;
+the published Twin-source frame is rejected by the independent target decoder.
+No new automated test source or physical motor command is added.
+PASS: actual LVGL Main/Devices/unknown-motor renders at360/466/480 show names-only
+headers, no caption/banner/dial overlap and matched availability. Synthetic
+pointer previews on both paired circles at every size open the same endpoint.
+Live renders at all three sizes cover reported28 versusBASE25, zero, absent,
+stale-- andKG. These are offline visual/source checks, not physical compatibility.
+Independent static review checks pair navigation versus current authorization,
+absolute two-pound grids, target context/freshness and rollback-readable storage.
+Physical Twin adjustment/load/unload remains unresolved. The latest stored Twin
+report still predatesv0.4.9, and A003, peer safety and a scoped combined maximum
+remain unknown. Device-reported B4 target compatibility and exact agreement with
+the owner's changing VOLTRA LCD still require a physical comparison.
+
 November 20 v0.4.9: [Twin/readback, reconnect and Live changes](TWIN_LIVE_READBACK_2026_11_20.md).
 PASS: changed offline core/packet inspector with CMake 3.31.6/GNU 14.2.0, existing
 Ryan packet validator (203 SDK packets, weight 5..230, 593 modifier packets) and

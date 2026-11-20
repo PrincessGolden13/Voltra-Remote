@@ -130,18 +130,6 @@ lv_obj_t* UiController::linkIcon(lv_obj_t* parent, int size, uint32_t c) {
     }
     return group;
 }
-lv_obj_t* UiController::twinIcon(lv_obj_t* parent, int size, uint32_t c) {
-    auto* group = lv_obj_create(parent); lv_obj_remove_style_all(group);
-    lv_obj_set_size(group, size, size*2/3);
-    lv_obj_remove_flag(group, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(group, LV_OBJ_FLAG_SCROLLABLE);
-    for (int side=0; side<2; ++side) {
-        auto* ring = disc(group, side*size/3, 0, size*2/3, c, true);
-        style::set_bg_opa(ring, LV_OPA_TRANSP, 0);
-        style::set_shadow_width(ring, 0, 0);
-    }
-    return group;
-}
 std::vector<const DeviceEntry*> UiController::deviceChoices() const {
     std::vector<const DeviceEntry*> choices;
     std::vector<DeviceId> represented;
@@ -159,6 +147,11 @@ std::vector<const DeviceEntry*> UiController::deviceChoices() const {
             });
             if(owner!=devices.end()) shown=&*owner;
         }
+        const auto target=app_.selectionDevice(shown->id);
+        const auto selected=std::find_if(devices.begin(),devices.end(),[&](const auto& candidate) {
+            return candidate.id==target;
+        });
+        if(selected!=devices.end()) shown=&*selected;
         choices.push_back(shown);represented.push_back(shown->id);
         if(!shown->twinPeerId.empty()) represented.push_back(shown->twinPeerId);
     }
@@ -351,7 +344,11 @@ void UiController::navigate(Screen page) {
     if(page_==Screen::Wifi && page!=Screen::Wifi && wifi_) wifi_->cancelConnectionCheck();
     diagnostic("Screen="+std::to_string(int(page)));
     modeGestureUntil_ = 0;
-    if (page == Screen::ForgetDevice && forgetId_.empty()) { forgetId_=app_.selectedDevice();forgetName_=app_.name(); }
+    if (page == Screen::ForgetDevice && forgetId_.empty()) {
+        forgetId_=app_.selectedDevice();forgetName_=app_.name();
+        const auto report=app_.report();
+        if((report.twinDetected || report.twin) && !report.twinPeerName.empty()) forgetName_+=" + "+report.twinPeerName;
+    }
     rotaryAdjustment_.reset();
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
@@ -390,7 +387,10 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == Select) {
         if (held && app_.remembered(id)) {
             forgetId_ = id;
-            for (const auto& d : app_.devices()) if (d.id == id) forgetName_ = d.name;
+            for (const auto& d : app_.devices()) if (d.id == id) {
+                forgetName_=d.name;
+                if(!d.twinPeer.empty()) forgetName_+=" + "+d.twinPeer;
+            }
             navigate(Screen::ForgetDevice);
         } else if (!held) {if(app_.select(id)) navigate(Screen::Main);else if(!app_.message().empty()) navigate(Screen::ConnectionNotice);}
         return;
@@ -495,7 +495,7 @@ void UiController::act(int action, const std::string& id, bool held) {
             const int base = app_.report().settings.weight;
             if(percent && base <= 0) return;
             const int converted = target.value_or(int(std::lround(percent ? draftValue_*100.0/base : draftValue_*base/100.0)));
-            draftPercent_ = percent; draftValue_ = std::clamp(converted,std::min(1,editMaximum()),editMaximum());
+            draftPercent_ = percent; draftValue_ = editValue(converted);
             target = draftValue_; edited();
         }
         return;
@@ -542,7 +542,7 @@ void UiController::build() {
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
     weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=autoFeedbackVisible_=false;
-    center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
+    center_ = battery_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
     wifiBody_=wifiButton_=wifiReset_=wifiBack_=nullptr;
@@ -588,33 +588,31 @@ void UiController::build() {
                 });
                 const DeviceEntry* peer=found==devices.end() ? nullptr : &*found;
                 const bool pairFresh=d.twinFresh || (peer && peer->twinFresh);
-                const bool active[]={d.online || (peer && peer->twinFresh && peer->twinPeerAvailable),
-                    d.twinFresh && d.twinPeerAvailable};
-                const DeviceId ids[]={d.id,d.twinPeerId};
+                // An observed pair is one control. A peer need not advertise
+                // separately while linked, so both rings share availability.
+                const bool active=d.online || (peer && peer->online) ||
+                    (pairFresh && (d.twinPeerAvailable || (peer && peer->twinPeerAvailable)));
+                const auto selection=app_.selectionDevice(d.id);
+                if(active || app_.remembered(selection)) bind(group,Select,selection);
                 const std::string names[]={d.name,peer ? peer->name : d.twinPeer.empty() ? "Twin peer" : d.twinPeer};
                 for(int side=0;side<2;++side) {
                     const int diameter=size*64/100;
-                    auto* circle=disc(group,side*size*36/100,size*13/100,diameter,accent(),active[side]);
+                    auto* circle=disc(group,side*size*36/100,size*13/100,diameter,accent(),active);
                     style::set_bg_opa(circle,LV_OPA_TRANSP,0);style::set_shadow_width(circle,0,0);
-                    if(!pairFresh && !active[side]) style::set_border_color(circle,lv_color_hex(muted),0);
-                    if(!ids[side].empty() && ((side==0 ? d.online : peer && peer->online) || app_.remembered(ids[side])))
-                        bind(circle,Select,ids[side]);
+                    if(!pairFresh && !active) style::set_border_color(circle,lv_color_hex(muted),0);
                     auto* name=label(circle,names[side],diameter*55/100,diameter*25/100,small);
                     style::set_align(name,LV_ALIGN_TOP_LEFT);
                     lv_obj_set_x(name,diameter*(side==0 ? 5 : 40)/100);
                     lv_label_set_long_mode(name,LV_LABEL_LONG_DOT);lv_obj_set_height(name,small->line_height*2);
-                    color(name,active[side] ? bright : muted);
-                    if(!ids[side].empty()) deviceRows_.push_back({circle,ids[side]});
+                    color(name,active ? bright : muted);
                 }
-                auto* caption=label(group,pairFresh ? "TWIN" : "Twin status unknown",size,size*83/100,small);
-                color(caption,pairFresh ? accent() : amber);
+                deviceRows_.push_back({group,selection});
                 continue;
             }
             auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, accent(), d.online);
             if (d.online || app_.remembered(d.id)) bind(tile, Select, d.id);
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
-            auto* icon = d.twinPeer.empty() ? linkIcon(tile, size*40/100, d.online ? bright : muted) :
-                twinIcon(tile, size*45/100, d.online ? accent() : muted);
+            auto* icon = linkIcon(tile, size*40/100, d.online ? bright : muted);
             style::align(icon, LV_ALIGN_TOP_MID, 0, size*16/100);
             auto* name = label(tile, d.name, size*90/100, size*49/100, small);
             lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -652,10 +650,7 @@ void UiController::build() {
     }
     status_ = label(face_, "", width_*62/100, height_*30/100, small);
     color(status_, soft);
-    if (page_ == Screen::Main) {
-        twinIcon_ = twinIcon(face_, width_*7/100, accent());
-        lv_obj_set_pos(twinIcon_, width_*17/100, height_*30/100);
-    } else { bind(status_, Unload); lv_obj_set_ext_click_area(status_, height_/100); }
+    if (page_ != Screen::Main) { bind(status_, Unload); lv_obj_set_ext_click_area(status_, height_/100); }
     if (!rp) {
         const uint32_t centerAccent = accent();
         const int size = width_*42/100;
@@ -821,6 +816,13 @@ int UiController::editMaximum() const {
     else { s.eccentric.enabled = true; s.eccentric.percent = draftPercent_; }
     return modifierMaximum(r, s, page_ == Screen::Magic);
 }
+int UiController::editValue(int amount) const {
+    const auto r=app_.report();
+    const int maximum=editMaximum();
+    const int minimum=std::min(draftPercent_ ? 1 : weightIncrementTicks(r),maximum);
+    const int clamped=std::clamp(amount,minimum,maximum);
+    return draftPercent_ ? clamped : weightTicksDown(r,clamped);
+}
 void UiController::rotate(int delta) {
     if(page_ == Screen::Devices) {
         if (runtime_ && modeGestureUntil_ && hardware_.nowMs() <= modeGestureUntil_) {
@@ -842,8 +844,9 @@ void UiController::rotate(int delta) {
         const auto r = app_.report();
         const bool weight = page_ == Screen::Main || page_ == Screen::Live;
         const int current = weight ? app_.weightPreview().value_or(r.settings.weight) : page_ == Screen::Drops ? draftDrops_.step : draftValue_;
-        const int wholeUnit = weight || page_ == Screen::Drops || !draftPercent_ ? ticksPerUnit(r.unit) : 1;
-        delta = rotaryAdjustment_.delta(delta,current,hardware_.nowMs(),wholeUnit);
+        const bool absolute=weight || page_ == Screen::Drops || !draftPercent_;
+        const int wholeUnit=absolute ? ticksPerUnit(r.unit) : 1;
+        delta=rotaryAdjustment_.delta(delta,current,hardware_.nowMs(),wholeUnit,absolute ? weightIncrementTicks(r) : 1);
         if(!delta) return; // Coarse cadence may be collecting the next detent.
     }
     if (page_ == Screen::Presets) {
@@ -867,12 +870,15 @@ void UiController::rotate(int delta) {
     if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta); return; }
     if (page_ != Screen::Drops) {
         auto& memory = unitSelection();
-        draftValue_ = std::clamp(draftValue_+delta, std::min(1,editMaximum()), editMaximum());
+        draftValue_ = editValue(draftValue_+delta);
         memory.percent.reset(); memory.absolute.reset();
         (draftPercent_ ? memory.percent : memory.absolute) = draftValue_;
         edited(); return;
     }
-    if (draftDrops_.mode == DropMode::Stairs) draftDrops_.step = std::clamp(draftDrops_.step+delta, -editMaximum(), editMaximum());
+    if (draftDrops_.mode == DropMode::Stairs) {
+        const int amount=std::clamp(draftDrops_.step+delta,-editMaximum(),editMaximum());
+        draftDrops_.step=(amount<0 ? -1 : 1)*weightTicksDown(app_.report(),std::abs(amount));
+    }
     else if (dropField_ == 0) draftDrops_.drops = std::clamp(draftDrops_.drops+delta, 0, 9);
     else if (dropField_ == 1) draftDrops_.percent = std::clamp(draftDrops_.percent+delta, 0, 80);
     else draftDrops_.holdSeconds = std::clamp(draftDrops_.holdSeconds+delta, 1, std::max(1,restPauseHoldMaximum(app_.report())));
@@ -908,15 +914,7 @@ void UiController::update() {
         color(weight_, !readback || !loadKnown ? amber : preview ? muted : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
         value(title_,detectedTwin ? app_.name()+" + "+(r.twinPeerName.empty() ? "Twin peer" : r.twinPeerName) : app_.name());
-        value(status_,detectedTwin ? !topologyFresh ? "Twin status unknown" : !r.twin ? "Twin link not active" :
-            readback ? std::string("TWIN  |  TOTAL ")+unitName(r.unit) : "Twin / reading total..." : "");
-        color(status_,topologyFresh && r.twin && readback ? accent() : amber);
-        if(detectedTwin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
-        for(uint32_t i=0;i<lv_obj_get_child_count(twinIcon_);++i)
-            style::set_border_color(lv_obj_get_child(twinIcon_,int32_t(i)),lv_color_hex(topologyFresh && r.twin ? accent() : amber),0);
-        lv_obj_set_width(status_,width_*76/100);
-        style::set_text_font(status_, &lv_font_montserrat_14,0);
-        style::align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
+        value(status_,"");
         updateScale(readback ? shownWeight : 0,readback ? r.maxWeight : 0,"",atMaximum ? maximumColor : accent());
         for(auto* mark:scaleLabels_) {
             if(readback && r.maxWeight>0) lv_obj_remove_flag(mark,LV_OBJ_FLAG_HIDDEN);
@@ -977,13 +975,12 @@ void UiController::update() {
         if (counters.completedSets && counters.lastSetReps) summary = std::to_string(*counters.completedSets)+" | "+std::to_string(*counters.lastSetReps);
         if (const auto rest=app_.restSeconds()) summary += "    "+std::to_string(*rest/60)+":"+(*rest%60 < 10 ? "0" : "")+std::to_string(*rest%60);
         value(stats_,summary);
-        value(message_,detectedTwin && (!loadKnown || !topologyFresh || !r.combinedWeightKnown || r.maxWeight==0) && !app_.pending() ?
-            "Twin controls need verified\nhost/peer state" : !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
+        value(message_,!app_.fresh() ? (app_.message().empty() ? detectedTwin ? "" : "State unknown / tap weight to unload" : app_.message()) :
             r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
             preview ? "Setting weight..." : atMaximum ? "MAX" : "");
         lv_obj_set_width(message_,width_*68/100);
-        lv_obj_set_y(message_,height_*(detectedTwin ? 82 : 88)/100);
-        color(message_,detectedTwin && (!loadKnown || !topologyFresh) ? amber : atMaximum && app_.message().empty() ? maximumColor : soft);
+        lv_obj_set_y(message_,height_*88/100);
+        color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
         updateAutoLoadFeedback();
         return;
     }
@@ -1025,7 +1022,7 @@ void UiController::update() {
             updateScale(draftDrops_.step, r.maxWeight, "", accent(), true);
         }
     } else {
-        draftValue_ = std::clamp(draftValue_, std::min(1,editMaximum()), editMaximum());
+        draftValue_ = editValue(draftValue_);
         largeValue(editMaximum() == 0 ? "OFF" : (draftPercent_ ? std::to_string(draftValue_) : weightText(draftValue_,r.unit))+(draftPercent_ ? "%" : ""));
         const bool atMaximum = app_.fresh() && draftValue_ >= editMaximum();
         color(weight_, atMaximum ? limitAccent() : bright);
@@ -1084,10 +1081,7 @@ void UiController::updateAutoLoadFeedback() {
         }
         if(visible) {
             lv_obj_add_flag(status_,LV_OBJ_FLAG_HIDDEN);
-            if(detectedTwin) lv_obj_remove_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
-            else lv_obj_add_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
         } else lv_obj_remove_flag(status_,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(twinIcon_,width_*17/100,height_*(visible ? 17 : 30)/100);
         lv_obj_set_y(title_,height_*(visible ? 17 : 21)/100);
         lv_obj_set_y(center_,height_*(visible ? 38 : 35)/100);
         const int scale=std::min(width_*(visible ? 390 : 560)/480,
@@ -1234,7 +1228,7 @@ void UiController::tick() {
         if (!debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
             (!updates_ || (!updates_->startupPending() && !updates_->status().busy())) && app_.tryAutomaticSelection()) navigate(Screen::Main);
         std::string signature;
-        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+d.twinPeerId+
+        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+d.twinPeerId+d.twinSelectionId+
             (d.online ? "1" : "0")+(d.twinFresh ? "F" : "?")+(d.twinPeerAvailable ? "P" : "-")+(app_.remembered(d.id) ? "S" : "D");
         // Do not destroy a tile underneath a held finger when a scan completes.
         if (!touchDown_ && signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
@@ -1245,7 +1239,7 @@ void UiController::tick() {
         // an edit or retry; only a new input event can set editDirty_.
         constexpr uint64_t editSettleMs = 150;
         if(editDirty_ && !app_.pending() && now-editedAt_ >= editSettleMs) {
-            draftValue_ = std::clamp(draftValue_,std::min(1,editMaximum()),editMaximum());
+            draftValue_ = editValue(draftValue_);
             const bool accepted = app_.applyModifier(page_ == Screen::Magic,draftMode_,draftValue_,draftPercent_);
             editDirty_=false;
             if(returnAfterEdit_ && accepted) navigate(Screen::Main);

@@ -15,10 +15,24 @@ const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
     : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
     if (memory_) recent_ = memory_->load();
-    for (auto& d : recent_) d.online = false;
+    for (auto& d : recent_) {
+        d.online=d.twinFresh=d.twinPeerAvailable=false;
+        if(d.twinPeerId.empty()) {d.twinPeer.clear();d.twinSelectionId.clear();continue;}
+        const auto peer=std::find_if(recent_.begin(),recent_.end(),[&](const auto& entry){return entry.id==d.twinPeerId;});
+        const bool valid=d.twinPeerId!=d.id && peer!=recent_.end() && peer->twinPeerId==d.id &&
+            peer->twinSelectionId==d.twinSelectionId && (d.twinSelectionId==d.id || d.twinSelectionId==d.twinPeerId);
+        if(valid) twinLinks_[d.id]={peer->id,peer->name,0,false,d.twinSelectionId,true};
+        else {d.twinPeer.clear();d.twinPeerId.clear();d.twinSelectionId.clear();}
+    }
 }
 bool TrainingApplication::remembered(const DeviceId& id) const {
     return std::any_of(recent_.begin(), recent_.end(), [&](const auto& d) { return d.id == id; });
+}
+DeviceId TrainingApplication::selectionDevice(const DeviceId& id) const {
+    const auto link=twinLinks_.find(id);
+    if(link!=twinLinks_.end() && !link->second.selection.empty()) return link->second.selection;
+    const auto device=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id;});
+    return device!=devices_.end() && !device->twinSelectionId.empty() ? device->twinSelectionId : id;
 }
 TrainingReport TrainingApplication::report() const {
     auto r=session_.trainingReport();
@@ -30,7 +44,16 @@ TrainingReport TrainingApplication::report() const {
         bool found=false;
         for(const auto& entry:seenDevices_) if(resolve(entry.second.device)) {found=true;break;}
         if(!found) for(const auto& d:recent_) if(resolve(d)) {found=true;break;}
-        if(!found) for(const auto& d:knownDevices_) if(resolve(d)) break;
+        if(!found) for(const auto& d:knownDevices_) if(resolve(d)) {found=true;break;}
+        // A paired peer can stop advertising. Retain its previously resolved
+        // display identity only when the current machine address still matches;
+        // this name cache does not renew topology or control freshness.
+        if(!found) {
+            const auto cached=twinLinks_.find(selected_);
+            if(cached!=twinLinks_.end() && transport_.deviceAddress(cached->second.peer)==r.twinPeerAddress) {
+                r.twinPeerId=cached->second.peer;r.twinPeerName=cached->second.peerName;
+            }
+        }
     }
     return r;
 }
@@ -47,22 +70,72 @@ void TrainingApplication::observeTwin(const TrainingReport& r) {
     if(selected_.empty() || !r.twinStatusFresh || now_<r.twinAtMs || now_-r.twinAtMs>2000) return;
     const auto detach=[&](const DeviceId& id) {
         const auto old=twinLinks_.find(id);
-        if(old==twinLinks_.end()) return;
+        if(old==twinLinks_.end()) return false;
         const auto peer=twinLinks_.find(old->second.peer);
         if(peer!=twinLinks_.end() && peer->second.peer==id) twinLinks_.erase(peer);
         twinLinks_.erase(old);
+        return true;
     };
     if(r.twinLinkState==0) {
-        detach(selected_);
+        if(detach(selected_)) saveTwinNavigation();
     } else if(!r.twinPeerId.empty()) {
         const auto old=twinLinks_.find(selected_),peer=twinLinks_.find(r.twinPeerId);
-        if(old!=twinLinks_.end() && old->second.peer!=r.twinPeerId) detach(selected_);
-        if(peer!=twinLinks_.end() && peer->second.peer!=selected_) detach(r.twinPeerId);
+        // Keep the endpoint that established this relationship. Selecting the
+        // other circle must not silently open a second/follower session. This
+        // remembered endpoint is navigation only, never proof of host safety.
+        DeviceId selection=selected_;
+        if(old!=twinLinks_.end() && old->second.peer==r.twinPeerId && !old->second.selection.empty())
+            selection=old->second.selection;
+        else if(peer!=twinLinks_.end() && peer->second.peer==selected_ && !peer->second.selection.empty())
+            selection=peer->second.selection;
+        const bool replaceOwn=old!=twinLinks_.end() && old->second.peer!=r.twinPeerId;
+        const bool replacePeer=peer!=twinLinks_.end() && peer->second.peer!=selected_;
+        const bool paired=r.twinLinkState==0x12;
+        const bool navigationKnown=paired || (old!=twinLinks_.end() && !replaceOwn && old->second.navigationKnown);
+        const bool metadataChanged=replaceOwn || replacePeer || old==twinLinks_.end() || peer==twinLinks_.end() ||
+            old->second.peerName!=r.twinPeerName || peer->second.peerName!=name_ ||
+            old->second.selection!=selection || old->second.navigationKnown!=navigationKnown;
+        if(replaceOwn) detach(selected_);
+        if(replacePeer) detach(r.twinPeerId);
         if(!twinLinks_.count(selected_) && twinLinks_.size()+2>maximumRememberedDevices) return;
-        const bool available=r.twinLinkState==0x12;
-        twinLinks_[selected_]={r.twinPeerId,r.twinPeerName,r.twinAtMs,available};
-        twinLinks_[r.twinPeerId]={selected_,name_,r.twinAtMs,available};
+        twinLinks_[selected_]={r.twinPeerId,r.twinPeerName,r.twinAtMs,paired,selection,navigationKnown};
+        twinLinks_[r.twinPeerId]={selected_,name_,r.twinAtMs,paired,selection,navigationKnown};
+        if(metadataChanged) saveTwinNavigation();
     }
+}
+void TrainingApplication::saveTwinNavigation() {
+    auto saved=recent_;
+    for(const auto& link:twinLinks_) {
+        const auto peer=twinLinks_.find(link.second.peer);
+        if(!link.second.navigationKnown || peer==twinLinks_.end() || !peer->second.navigationKnown ||
+           peer->second.peer!=link.first || peer->second.selection!=link.second.selection) continue;
+        const auto present=[&](const DeviceId& id){return std::any_of(saved.begin(),saved.end(),[&](const auto& d){return d.id==id;});};
+        const size_t needed=size_t(!present(link.first))+size_t(!present(link.second.peer));
+        if(saved.size()+needed>maximumRememberedDevices) {message_="Device memory full";continue;}
+        const auto rememberName=[&](const DeviceId& id,const std::string& name){
+            const auto entry=std::find_if(saved.begin(),saved.end(),[&](const auto& d){return d.id==id;});
+            if(entry==saved.end()) {DeviceEntry d;d.id=id;d.name=name;saved.push_back(std::move(d));}
+            else if(!name.empty()) entry->name=name;
+        };
+        rememberName(link.first,peer->second.peerName);
+        rememberName(link.second.peer,link.second.peerName);
+    }
+    for(auto& d:saved) {
+        d.online=d.twinFresh=d.twinPeerAvailable=false;
+        d.twinPeer.clear();d.twinPeerId.clear();d.twinSelectionId.clear();
+        const auto link=twinLinks_.find(d.id);
+        if(link==twinLinks_.end() || !link->second.navigationKnown) continue;
+        const auto peer=std::find_if(saved.begin(),saved.end(),[&](const auto& entry){return entry.id==link->second.peer;});
+        if(peer==saved.end()) continue;
+        d.twinPeerId=peer->id;d.twinPeer=peer->name;d.twinSelectionId=link->second.selection;
+    }
+    const auto same=[](const DeviceEntry& a,const DeviceEntry& b){
+        return a.id==b.id && a.name==b.name && a.twinPeerId==b.twinPeerId &&
+            a.twinPeer==b.twinPeer && a.twinSelectionId==b.twinSelectionId;
+    };
+    if(saved.size()==recent_.size() && std::equal(saved.begin(),saved.end(),recent_.begin(),same)) return;
+    if(memory_ && !memory_->save(saved)) {message_="Could not save paired devices";return;}
+    recent_=std::move(saved);
 }
 void TrainingApplication::refreshTwinDevices() {
     const auto r=report();
@@ -70,15 +143,27 @@ void TrainingApplication::refreshTwinDevices() {
     for(auto& d:devices_) {
         const auto it=twinLinks_.find(d.id);
         if(it==twinLinks_.end()) {
-            // Synthetic catalog metadata is explicit; physical saved entries
-            // contain only ID/name and cannot invent a pairing relationship.
+            // Synthetic catalog metadata is explicit. Saved physical navigation
+            // enters twinLinks_ only after reciprocal identity validation.
             const auto known=std::find_if(knownDevices_.begin(),knownDevices_.end(),[&](const auto& k){return k.id==d.id;});
             if(known==knownDevices_.end() || known->twinPeer.empty()) {
                 d.twinPeer.clear();d.twinPeerId.clear();d.twinFresh=d.twinPeerAvailable=false;
+                d.twinSelectionId.clear();
+            } else {
+                d.twinSelectionId=known->twinSelectionId;
+                if(d.twinSelectionId.empty()) {
+                    // The offline catalog is explicit synthetic metadata. Use
+                    // its stable pair order until a session observes the pair.
+                    const auto first=std::find_if(knownDevices_.begin(),knownDevices_.end(),[&](const auto& k){
+                        return k.id==d.id || (!d.twinPeerId.empty() && k.id==d.twinPeerId);
+                    });
+                    d.twinSelectionId=first==knownDevices_.end() ? d.id : first->id;
+                }
             }
             continue;
         }
         d.twinPeer=it->second.peerName;d.twinPeerId=it->second.peer;
+        d.twinSelectionId=it->second.selection;
         const bool currentPeer=(selected_==d.id && r.twinPeerId==it->second.peer) ||
             (selected_==it->second.peer && r.twinPeerId==d.id);
         d.twinFresh=currentTwin && currentPeer && now_>=it->second.at && now_-it->second.at<=2000;
@@ -112,30 +197,47 @@ TrainingApplication::DisplayCounters TrainingApplication::displayCounters() cons
 }
 bool TrainingApplication::forget(const DeviceId& id) {
     automaticSelection_ = false;
+    std::vector<DeviceId> forgotten{id};
+    const auto link=twinLinks_.find(id);
+    if(link!=twinLinks_.end()) forgotten.push_back(link->second.peer);
+    else {
+        const auto device=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id;});
+        if(device!=devices_.end() && !device->twinPeerId.empty()) forgotten.push_back(device->twinPeerId);
+    }
+    const auto includes=[&](const DeviceId& candidate){return std::find(forgotten.begin(),forgotten.end(),candidate)!=forgotten.end();};
     auto remaining = recent_;
-    remaining.erase(std::remove_if(remaining.begin(), remaining.end(), [&](const auto& d) { return d.id == id; }), remaining.end());
+    remaining.erase(std::remove_if(remaining.begin(), remaining.end(), [&](const auto& d) { return includes(d.id); }), remaining.end());
     if (memory_ && !memory_->save(remaining)) { message_ = "Could not remove saved device"; return false; }
     recent_ = std::move(remaining);
-    const auto old=twinLinks_.find(id);
-    if(old!=twinLinks_.end()) {
-        const auto peer=twinLinks_.find(old->second.peer);
-        if(peer!=twinLinks_.end() && peer->second.peer==id) twinLinks_.erase(peer);
-        twinLinks_.erase(old);
+    // Forget the remote's logical pair record only. No pairing/role command is
+    // sent to either VOLTRA.
+    for(const auto& member:forgotten) {
+        twinLinks_.erase(member);
+        dropSettings_.erase(member);
     }
-    dropSettings_.erase(id);
-    if (selected_ == id) leave();
+    if (includes(selected_)) leave();
     message_.clear();
     scan();
     return true;
 }
 bool TrainingApplication::tryAutomaticSelection() {
     if (maintenance_ || !automaticSelection_ || !scanned_ || scanPending_ || connected() || connecting()) return false;
-    const auto count = std::count_if(devices_.begin(), devices_.end(), [](const auto& d) { return d.online; });
-    if (!count) return false; // Keep discovering when the remote starts first.
+    std::vector<DeviceId> available;
+    for(const auto& d:devices_) if(d.online) {
+        const auto endpoint=selectionDevice(d.id);
+        if(std::find(available.begin(),available.end(),endpoint)==available.end()) available.push_back(endpoint);
+    }
+    if (available.empty()) return false; // Keep discovering when the remote starts first.
+    if (available.size() != 1) {
+        automaticSelection_ = false; // Multiple logical choices require a tap.
+        return false;
+    }
+    // Automatic connection still needs an advertisement for the chosen endpoint,
+    // rather than substituting the peer's radio presence for that endpoint.
+    const auto endpoint=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==available.front() && d.online;});
+    if(endpoint==devices_.end()) return false;
     automaticSelection_ = false; // One startup attempt; never fight manual navigation.
-    if (count != 1) return false;
-    const auto it = std::find_if(devices_.begin(), devices_.end(), [](const auto& d) { return d.online; });
-    return select(it->id);
+    return select(endpoint->id);
 }
 void TrainingApplication::scan() {
     if (maintenance_ || discoveryPaused_ || connected() || connecting() || scanPending_) return;
@@ -168,10 +270,11 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
 }
 bool TrainingApplication::select(const DeviceId& id) {
     if(maintenance_) return false;
+    const auto endpoint=selectionDevice(id);
     // A Twin host can stop advertising while retaining its saved BLE address.
     // Only an explicit selection may try that remembered endpoint; automatic
     // selection above still requires a completed, live advertisement scan.
-    const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && (d.online || remembered(d.id)); });
+    const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == endpoint && (d.online || remembered(d.id)); });
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
     const DeviceEntry chosen = *it;
     leave();
@@ -218,7 +321,7 @@ bool TrainingApplication::fresh() const {
 bool TrainingApplication::settingsAllowed() const {
     const auto r = report();
     return fresh() && r.twinKnown && session_.readiness().validated &&
-        r.minWeight > 0 && r.maxWeight >= r.minWeight && !r.autoLoadArmed && !requestedLoad_;
+        r.minWeight > 0 && weightTicksDown(r,r.maxWeight) >= weightTicksUp(r,r.minWeight) && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
     if (result != TransportResult::Accepted) { message_ = session_.status().empty() ? "Request not accepted" : session_.status(); return; }
@@ -227,8 +330,10 @@ void TrainingApplication::sent(TransportResult result) {
 }
 bool TrainingApplication::sendSettings(TrainingSettings s) {
     const auto r = report();
-    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < r.minWeight || s.magic.value < 0 || s.eccentric.value < 0 ||
+    if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < r.minWeight || !weightOnIncrement(r,s.weight) || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && s.magic.value == 0) || (s.eccentric.enabled && s.eccentric.value == 0) ||
+        (s.magic.enabled && !s.magic.percent && !weightOnIncrement(r,s.magic.value)) ||
+        (s.eccentric.enabled && !s.eccentric.percent && !weightOnIncrement(r,s.eccentric.value)) ||
         (s.magic.enabled && s.magic.value > modifierMaximum(r, s, true)) ||
         (s.eccentric.enabled && s.eccentric.value > modifierMaximum(r, s, false)) ||
         envelopeHundredths(s) > r.maxWeight * 100) { message_ = "Outside device limits"; return false; }
@@ -249,9 +354,11 @@ void TrainingApplication::adjustWeight(int delta) {
     dropStart_.reset(); // A subsequent manual base choice supersedes restoration.
     if(running_ || dropTarget_ || dropsExhausted_) stopDrops("Drops stopped for manual adjustment");
     auto s = settingsIntent_.value_or(r.settings);
-    const int ceiling=r.loaded ? baseMaximum(r) : r.maxWeight;
-    if(ceiling<r.minWeight) {message_="Outside device limits";return;}
-    s.weight = std::clamp(weightIntent_.value_or(s.weight) + delta, r.minWeight, ceiling);
+    const int minimum=weightTicksUp(r,r.minWeight),ceiling=weightTicksDown(r,r.loaded ? baseMaximum(r) : r.maxWeight);
+    if(ceiling<minimum) {message_="Outside device limits";return;}
+    const int requested=weightIntent_.value_or(s.weight)+delta;
+    const int aligned=delta>0 ? weightTicksUp(r,requested) : delta<0 ? weightTicksDown(r,requested) : weightTicksNearest(r,requested);
+    s.weight = std::clamp(aligned, minimum, ceiling);
     // The original brief specifies reducing modifiers before capping the base.
     // Trim EO first, then magic; this is part of this explicit knob request.
     for (auto* m : {&s.eccentric, &s.magic}) {
@@ -259,6 +366,7 @@ void TrainingApplication::adjustWeight(int delta) {
         const int excess = envelopeHundredths(s) - r.maxWeight*100;
         if (excess > 0 && m->enabled && divisor > 0)
             m->value = std::max(0, m->value - (excess+divisor-1)/divisor);
+        if(!m->percent) m->value=weightTicksDown(r,m->value);
         if(m->enabled && m->value == 0) m->enabled=false;
     }
     if (!pending_ && s.weight == r.settings.weight && sameModifier(s.magic,r.settings.magic) &&
@@ -342,10 +450,17 @@ Preset TrainingApplication::currentPreset() const {
     return {r.settings.magicMode, r.settings.magic, r.settings.eccentric, r.unit, drops()};
 }
 Preset TrainingApplication::presetForCurrentDevice(Preset p) const {
-    const auto target = report().unit;
+    const auto r=report();
+    const auto target = r.unit;
     if(!p.magic.percent) p.magic.value = convertWeightUnits(p.magic.value,p.unit,target);
     if(!p.eccentric.percent) p.eccentric.value = convertWeightUnits(p.eccentric.value,p.unit,target);
     p.drops.step = convertWeightUnits(p.drops.step,p.unit,target);
+    for(auto* modifier:{&p.magic,&p.eccentric}) if(!modifier->percent) {
+        modifier->value=weightTicksNearest(r,modifier->value);
+        if(modifier->enabled) modifier->value=std::max(weightIncrementTicks(r),modifier->value);
+    }
+    const int direction=p.drops.step<0 ? -1 : 1;
+    p.drops.step=direction*weightTicksNearest(r,std::abs(p.drops.step));
     p.unit = target;
     return p;
 }
@@ -375,8 +490,9 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
        (restPauseHoldMaximum(r)<1 || p.drops.holdSeconds>restPauseHoldMaximum(r))) {
         presetError_=restPauseLimitError;message_=presetError_;return false;
     }
-    // A preset replaces all modifiers as one request. Preserve its exact values;
-    // if needed, lower only the current base to the conservative integer ceiling.
+    // A preset replaces all modifiers as one request, using the same per-device
+    // unit/increment conversion shown in its preview. The stored recipe stays
+    // unchanged; normal limits still apply. Lower only base for headroom.
     auto s = r.settings; s.magicMode = p.mode; s.magic = p.magic; s.eccentric = p.eccentric;
     auto limits = r; limits.settings = s;
     s.weight = std::min(s.weight,baseMaximum(limits));
@@ -395,7 +511,14 @@ bool TrainingApplication::applyModifier(bool magic, MagicMode mode, int value, b
     auto s = settingsIntent_.value_or(r.settings); auto& m = magic ? s.magic : s.eccentric;
     if (magic) s.magicMode = mode;
     m.enabled = true; m.value = value; m.percent = percent;
-    if(r.sharedModifierUnits) convertModifierUnit(magic ? s.eccentric : s.magic,percent,s.weight);
+    if(r.sharedModifierUnits) {
+        auto& other=magic ? s.eccentric : s.magic;
+        convertModifierUnit(other,percent,s.weight);
+        if(!percent) {
+            other.value=weightTicksNearest(r,other.value);
+            if(other.enabled) other.value=std::max(weightIncrementTicks(r),other.value);
+        }
+    }
     return sendSettings(s);
 }
 DropSettings TrainingApplication::drops() const {
@@ -426,7 +549,10 @@ bool TrainingApplication::applyDrops(DropSettings d) {
         message_=restPauseLimitError;return false;
     }
     if(dropTarget_) stopDrops("");
-    d.step = std::clamp(d.step, -report().maxWeight, report().maxWeight);
+    const auto r=report();
+    const int maximum=weightTicksDown(r,r.maxWeight);
+    const int sign=d.step<0 ? -1 : 1;
+    d.step = sign*std::min(weightTicksNearest(r,std::abs(d.step)),maximum);
     d.drops = std::clamp(d.drops, 0, 9); d.percent = std::clamp(d.percent, 0, 80);
     d.holdSeconds = std::clamp(d.holdSeconds, 1, 9);
     dropSettings_[selected_] = d; resetDrops();

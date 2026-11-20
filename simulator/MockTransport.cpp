@@ -20,6 +20,7 @@ MockTransport::MockTransport() {
         r.twinLinkState=r.twin ? 0x12 : 0x00;
         // Explicit synthetic combined floor, not a physical Twin inference.
         r.minWeight = r.twin ? 10 : voltraISingleMinimum(r.unit);
+        r.weightIncrement=r.twin && r.unit==WeightUnit::Pounds ? 2 : 1;
         r.twinPeerName = i == 1 ? names[2] : i == 2 ? names[1] : "";
         if(r.twin) {
             r.twinPeerId=std::string(deviceId)+'-'+std::to_string(i==1 ? 2 : 1);
@@ -57,6 +58,10 @@ void MockTransport::previewUnit(WeightUnit unit) {
         if (!m->percent) m->value = convertWeightUnits(m->value, r.unit, unit);
     r.unit = unit; r.maxWeight = resolveWeightLimit(device.limits, unit).ticks;
     r.minWeight = r.twin ? (unit==WeightUnit::Pounds ? 10 : 8) : voltraISingleMinimum(unit);
+    r.weightIncrement=r.twin && unit==WeightUnit::Pounds ? 2 : 1;
+    r.settings.weight=weightTicksNearest(r,r.settings.weight);
+    for(auto* m:{&r.settings.magic,&r.settings.eccentric})
+        if(!m->percent) m->value=weightTicksNearest(r,m->value);
     sent_ = false;
 }
 void MockTransport::previewWeight(int ticks) {
@@ -190,6 +195,10 @@ void MockTransport::poll(uint64_t now) {
         state.liveWeightLbs=state.force ? convertWeightUnits(*state.force,state.unit,WeightUnit::Pounds) : 0;
         state.liveWeightAtMs=now;
     }
+    // Synthetic target report follows the explicitly injected preview (or the
+    // mock's configured target). The physical backend never computes this field.
+    state.liveTargetTenthsLb=state.liveWeightLbs ? std::optional<int>(*state.liveWeightLbs*10) : std::optional<int>{};
+    state.liveTargetAtMs=state.liveWeightAtMs;
     // Already-paired synthetic endpoints share a workout through one selected
     // session. This is not a second BLE connection or a duplicate command.
     if(active_ == 1 || active_ == 2) {
@@ -228,7 +237,9 @@ TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     if(r.loaded && (s.magicMode!=r.settings.magicMode || s.magic.percent!=r.settings.magic.percent || s.eccentric.percent!=r.settings.eccentric.percent))
         return TransportResult::Unsupported;
     if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
-        r.minWeight < 1 || s.weight < r.minWeight || s.magic.value < 0 || s.eccentric.value < 0 ||
+        r.minWeight < 1 || s.weight < r.minWeight || !weightOnIncrement(r,s.weight) || s.magic.value < 0 || s.eccentric.value < 0 ||
+        (s.magic.enabled && !s.magic.percent && !weightOnIncrement(r,s.magic.value)) ||
+        (s.eccentric.enabled && !s.eccentric.percent && !weightOnIncrement(r,s.eccentric.value)) ||
         (s.magic.enabled && (s.magic.value < 1 || !r.magicSupported[int(s.magicMode)] || s.magic.value > modifierMaximum(r, s, true))) ||
         (s.eccentric.enabled && (s.eccentric.value < 1 || !r.eccentricSupported || s.eccentric.value > modifierMaximum(r, s, false))) ||
         envelopeHundredths(s) > r.maxWeight*100) return TransportResult::Failed;

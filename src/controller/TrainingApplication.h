@@ -15,6 +15,9 @@ public:
     void setMaintenance(bool active) { maintenance_=active; }
     void setDiscoveryPaused(bool paused) { discoveryPaused_=paused; }
     bool select(const DeviceId&);
+    // Both members of an observed pair open the same logical session endpoint.
+    // Cached navigation metadata must never authorize resistance commands.
+    DeviceId selectionDevice(const DeviceId&) const;
     bool tryAutomaticSelection();
     bool remembered(const DeviceId&) const;
     bool forget(const DeviceId&);
@@ -76,8 +79,15 @@ private:
     std::vector<DeviceEntry> recent_, devices_, knownDevices_;
     struct SeenDevice { DeviceEntry device; uint64_t at; };
     std::map<DeviceId,SeenDevice> seenDevices_;
-    struct RememberedTwin { DeviceId peer; std::string peerName; uint64_t at=0; bool available=false; };
-    std::map<DeviceId,RememberedTwin> twinLinks_; // Session RAM only; never stored.
+    struct RememberedTwin {
+        DeviceId peer;
+        std::string peerName;
+        uint64_t at=0;
+        bool available=false;
+        DeviceId selection;
+        bool navigationKnown=false; // Confirmed paired identity, including saved navigation only.
+    };
+    std::map<DeviceId,RememberedTwin> twinLinks_; // Availability/timestamps are never stored.
     std::map<DeviceId, DropSettings> dropSettings_;
     DeviceId selected_;
     std::string name_, message_, presetError_;
@@ -125,6 +135,7 @@ private:
     void refreshDiscovery(const std::vector<Advertisement>&);
     void refreshTwinDevices();
     void observeTwin(const TrainingReport&);
+    void saveTwinNavigation();
     void rememberConnection();
 };
 }

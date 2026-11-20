@@ -1,5 +1,22 @@
 # Foundation baseline
 
+## November 20 paired navigation and target correction v0.4.10
+
+- Owner feedback removes redundant Twin captions, TOTAL heading, overlapping
+  glyph and technical banner. Black is the host and Red the follower in the
+  observed pair. Paired circles now share availability and one navigation
+  endpoint, remembered across restarts without retaining readiness/load state.
+- Combined-LB settings use a two-pound grid, separate from base minimum and
+  effective maximum. No combined maximum or motor capability is guessed.
+- New pinned albert source captures distinguish B4 target resistance from
+  16003 runtime cable tension. Live now uses only the fresh standalone target,
+  whole-LB/half-KG formatting and no selected-base/sensor/modifier fallback.
+  See LIVE_TARGET_SOURCE_2026_11_20.md and TWIN_PRESENTATION_2026_11_20.md.
+- Offline core/reference validators, four published B4 source captures and real
+  LVGL renders/pointer previews pass. Full firmware/artifact checks follow.
+  Physical Twin controls and exact Live LCD agreement remain unverified;
+  no physical motor commands or new automated test source.
+
 ## November 20 Twin readback and Live v0.4.9
 
 - CONFIRMED: report4ac675b8 connects and accepts the session, then reports motor

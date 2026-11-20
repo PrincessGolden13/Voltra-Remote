@@ -1,5 +1,11 @@
 # Existing Twin pairs
 
+November20 follow-up: [paired navigation/presentation](TWIN_PRESENTATION_2026_11_20.md)
+treats the circles as one saved navigation group, removes redundant labels and
+uses the source-backed two-pound combined-LB setting grid. Persisted pair
+metadata does not authorize commands. The owner identifies Black as host and Red
+as follower; A003, peer safety and combined limits remain unresolved.
+
 November20: [Twin/readback and Live update](TWIN_LIVE_READBACK_2026_11_20.md)
 adds strict read-only A7 topology, peer identity matching, Venn device/main
 presentation and confirmed combined setting scope. Motor/control validity remains
