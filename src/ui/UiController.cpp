@@ -341,6 +341,11 @@ void UiController::readTouch() {
 }
 void UiController::navigate(Screen page) {
     weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=false;
+    const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
+    if(trainingPage && !app_.selectionReady()) page=Screen::Devices;
+    // Choosing another screen cancels a read-only connection probe. A late
+    // response must not reopen training after the user has left selection.
+    if(app_.resolvingSelection() && page!=Screen::Devices) app_.leave();
     if(page_==Screen::Wifi && page!=Screen::Wifi && wifi_) wifi_->cancelConnectionCheck();
     diagnostic("Screen="+std::to_string(int(page)));
     modeGestureUntil_ = 0;
@@ -392,7 +397,10 @@ void UiController::act(int action, const std::string& id, bool held) {
                 if(!d.twinPeer.empty()) forgetName_+=" + "+d.twinPeer;
             }
             navigate(Screen::ForgetDevice);
-        } else if (!held) {if(app_.select(id)) navigate(Screen::Main);else if(!app_.message().empty()) navigate(Screen::ConnectionNotice);}
+        } else if (!held) {
+            if(app_.select(id)) navigate(app_.selectionReady() ? Screen::Main : Screen::Devices);
+            else if(!app_.message().empty()) navigate(Screen::ConnectionNotice);
+        }
         return;
     }
     if (action == CancelForget) { navigate(Screen::Devices); return; }
@@ -570,6 +578,13 @@ void UiController::build() {
     battery_ = label(face_, "", width_*45/100, height_*91/100, small); color(battery_, soft);
     if (int(page_) >= int(Screen::Presets)) { buildExtra(); return; }
     if (page_ == Screen::Devices) {
+        if(app_.resolvingSelection()) {
+            message_=label(face_,app_.message(),width_*76/100,height_*38/100,medium);
+            lv_label_set_long_mode(message_,LV_LABEL_LONG_WRAP);
+            color(message_,soft);
+            button(face_,"Cancel",width_*32/100,height_*62/100,width_*36/100,height_*12/100,DismissConnection);
+            return;
+        }
         auto* gear = button(face_, LV_SYMBOL_SETTINGS, width_*44/100, height_*4/100, width_*12/100, height_*9/100, OpenSettings);
         color(gear, accent());
         const auto& devices = app_.devices();
@@ -1220,14 +1235,20 @@ void UiController::tick() {
     }
     if(!app_.fresh() || !app_.confirmedDropWeight() || !app_.report().loaded) dropCueUntil_=0;
     rememberModifiers();
+    if(page_!=Screen::Devices && int(page_)<int(Screen::Settings) && app_.connected() && !app_.selectionReady())
+        navigate(Screen::Devices);
     if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting() &&
         !(rebuild_ && next_==Screen::Devices)) {
         app_.leave(true);navigate(app_.message().empty() ? Screen::Devices : Screen::ConnectionNotice);
     }
     if (page_ == Screen::Devices) {
         if (!debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
-            (!updates_ || (!updates_->startupPending() && !updates_->status().busy())) && app_.tryAutomaticSelection()) navigate(Screen::Main);
-        std::string signature;
+            (!updates_ || (!updates_->startupPending() && !updates_->status().busy()))) {
+            if(app_.selectionFailed()) navigate(Screen::ConnectionNotice);
+            else if(app_.connected() && app_.selectionReady()) navigate(Screen::Main);
+            else if(app_.tryAutomaticSelection()) {next_=Screen::Devices;rebuild_=true;}
+        }
+        std::string signature=app_.resolvingSelection() ? "resolving" : "devices";
         for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+d.twinPeerId+d.twinSelectionId+
             (d.online ? "1" : "0")+(d.twinFresh ? "F" : "?")+(d.twinPeerAvailable ? "P" : "-")+(app_.remembered(d.id) ? "S" : "D");
         // Do not destroy a tile underneath a held finger when a scan completes.

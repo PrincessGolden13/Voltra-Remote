@@ -8,6 +8,7 @@
 #include "WeightUnits.h"
 namespace voltra {
 enum class MagicMode { InverseChains, Chains, Mountain };
+enum class CurrentTwinRole { Unknown, Master, Follower };
 struct Modifier { bool enabled = false; int value = 0; bool percent = true; };
 struct TrainingSettings {
     int weight = 50; // Display ticks: 1 lb or 0.5 kg; never wire units.
@@ -26,6 +27,10 @@ struct TrainingReport {
     uint64_t twinAtMs=0;
     std::string twinPeerAddress,twinPeerId; // RAM-only identity resolution, never diagnostic output.
     std::optional<int> twinLinkState,twinPeerBattery;
+    // Independent current-role evidence. Topology, selection order, historical
+    // role and motor high bits cannot supply it. Zero time means unavailable.
+    CurrentTwinRole currentTwinRole=CurrentTwinRole::Unknown;
+    uint64_t twinRoleAtMs=0;
     // Device-reported wire weight (16003), in whole pounds. This is separate
     // from the selected base and from AA81 sensor force. Twin scope is unknown.
     std::optional<int> liveWeightLbs;

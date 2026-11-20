@@ -10,6 +10,9 @@ constexpr uint64_t discoveryGraceMs=15000;
 constexpr size_t maximumDiscoveredDevices=64;
 constexpr uint64_t motionFreshMs=500;
 constexpr uint64_t restPauseBarDelayMs=250; // User-requested visual threshold.
+// Read-only endpoint discovery is bounded and never retries an endpoint. Allow
+// BLE connection/bootstrap time, then six seconds for independent role evidence.
+constexpr uint64_t selectionDeadlineMs=30000,selectionReadDeadlineMs=6000;
 const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 }
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
@@ -33,6 +36,28 @@ DeviceId TrainingApplication::selectionDevice(const DeviceId& id) const {
     if(link!=twinLinks_.end() && !link->second.selection.empty()) return link->second.selection;
     const auto device=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id;});
     return device!=devices_.end() && !device->twinSelectionId.empty() ? device->twinSelectionId : id;
+}
+bool TrainingApplication::selectionReady() const {
+    if(selectionPhase_!=SelectionPhase::Ready || !connected() || !session_.accepted() || session_.readOnlyProbe()) return false;
+    const auto r=report();
+    // A previously resolved standalone endpoint retains its navigation and
+    // unconditional unload route while ordinary readback is stale. All load/
+    // settings operations still enforce their own fresh readiness requirements.
+    if(!selectionResolvedTwin_) return !r.twinDetected && !r.twin;
+    return r.twinDetected && r.twin && r.twinKnown && r.twinStatusFresh && r.twinLinkState==0x12 &&
+        !selectionResolvedPeer_.empty() && r.twinPeerId==selectionResolvedPeer_ &&
+        r.currentTwinRole==CurrentTwinRole::Master && r.twinRoleAtMs!=0 &&
+        now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+}
+bool TrainingApplication::retainSelectionControl() {
+    if(selectionReady()) return true;
+    session_.setReadOnlyProbe(true);
+    session_.cancelTraining();
+    pending_=requestedLoad_=autoLoadRequested_=false;
+    settingsIntent_.reset();weightIntent_.reset();presetIntent_.reset();dropRestore_.reset();dropStart_.reset();
+    resetDrops();
+    if(selectionPhase_==SelectionPhase::Ready) failSelection("VOLTRA connection changed; reconnect");
+    return false;
 }
 TrainingReport TrainingApplication::report() const {
     auto r=session_.trainingReport();
@@ -271,19 +296,101 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
 bool TrainingApplication::select(const DeviceId& id) {
     if(maintenance_) return false;
     const auto endpoint=selectionDevice(id);
-    // A Twin host can stop advertising while retaining its saved BLE address.
-    // Only an explicit selection may try that remembered endpoint; automatic
-    // selection above still requires a completed, live advertisement scan.
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == endpoint && (d.online || remembered(d.id)); });
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
-    const DeviceEntry chosen = *it;
     leave();
-    if (!controller_.connect(chosen.id)) { message_ = controller_.feedback(); scan(); return false; }
+    selectionPhase_=SelectionPhase::Resolving;selectionStartedAt_=now_;
+    selectionFirstEndpoint_=endpoint;
+    selectionTrace_.clear();
+    const auto link=twinLinks_.find(endpoint);
+    if(link!=twinLinks_.end()) selectionPeerCandidate_=link->second.peer;
+    if(!beginSelectionEndpoint(endpoint)) {failSelection(message_);return false;}
+    return true;
+}
+bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id) {
+    if(selectionProbed_.size()>=2 || std::find(selectionProbed_.begin(),selectionProbed_.end(),id)!=selectionProbed_.end()) return false;
+    const auto it=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id && (d.online || remembered(id));});
+    const auto saved=std::find_if(recent_.begin(),recent_.end(),[&](const auto& d){return d.id==id;});
+    if(it==devices_.end() && saved==recent_.end()) {message_="Paired VOLTRA is unavailable";return false;}
+    const DeviceEntry chosen=it!=devices_.end() ? *it : *saved;
+    if(!session_.setReadOnlyProbe(true)) {message_="Connection checking is unavailable";return false;}
+    selectionProbed_.push_back(id);selectionReading_=false;selectionReadAt_=0;
+    connectingDevice_.reset();
+    if(!controller_.connect(chosen.id)) {message_=controller_.feedback();return false;}
     session_.setSelectedAddress(transport_.deviceAddress(chosen.id));
-    selected_ = chosen.id; name_ = chosen.name;
-    if(connecting()) message_="Connecting to "+name_+"...";
-    connectingDevice_ = chosen;
-    if (session_.accepted()) rememberConnection();
+    selected_=chosen.id;name_=chosen.name;connectingDevice_=chosen;
+    message_="Checking "+name_+"...";
+    return true;
+}
+void TrainingApplication::traceSelectionEndpoint() {
+    if(selected_.empty()) return;
+    const auto snapshot="candidate"+std::to_string(selectionProbed_.size())+"={"+session_.diagnosticState().substr(0,700)+"}";
+    if(!selectionTrace_.empty()) selectionTrace_+=' ';
+    selectionTrace_+=snapshot;
+    if(selectionTrace_.size()>1450) selectionTrace_.resize(1450);
+}
+void TrainingApplication::failSelection(const std::string& reason) {
+    const auto failure=reason.empty() ? std::string("Could not identify the paired controller") : reason;
+    traceSelectionEndpoint();
+    lastConnectionFailure_=("at="+std::to_string(now_)+" reason="+failure).substr(0,180);
+    diagnostic("Connection selection failed: "+failure);
+    leave();message_=failure;selectionPhase_=SelectionPhase::Failed;
+}
+bool TrainingApplication::runSelection() {
+    if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl();
+    if(selectionPhase_!=SelectionPhase::Resolving) return selectionPhase_==SelectionPhase::Failed;
+    if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=selectionDeadlineMs) {
+        failSelection("Could not identify the paired controller");return true;
+    }
+    if(controller_.connecting()) return true;
+    if(!connected()) {
+        if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
+            traceSelectionEndpoint();
+            if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
+        }
+        failSelection(controller_.feedback());return true;
+    }
+    if(!selectionReading_) {selectionReadAt_=now_;selectionReading_=true;}
+    const auto r=report();
+    const bool paired=session_.accepted() && r.twinDetected && r.twin && r.twinKnown && r.twinStatusFresh && r.twinLinkState==0x12 &&
+        now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && !r.twinPeerId.empty();
+    if(paired) {
+        if(selectionProbed_.size()==1) {
+            selectionExpectedPeer_=r.twinPeerId;selectionFirstPeerObserved_=true;
+            selectionPeerCandidate_=r.twinPeerId;
+        } else if(r.twinPeerId!=selectionFirstEndpoint_ ||
+                  (selectionFirstPeerObserved_ && selected_!=selectionExpectedPeer_)) {
+            failSelection("VOLTRA pair changed while connecting");return true;
+        }
+    }
+    if(session_.accepted()) {observeTwin(r);refreshTwinDevices();}
+    const bool roleFresh=paired && r.currentTwinRole==CurrentTwinRole::Master && r.twinRoleAtMs!=0 &&
+        now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+    const bool single=session_.accepted() && selectionProbed_.size()==1 && readbackFresh() &&
+        r.twinKnown && !r.twin && !r.twinDetected;
+    if((roleFresh || single) && session_.setReadOnlyProbe(false) && !session_.readOnlyProbe()) {
+        if(selectionProbed_.size()>1) traceSelectionEndpoint();
+        selectionResolvedTwin_=roleFresh;selectionResolvedPeer_=roleFresh ? r.twinPeerId : DeviceId{};
+        if(roleFresh) {
+            const auto own=twinLinks_.find(selected_);
+            if(own!=twinLinks_.end()) {
+                const auto peer=twinLinks_.find(own->second.peer);
+                own->second.selection=selected_;
+                if(peer!=twinLinks_.end()) peer->second.selection=selected_;
+                saveTwinNavigation();refreshTwinDevices();
+            }
+        }
+        selectionPhase_=SelectionPhase::Ready;message_.clear();return false;
+    }
+    const bool follower=paired && r.currentTwinRole==CurrentTwinRole::Follower && r.twinRoleAtMs!=0 &&
+        now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+    if(follower || now_-selectionReadAt_>=selectionReadDeadlineMs) {
+        if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
+            traceSelectionEndpoint();
+            if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
+        }
+        failSelection(paired ? "Could not identify the paired controller" : "Could not read VOLTRA state");return true;
+    }
     return true;
 }
 void TrainingApplication::rememberConnection() {
@@ -303,6 +410,10 @@ void TrainingApplication::leave(bool preserveFailure) {
     if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
     automaticSelection_ = false;
+    selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionReadAt_=0;selectionReading_=false;
+    selectionProbed_.clear();selectionPeerCandidate_.clear();
+    selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
+    selectionFirstPeerObserved_=selectionResolvedTwin_=false;
     scanned_ = scanPending_ = false;
     connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
@@ -320,7 +431,7 @@ bool TrainingApplication::fresh() const {
 }
 bool TrainingApplication::settingsAllowed() const {
     const auto r = report();
-    return fresh() && r.twinKnown && session_.readiness().validated &&
+    return selectionReady() && fresh() && r.twinKnown && session_.readiness().validated &&
         r.minWeight > 0 && weightTicksDown(r,r.maxWeight) >= weightTicksUp(r,r.minWeight) && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
@@ -329,6 +440,7 @@ void TrainingApplication::sent(TransportResult result) {
     message_.clear(); // Brief requests do not flash a warning on every input.
 }
 bool TrainingApplication::sendSettings(TrainingSettings s) {
+    if(!retainSelectionControl()) return false;
     const auto r = report();
     if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < r.minWeight || !weightOnIncrement(r,s.weight) || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && s.magic.value == 0) || (s.eccentric.enabled && s.eccentric.value == 0) ||
@@ -342,6 +454,7 @@ bool TrainingApplication::sendSettings(TrainingSettings s) {
     return result == TransportResult::Accepted;
 }
 void TrainingApplication::adjustWeight(int delta) {
+    if(!retainSelectionControl()) return;
     if(dropRestore_) {message_="Restoring starting weight; please wait";return;}
     if (presetIntent_) { message_ = "Awaiting preset confirmation"; return; }
     if (!settingsAllowed()) {
@@ -384,6 +497,7 @@ void TrainingApplication::recordLoadRefusal() {
     recordControlFailure(loadRefusalMessage_);
 }
 void TrainingApplication::toggleWeight() {
+    if(!retainSelectionControl()) return;
     diagnostic("Explicit weight action");
     auto r = report();
     if (!fresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
@@ -406,6 +520,7 @@ void TrainingApplication::toggleWeight() {
     if(result!=TransportResult::Accepted) recordLoadRefusal();
 }
 void TrainingApplication::unload() {
+    if(!retainSelectionControl()) return;
     diagnostic("Unload requested");
     // Always a cancel/unload, even before a pending load is reported. Never
     // route an editor's unload target through a toggle that could load instead.
@@ -418,6 +533,7 @@ void TrainingApplication::unload() {
     if(result!=TransportResult::Accepted) recordControlFailure(message_.empty() ? "Unload request not accepted" : message_);
 }
 void TrainingApplication::autoLoad() {
+    if(!retainSelectionControl()) return;
     diagnostic("Explicit Auto Load action");
     if(session_.unloading()) {
         message_.clear();diagnostic("Auto Load action ignored: unload pending");return;
@@ -436,6 +552,7 @@ void TrainingApplication::autoLoad() {
     if(result!=TransportResult::Accepted) recordLoadRefusal();
 }
 void TrainingApplication::toggleModifier(bool magic) {
+    if(!retainSelectionControl()) return;
     const auto r = report();
     if (dropRestore_ || presetIntent_ || (pending_ && (!settingsIntent_ || r.loaded)) || (r.loaded && !r.liveModifierAmountsSupported) ||
         !(magic ? r.magicSupported[int(r.settings.magicMode)] : r.eccentricSupported)) {
@@ -465,6 +582,7 @@ Preset TrainingApplication::presetForCurrentDevice(Preset p) const {
     return p;
 }
 bool TrainingApplication::applyPreset(const Preset& saved) {
+    if(!retainSelectionControl()) return false;
     const auto r = report(); presetError_.clear();
     if(!fresh()) { message_ = "Device state unavailable"; return false; }
     auto p = presetForCurrentDevice(saved);
@@ -500,6 +618,7 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
     presetIntent_ = p; return true;
 }
 bool TrainingApplication::applyModifier(bool magic, MagicMode mode, int value, bool percent) {
+    if(!retainSelectionControl()) return false;
     const auto r = report();
     if (dropRestore_ || presetIntent_ || (pending_ && (!settingsIntent_ || r.loaded)) || (r.loaded && !r.liveModifierAmountsSupported) || !(magic ? r.magicSupported[int(mode)] : r.eccentricSupported)) {
         message_ = r.loaded ? "Wait for modifier controls" : "Awaiting device"; return false;
@@ -540,6 +659,7 @@ std::optional<int> TrainingApplication::restPauseRemainingPermille() const {
     return int((duration-std::min(elapsed,duration))*1000/duration);
 }
 bool TrainingApplication::applyDrops(DropSettings d) {
+    if(!retainSelectionControl()) return false;
     if (!fresh() || selected_.empty()) { message_ = "Device state unavailable"; return false; }
     if(d.enabled && (!report().liveWeightSupported || report().minWeight<1 || report().autoLoadArmed || pending())) {
         message_="Wait for weight controls before arming drops";return false;
@@ -748,8 +868,12 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     }
 }
 void TrainingApplication::tick(uint64_t now) {
-    now_ = now; controller_.tick(now);
+    now_ = now;
+    // Revoke a resolved Twin route before polling can dispatch a queued intent.
+    if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl()) return;
+    controller_.tick(now);
     refreshTwinDevices();
+    if(runSelection()) return;
     if(connecting()) return;
     if(connectingDevice_ && !connected()) {
         const std::string feedback=controller_.feedback();

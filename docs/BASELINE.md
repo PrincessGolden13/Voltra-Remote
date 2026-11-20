@@ -2,6 +2,12 @@
 
 ## November 20 paired navigation and target correction v0.4.10
 
+- RELEASE HELD: the owner clarified that both icons must resolve the actual
+  current master for any pair. First-observed/cached endpoints are not role
+  evidence. PR10 is a draft, with no v0.4.10 tag or publication. The physical
+  current-role decoder is unresolved; generic read-only resolution is being
+  separated from saved navigation metadata and exercised with synthetic roles.
+
 - Owner feedback removes redundant Twin captions, TOTAL heading, overlapping
   glyph and technical banner. Black is the host and Red the follower in the
   observed pair. Paired circles now share availability and one navigation

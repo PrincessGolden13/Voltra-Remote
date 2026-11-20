@@ -112,6 +112,16 @@ PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_
 void PhysicalSession::setSelectedAddress(std::string address) {
     selectedAddress_=parseDeviceAddress(address);
 }
+bool PhysicalSession::setReadOnlyProbe(bool enabled) {
+    if(enabled==readOnlyProbe_) return true;
+    // Current Twin role has no verified physical decoder yet. A connected
+    // probe may become the existing standalone control profile only after its
+    // fresh relationship evidence is established; selection order is no proof.
+    if(!enabled && connected_ && (!accepted_ || !standalone())) return false;
+    cancelWrites("");runtimeTarget_.reset();
+    readOnlyProbe_=enabled;
+    return true;
+}
 void PhysicalSession::connectionChanged(bool connected) {
     if(!connected) selectedAddress_.reset();
     connected_=connected;accepted_=activated_=false; bootstrap_=backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
@@ -186,7 +196,7 @@ bool PhysicalSession::settingsReady() const {
 }
 bool PhysicalSession::controlContextReady() const {
     const auto u=fresh(unit),maximum=fresh(maxForce);
-    return connected_ && accepted_ && standalone() &&
+    return !readOnlyProbe_ && connected_ && accepted_ && standalone() &&
         fresh(workout)==1 && u && (*u==0 || *u==1) && maximum && *maximum>0 &&
         fresh(base).has_value() && fresh(childLock)==0 && updateAllowsControls() && modifiersKnown();
 }
@@ -241,6 +251,17 @@ bool PhysicalSession::twinStatusFresh() const {
 }
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
     if(!connected_) return false;
+    if(readOnlyProbe_) {
+        // Only session authentication and documented read queries can leave a
+        // discovery connection. In particular no parameter/telemetry setup,
+        // workout entry, vendor load, refresh or pairing operation is allowed.
+        const bool handshake=!accepted_ && ((bootstrap_==0 && command==0x4f) ||
+            (bootstrap_==1 && command==0xff) || (bootstrap_==2 && command==0x27));
+        const bool query=command==0x0f || (command==twinStatusCommand && payload.empty()) ||
+            (command==0x74 && payload.empty()) || (command==0x77 && payload.size()==1 && payload[0]<=1) ||
+            (command==0xab && payload==Bytes{1});
+        if(!handshake && !query) return false;
+    }
     if(!accepted_) Serial.printf("%llu VOLTRA bootstrap command %02x\n",static_cast<unsigned long long>(now_),unsigned(command));
     lastWrite_=now_;
     // All three captured bootstrap headers use sequence zero. Ordinary reads
@@ -259,6 +280,7 @@ bool PhysicalSession::read(std::initializer_list<uint16_t> ids) {
     return send(0x0f,b);
 }
 bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
+    if(readOnlyProbe_) return false;
     Bytes b{1,0};append16(b,id);
     for(int i=0;i<bytes;++i) b.push_back(uint8_t(uint32_t(value)>>(i*8)));
     // Numeric control trace only; no handshake identity or device address.
@@ -715,9 +737,10 @@ SessionReadiness PhysicalSession::readiness() const {
     const auto cable=fresh(position),zero=fresh(offset);
     r.cableZero=cable && zero && std::abs(*cable-*zero)<=cableZeroToleranceCm;
     r.twinSafe=standalone();r.minWeightLbs=5;
-    r.ready=accepted_ && activated_ && !unloading() && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
+    r.ready=!readOnlyProbe_ && accepted_ && activated_ && !unloading() && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
         fresh(mountLock)==securedMount && loadSafetyStatusSupported() && fresh(autoLoadStatus)==0;
-    if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
+    if(readOnlyProbe_) r.reason="Checking VOLTRA connection";
+    else if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!activated_) r.reason="Waiting for VOLTRA activation status";
     else if(twinObserved_) r.reason="Use VOLTRA controls";
     else if(!fresh(twin) || !fresh(remoteCoworker) || (values_.count(pairedDevice) && !fresh(pairedDevice))) r.reason="Reading VOLTRA link status; try again";
@@ -739,15 +762,9 @@ SessionReadiness PhysicalSession::readiness() const {
     return r;
 }
 std::string PhysicalSession::diagnosticState() const {
-    std::string text="accepted="+std::to_string(accepted_)+" activated="+std::to_string(activated_);
-    text+=" B4={seen="+std::to_string(runtimeTargetFrames_)+" source="+std::to_string(runtimeTargetSource_)+
-        " bytes="+std::to_string(runtimeTargetBytes_)+" shape="+std::to_string(runtimeTargetShapeValid_)+
-        " targetTenthsLb="+(runtimeTarget_ ? std::to_string(runtimeTarget_->tenthsLb) : "missing")+
-        " ageMs="+(runtimeTarget_ && now_>=runtimeTarget_->at ? std::to_string(now_-runtimeTarget_->at) : "missing")+"}";
+    std::string text="accepted="+std::to_string(accepted_)+" activated="+std::to_string(activated_)+
+        " readOnlyProbe="+std::to_string(readOnlyProbe_)+" currentTwinRole=unknown";
     text+=" directMotor="+(directMotor_ ? std::to_string(directMotor_->value)+"@"+std::to_string(now_>=directMotor_->at ? now_-directMotor_->at : 0)+"ms" : "missing");
-    text+=" phase="+(workoutStatus_ ? std::to_string(*workoutStatus_) : "unknown")+
-        " forceTenthsLb="+std::to_string(motionForce_)+" posMm="+std::to_string(motionPosition_)+
-        " motionAgeMs="+(motionAt_ ? std::to_string(now_>=motionAt_ ? now_-motionAt_ : 0) : "missing");
     text+=" twinLatch="+std::to_string(twinObserved_)+" A7={seen="+std::to_string(twinReplySeen_)+
         " bytes="+std::to_string(twinReplyBytes_)+" accepted="+std::to_string(twinReplyAccepted_)+
         " ownMatch="+std::to_string(twinReplyOwnMatch_)+" state="+(twinStatus_ ? std::to_string(twinStatus_->state) : "unknown")+
@@ -756,14 +773,21 @@ std::string PhysicalSession::diagnosticState() const {
         " ageMs="+(twinStatus_ && now_>=twinStatusAt_ ? std::to_string(now_-twinStatusAt_) : "missing")+"}";
     // Numeric state only. Never include the client identity, BLE address, name,
     // Wi-Fi details, or paired-device identifier (only its presence is retained).
-    for(const auto id:{motor,workout,base,unit,maxForce,position,offset,childLock,otaState,
-                       mountLock,voidLock,autoLoadStatus,autoLoadCountdown,autoLoadEnabled,autoLoadSafetyEnabled,twin,remoteCoworker,pairedDevice,
-                       lastCoworkerRole,peerAutoLoadStatus,liveWireWeight}) {
+    for(const auto id:{motor,workout,twin,remoteCoworker,lastCoworkerRole,peerAutoLoadStatus,maxForce,
+                       base,unit,position,offset,childLock,otaState,mountLock,voidLock,
+                       autoLoadStatus,autoLoadCountdown,autoLoadEnabled,autoLoadSafetyEnabled,pairedDevice,liveWireWeight}) {
         text+=" "+std::to_string(id)+"=";
         const auto it=values_.find(id);
         if(it==values_.end()) text+="missing";
         else text+=std::to_string(it->second.value)+"@"+std::to_string(now_>=it->second.at ? now_-it->second.at : 0)+"ms";
     }
+    text+=" B4={seen="+std::to_string(runtimeTargetFrames_)+" source="+std::to_string(runtimeTargetSource_)+
+        " bytes="+std::to_string(runtimeTargetBytes_)+" shape="+std::to_string(runtimeTargetShapeValid_)+
+        " targetTenthsLb="+(runtimeTarget_ ? std::to_string(runtimeTarget_->tenthsLb) : "missing")+
+        " ageMs="+(runtimeTarget_ && now_>=runtimeTarget_->at ? std::to_string(now_-runtimeTarget_->at) : "missing")+"}";
+    text+=" phase="+(workoutStatus_ ? std::to_string(*workoutStatus_) : "unknown")+
+        " forceTenthsLb="+std::to_string(motionForce_)+" posMm="+std::to_string(motionPosition_)+
+        " motionAgeMs="+(motionAt_ ? std::to_string(now_>=motionAt_ ? now_-motionAt_ : 0) : "missing");
     return text;
 }
 TransportResult PhysicalSession::setWeight(uint16_t pounds) {
@@ -771,6 +795,7 @@ TransportResult PhysicalSession::setWeight(uint16_t pounds) {
     return setTraining(settings);
 }
 TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
+    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if(twinObserved_) {status_="Use VOLTRA controls";return TransportResult::Unsupported;}
     if((!settingsReady() && !liveWeightReady()) || (waitingWrite_ && waitingWrite_->first==motor)) {
@@ -813,6 +838,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     return TransportResult::Accepted;
 }
 TransportResult PhysicalSession::setLiveWeight(int ticks) {
+    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
     if(twinObserved_) {status_="Use VOLTRA controls";return TransportResult::Unsupported;}
     if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) {
         status_=freshDirectMotorMode()==5 ? "Active-set drop unsupported; send debug log" : "Drop blocked: fresh loaded state required";
@@ -857,6 +883,7 @@ void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     modifiers(false);
 }
 TransportResult PhysicalSession::setLoaded(bool loaded) {
+    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
     if(!connected_) return TransportResult::Disconnected;
     if(loaded) {
         const auto ready=readiness();
@@ -882,6 +909,7 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
     return writeParameter(motor,4,2) ? TransportResult::Accepted : TransportResult::Failed;
 }
 TransportResult PhysicalSession::triggerAutoLoad() {
+    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
     const auto ready=readiness();
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if(busy() || !ready.ready || !ready.twinSafe || !settingsReady() || !activated_ ||
@@ -916,6 +944,7 @@ void PhysicalSession::pollState(size_t group) {
     }
 }
 bool PhysicalSession::enterTrainingOnConnect() {
+    if(readOnlyProbe_) return false;
     if(entryHandled_ || busy()) return false;
     const auto mode=fresh(workout),m=freshMotorMode();
     if(!mode || !m) return false;
@@ -940,7 +969,7 @@ void PhysicalSession::tick(uint64_t now) {
     // state must retain the immediately accessible unload target. No retry,
     // automatic mode re-entry, load, or queued settings survives this exit.
     const auto mode=fresh(workout),motorState=freshMotorMode();
-    if(trainingSeen_ && mode && *mode!=1 && motorState && (*motorState==0 || *motorState==4) &&
+    if(!readOnlyProbe_ && trainingSeen_ && mode && *mode!=1 && motorState && (*motorState==0 || *motorState==4) &&
        values_[motor].at>=values_[workout].at) {
         cancelWrites("VOLTRA left Weight Training; reconnect");
         connectionFailure_=true;transport_.disconnect();return;
@@ -1027,7 +1056,7 @@ void PhysicalSession::tick(uint64_t now) {
             // must never invalidate the required core-state response.
             autoLoadCountdownProbed_=true;read({autoLoadCountdown});return;
         }
-        if(!telemetrySubscribed_) {
+        if(!readOnlyProbe_ && !telemetrySubscribed_) {
             Bytes payload{1,0};
             if(telemetrySetup_++==0) {
                 append16(payload,telemetrySubscribe);
@@ -1047,7 +1076,7 @@ void PhysicalSession::tick(uint64_t now) {
             case 5:send(0xab,{1});break;
             case 6:read({chainsPercent,eccentricPercent,legacyChainsPercent,legacyEccentricPercent});break;
             case 7:read({21028,21273,21716,telemetryRate,telemetrySubscribe});break;
-            case 8:send(0xaa,{0x13,1});break; // Captured vendor state refresh, no resistance write.
+            case 8:if(!readOnlyProbe_) send(0xaa,{0x13,1});break; // Captured vendor state refresh, no resistance write.
             case 9:read({lastCoworkerRole});break; // Historical role is diagnostic only.
             case 10:read({peerAutoLoadStatus});break; // Unknown peer enum, no readiness inference.
             }

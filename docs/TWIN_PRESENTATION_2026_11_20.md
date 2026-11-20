@@ -16,6 +16,34 @@ metadata, with availability and freshness reset on restore. That metadata is
 not a decoded live host role or command authorization.
 Names/colors are not protocol identities and must never be hardcoded as roles.
 
+The owner explicitly clarified that either icon must open the actual master for
+any pair. Reusing the first session endpoint does not meet that requirement.
+Publication of v0.4.10 is held; PR10 is a draft. The earlier checked artifact at
+47f5f91 is only a build baseline and is not approved as master autodetection.
+
+The generic selection contract separates a saved discovery candidate from
+current role evidence. Selection uses read-only sessions and waits for fresh
+standalone or current-master evidence before opening training. It can inspect
+the exact identified peer sequentially, without assuming that an unknown local
+role is a follower. Unknown roles must not fall back to the cached candidate.
+Only the simulator has explicit synthetic role fixtures at this stage. The
+physical backend continues to report Unknown; no exclusive current-role decoder
+has been established. This is an intentionally unfinished release, not a claim
+that the user's pair will now resolve or that every Twin firmware is supported.
+
+Read-only probe mode permits the mandatory session handshake and documented
+read queries, blocks motor/settings writes and automatic workout entry, and
+survives transport resets. Selection checks no more than two exact saved/scanned
+endpoints, validates reciprocal identity after switching, and fails without
+opening a follower or unknown role. Current role/topology loss revokes a resolved
+Twin route and cancels pending intent; it cannot select a new master by fallback.
+No role, readiness or resistance intent is saved. Ordinary stale standalone
+readback retains the established unload path; it cannot authorize a new load.
+Any future physical role decoder must bind its evidence to the current matched
+pair identity/epoch and clear it on changes; merely fresh role and topology
+timestamps are not sufficient. Exact positive host motor captures are not an
+exclusive role decoder for all firmware and were not installed as one.
+
 The pair's two-pound combined-LB increment is supported by the published
 per-unit one-pound setting encoding. A minimum adjustment step is separate from
 the minimum selectable base resistance and the effective maximum. Never double

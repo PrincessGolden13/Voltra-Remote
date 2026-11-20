@@ -2,6 +2,9 @@
 
 November 20 v0.4.10: [one paired control and quieter screens](TWIN_PRESENTATION_2026_11_20.md)
 and [reported target-resistance correction](LIVE_TARGET_SOURCE_2026_11_20.md).
+UNRELEASED: the owner requires actual current-master resolution for every pair.
+The physical decoder remains unavailable; PR10 stays draft and publication is held.
+The later generic router is checked with explicit synthetic roles only.
 PASS: existing offline core/packet inspector build and pinned Ryan validators
 (203 SDK packets, weight5..230,593 modifier packets, SDK identity consistency).
 Four published CRC-valid independent B4 captures decode a6LB reported target;
@@ -14,6 +17,28 @@ Live renders at all three sizes cover reported28 versusBASE25, zero, absent,
 stale-- andKG. These are offline visual/source checks, not physical compatibility.
 Independent static review checks pair navigation versus current authorization,
 absolute two-pound grids, target context/freshness and rollback-readable storage.
+PASS: actual DesktopDeviceMemory preview across separate processes restores one
+pair, with connection/readback/freshness/readiness absent; either side selects the
+same candidate. Subsequent role-aware LVGL previews use Orchid/Slate aliases with
+no pair catalog: follower-first probes follower then master read-only, master-first
+probes master, Unknown probes each endpoint once and fails, and Cancel disconnects.
+At360/466/480 only fresh explicit synthetic Master reaches training. These previews
+do not establish a physical role decoder or authorize any physical Twin command.
+PASS: independent static review of the later role-aware framework checks bounded
+reciprocal probes, dynamic readiness, cancellation, the physical query allowlist,
+no automatic workout entry during discovery, and the mock's role/identity guard
+before queued mutation. Physical role stays Unknown and cannot promote a Twin.
+PASS baseline only: [CI44763541029](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44763541029)
+at47f5f911e649db300825581e7919c5e7be0b756d builds both public images and packaging.
+Artifact14643255564 digest matches
+`c8e9ede972fcd9ed88b0a087ffd45a6b66b73a141b690716a54075c773105ae1`;
+Normal1,977,088bytes SHA-256
+`9bcaccceb3445dcaa3aa97858a1dbacb20cf92f781a62763f176f2a93962bf65`,
+Simulator1,006,144bytes SHA-256
+`77d65850155b7341205b3a20058f09f48954b562a739016db3b3e380e8522e80`.
+Descriptors, manifest, USB hashes/offsets/partition map, USB/OTA equality, backend
+isolation and strong NVS/rollback hooks pass. This artifact predates the subsequent
+role-aware router/probe changes and is not approved as master autodetection.
 Physical Twin adjustment/load/unload remains unresolved. The latest stored Twin
 report still predatesv0.4.9, and A003, peer safety and a scoped combined maximum
 remain unknown. Device-reported B4 target compatibility and exact agreement with

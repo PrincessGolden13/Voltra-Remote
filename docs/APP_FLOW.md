@@ -5,6 +5,11 @@
 > technical host/peer banner. Absolute combined-LB settings use a two-pound grid.
 > See TWIN_PRESENTATION_2026_11_20.md. Live uses separate reported target resistance,
 > superseding the v0.4.9 runtime-wire source; see LIVE_TARGET_SOURCE_2026_11_20.md.
+> The owner subsequently requires actual-master resolution for any pair. Saved
+> endpoint/scan order/names cannot choose that role. Keep selection read-only and
+> defer training until fresh master or standalone evidence; unknown must not enter
+> a follower's settings. Physical master discovery is unresolved and v0.4.10
+> remains unpublished until that requirement is met.
 >
 > November 18 hold/load follow-up: ordinary hold actions use capture-time press
 > duration on release, preserving the six-second debug-only gesture. Show no

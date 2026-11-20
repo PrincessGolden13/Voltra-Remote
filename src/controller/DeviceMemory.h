@@ -12,7 +12,8 @@ struct DeviceEntry {
     // Storage may retain IDs/names, but freshness/availability always restart false.
     DeviceId twinPeerId{};
     bool twinFresh = false, twinPeerAvailable = false;
-    // One navigation endpoint for the observed pair; not current role/readiness.
+    // One cached discovery candidate for the observed pair; never a current
+    // master-role claim or permission to open training controls.
     DeviceId twinSelectionId{};
 };
 class DeviceMemory {

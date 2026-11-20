@@ -16,6 +16,8 @@ public:
                     std::optional<std::array<uint8_t,6>> helloIdentity = {});
     void connectionChanged(bool) override;
     void setSelectedAddress(std::string) override;
+    bool setReadOnlyProbe(bool) override;
+    bool readOnlyProbe() const override { return readOnlyProbe_; }
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
@@ -72,6 +74,7 @@ private:
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
+    bool readOnlyProbe_=false; // Connection reset must preserve explicit probe intent.
     bool bootstrapWriteJustCompleted_=false;
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;
