@@ -11,6 +11,10 @@ namespace {
 constexpr uint16_t base=0x3e86, chains=0x3e87, eccentric=0x3e88, motor=0x3e89, workout=0x4fb0;
 constexpr uint16_t position=0x3e82, offset=0x506a, unit=20590, twin=20844, maxForce=21268;
 constexpr uint16_t remoteCoworker=21023, pairedDevice=21605;
+constexpr uint16_t lastCoworkerRole=21560,peerAutoLoadStatus=21569;
+// Device catalog: signed whole-pound wire weight. Its Twin scope is unverified.
+constexpr uint16_t liveWireWeight=0x3e83;
+constexpr uint64_t liveWeightPollIntervalMs=250,liveWeightFreshMs=500;
 constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentricPercent=21456;
 // kirby6365/voltra_remote 8e1ea1c: polled uint8 switches, absent from older CSV.
 constexpr uint16_t mountain=0x556f, accessoryDisplayPercent=0x5569;
@@ -83,7 +87,8 @@ int width(uint16_t id) {
     case 0x5103: case 0x5106: case 0x538d: case 0x53c7: case 0x53c9: case 0x53c6:
     case 0x5182: case 0x53b6: case 0x52e3: case 0x52ca: case 0x5102: case 0x4ee1:
     case 21007: case 21424: case 21272: case 21273: case 21716: case 20642:
-    case mountain: case accessoryDisplayPercent: case autoUnloadHoldTime: return 1;
+    case mountain: case accessoryDisplayPercent: case autoUnloadHoldTime:
+    case lastCoworkerRole: case peerAutoLoadStatus: return 1;
     case 0x3e82: case 0x3e83: case 0x3e86: case 0x3e87: case 0x3e88: case 0x3e89:
     case 0x506a: case 21268: case 21476: case 21534: case 0x53c8: case 20873: case 20874:
     case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377:
@@ -102,14 +107,21 @@ PhysicalSession::PhysicalSession(BleTransport& transport,const std::array<uint8_
     if(helloIdentity) helloIdentity_=*helloIdentity;
     else std::copy_n(identity.begin(),helloIdentity_.size(),helloIdentity_.begin());
 }
+void PhysicalSession::setSelectedAddress(std::string address) {
+    selectedAddress_=parseDeviceAddress(address);
+}
 void PhysicalSession::connectionChanged(bool connected) {
+    if(!connected) selectedAddress_.reset();
     connected_=connected;accepted_=activated_=false; bootstrap_=backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
     values_.clear();directMotor_.reset();seen_.clear();report_={};firmware_.clear();
+    twinStatus_.reset();twinStatusAt_=twinTopologyAt_=twinPollAt_=0;
+    twinObserved_=twinReplyOwnMatch_=twinReplyAccepted_=twinReplySeen_=false;twinReplyBytes_=0;
     pairedReadSupported_=autoUnloadReadSupported_=false;
     autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
+    liveWeightProbed_=liveWeightReadSupported_=false;liveWeightPollAt_=0;
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
     trainingSeen_=false;
@@ -217,8 +229,12 @@ bool PhysicalSession::standalone() const {
     // require its fresh absence too; never let expiry erase a known relationship.
     // No historical role, active Twin routing or load authorization is inferred.
     const auto paired=values_.find(pairedDevice);
-    return fresh(twin)==0 && fresh(remoteCoworker)==0 &&
+    return !twinObserved_ && fresh(twin)==0 && fresh(remoteCoworker)==0 &&
         (paired==values_.end() || fresh(pairedDevice)==0);
+}
+bool PhysicalSession::twinStatusFresh() const {
+    return connected_ && accepted_ && twinStatus_ && twinReplyAccepted_ &&
+        now_>=twinStatusAt_ && now_-twinStatusAt_<=stateFreshMs;
 }
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
     if(!connected_) return false;
@@ -235,7 +251,19 @@ bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,u
     return true;
 }
 bool PhysicalSession::read(std::initializer_list<uint16_t> ids) {
-    Bytes b; append16(b,uint16_t(ids.size())); for(auto id:ids) append16(b,id); return send(0x0f,b);
+    const auto contains=[&](uint16_t id){return std::find(ids.begin(),ids.end(),id)!=ids.end();};
+    const bool isolatedProbe=ids.size()==1 &&
+        (contains(pairedDevice) || contains(autoUnloadHoldTime) || contains(autoLoadCountdown) ||
+         contains(lastCoworkerRole) || contains(peerAutoLoadStatus));
+    // Once the optional read has succeeded, carry the live value alongside
+    // ordinary loaded-state reads. Separate optional probes remain isolated;
+    // no additional round trip competes with the critical group deadlines.
+    const bool appendLive=accepted_ && standalone() && report_.loadStateKnown && report_.loaded &&
+        liveWeightReadSupported_ && !contains(liveWireWeight) && !isolatedProbe;
+    Bytes b; append16(b,uint16_t(ids.size()+(appendLive ? 1 : 0)));
+    for(auto id:ids) append16(b,id);
+    if(appendLive) append16(b,liveWireWeight);
+    return send(0x0f,b);
 }
 bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
     Bytes b{1,0};append16(b,id);
@@ -290,6 +318,40 @@ void PhysicalSession::apply(const Frame& f) {
         return;
     }
     if(!accepted_) return;
+    if(f.command==twinStatusCommand) {
+        const auto decoded=decodeTwinStatus(f);
+        const bool previousAccepted=twinReplyAccepted_,previousSeen=twinReplySeen_;
+        const bool previousFresh=twinStatusFresh();
+        const size_t previousBytes=twinReplyBytes_;
+        twinReplySeen_=true;
+        twinReplyBytes_=p.size();
+        twinReplyOwnMatch_=decoded && selectedAddress_ && decoded->own==*selectedAddress_;
+        twinReplyAccepted_=decoded && twinReplyOwnMatch_;
+        // A fully decoded non-alone indication contradicts standalone safety
+        // even when its identity cannot be trusted. Quarantine controls without
+        // accepting that identity, topology or combined readback scope.
+        if(decoded && decoded->state!=twinStatusAlone) {
+            if(!twinObserved_ && !twinReplyOwnMatch_)
+                diagnostic("Twin indication quarantined state="+std::to_string(decoded->state)+" ownMatch=0");
+            twinObserved_=true;
+        }
+        if(twinReplyAccepted_) {
+            const bool changed=!previousFresh || !twinStatus_ || decoded->state!=twinStatus_->state || decoded->peer!=twinStatus_->peer;
+            if(changed)
+                twinTopologyAt_=now_;
+            twinStatus_=decoded;twinStatusAt_=now_;
+            if(changed || !previousAccepted) diagnostic("Twin status="+std::to_string(decoded->state)+
+                " ownMatch=1 peerPresent="+std::to_string(decoded->peerPresent));
+        } else {
+            // Invalid or wrong-device topology invalidates the previous live
+            // proof without erasing the connection's detected-Twin latch.
+            twinStatus_.reset();
+            if(!previousSeen || previousAccepted || previousBytes!=p.size())
+                diagnostic("Twin status rejected bytes="+std::to_string(p.size())+
+                    " shape="+std::to_string(bool(decoded))+" ownMatch="+std::to_string(twinReplyOwnMatch_));
+        }
+        updateReport();return;
+    }
     if(f.command==0xaa) {applyTelemetry(f);return;}
     if(f.command==0xab && p.size()>=2 && p[0]==0) {
         if(activated_!=(p[1]==1)) Serial.printf("VOLTRA activation %u\n",unsigned(p[1]));
@@ -330,8 +392,9 @@ void PhysicalSession::apply(const Frame& f) {
         pairedReadSupported_=pairedReadSupported_ || decoded.count(pairedDevice)!=0;
         autoUnloadReadSupported_=autoUnloadReadSupported_ || decoded.count(autoUnloadHoldTime)!=0;
         autoLoadCountdownSupported_=autoLoadCountdownSupported_ || decoded.count(autoLoadCountdown)!=0;
+        liveWeightReadSupported_=liveWeightReadSupported_ || decoded.count(liveWireWeight)!=0;
     }
-    bool acknowledgedMagic=false,acknowledgedEccentric=false,motorObserved=false;
+    bool acknowledgedMagic=false,acknowledgedEccentric=false,motorObserved=false,pairedPresenceLost=false;
     for(const auto& pair:decoded) {
         if(pair.first==motor) {
             if(f.command==0x0f) directMotor_=Observed{pair.second,now_};
@@ -348,7 +411,11 @@ void PhysicalSession::apply(const Frame& f) {
         }
         const auto previous=values_.find(pair.first);
         const bool changed=previous==values_.end() || previous->second.value!=pair.second;
+        if(pair.first==pairedDevice && previous!=values_.end() && previous->second.value!=0 && pair.second==0)
+            pairedPresenceLost=true;
         values_[pair.first]={pair.second,now_};
+        if((pair.first==twin || pair.first==remoteCoworker || pair.first==pairedDevice) && pair.second!=0)
+            twinObserved_=true;
         // Only normalized parameter values; never serial numbers or BLE identities.
         if(changed && pair.first==pairedDevice) Serial.printf("VOLTRA paired endpoint present = %u\n",unsigned(pair.second!=0));
         else if(changed) Serial.printf("VOLTRA param %u = %lld\n",unsigned(pair.first),static_cast<long long>(pair.second));
@@ -362,6 +429,23 @@ void PhysicalSession::apply(const Frame& f) {
                 acknowledgedEccentric=acknowledgedEccentric || pair.first==eccentric || pair.first==percentParameter(false);
                 waitingWrite_.reset();
             }
+        }
+    }
+    if(twinStatus_ && (decoded.count(twin) || decoded.count(remoteCoworker) || decoded.count(pairedDevice))) {
+        // A newer coherent absence report contradicts a cached paired A7.
+        // Conversely, newly positive relationship evidence contradicts A7's
+        // alone state. Quarantine the scope until another matched full A7 and
+        // subsequent weight/unit reads; never double a new standalone value
+        // using an older, still-young paired snapshot.
+        const bool coherentAbsence=fresh(twin)==0 && fresh(remoteCoworker)==0 &&
+            values_[twin].at>=twinStatusAt_ && values_[remoteCoworker].at>=twinStatusAt_;
+        const bool positiveRelationship=(decoded.count(twin) && decoded.at(twin)!=0) ||
+            (decoded.count(remoteCoworker) && decoded.at(remoteCoworker)!=0) ||
+            (decoded.count(pairedDevice) && decoded.at(pairedDevice)!=0);
+        if((twinStatus_->state!=twinStatusAlone && coherentAbsence) ||
+           (twinStatus_->state==twinStatusAlone && positiveRelationship) || pairedPresenceLost) {
+            twinStatus_.reset();twinReplyAccepted_=false;twinTopologyAt_=now_;
+            diagnostic("Twin topology quarantined: newer relationship state");
         }
     }
     // Evaluate motor confirmation after the whole response: the map visits
@@ -434,61 +518,56 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     }
     updateReport();
 }
-void PhysicalSession::updateReport() {
-    const auto w=fresh(base),rawMotor=fresh(motor),m=freshMotorMode(),mode=fresh(workout),u=fresh(unit);
-    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) {report_={};return;}
-    // Ryan dff6227 documents readback 0/1, distinct from write commands 4/5.
-    // The October 18 unloaded capture reports 0. Retain recognized legacy
-    // report values, but never turn an unknown value into an unloaded state.
-    const auto autoState=fresh(autoLoadStatus);
-    const bool knownAuto=m==autoLoadMotorMode && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
-    if(*mode!=1 || !m || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
-        // A newly unknown/non-training mode must invalidate the previous report
-        // immediately. The weight target then remains an unconditional unload,
-        // rather than treating an unrecognized motor state as confirmed unloaded.
-        report_={};
-        if(!commandFailed_) status_=*mode!=1 ?
-            (waitingWrite_ && waitingWrite_->first==workout ? "Opening Weight Training..." :
-             !entryHandled_ ? "Preparing Weight Training..." : "Weight Training inactive") :
-            "Unknown motor state / tap to unload";
-        return;
+void PhysicalSession::updateReadback() {
+    const bool topologyFresh=twinStatusFresh();
+    const bool paired=topologyFresh && twinStatus_->state==twinStatusPaired;
+    const bool single=standalone();
+    report_.twinDetected=twinObserved_;
+    report_.twinStatusFresh=topologyFresh;
+    report_.twinAtMs=twinStatus_ ? twinStatusAt_ : 0;
+    if(twinStatus_) {
+        report_.twinLinkState=twinStatus_->state;
+        if(twinStatus_->peerPresent) report_.twinPeerAddress=formatDeviceAddress(twinStatus_->peer);
+        if(topologyFresh) report_.twinPeerBattery=twinStatus_->peerBattery;
     }
-    report_.unit=*u==0 ? WeightUnit::Pounds : WeightUnit::Kilograms;
-    trainingSeen_=true;
+    report_.twin=paired;
+    report_.twinKnown=paired || single;
     report_.firmwareVersion=firmware_;
-    report_.settings.weight=convertWeightUnits(int(*w),WeightUnit::Pounds,report_.unit);
-    const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==autoLoadComplete);
-    if(loaded && !report_.loaded) {
-        deviceSet_.reset();deviceRep_.reset();repSet_.reset();completedRep_=0;
-        repAt_=motionAt_=0;motionRevision_=repRevision_=0;
+    const auto w=fresh(base),u=fresh(unit);
+    if(!connected_ || !accepted_ || !w || !u || (*u!=0 && *u!=1)) return;
+    report_.unit=*u==0 ? WeightUnit::Pounds : WeightUnit::Kilograms;
+    const auto weightsAt=std::min(values_[base].at,values_[unit].at);
+    report_.readbackAtMs=weightsAt;
+    // The paired scope must have been observed before these weight/unit values.
+    // A topology refresh with identical endpoints does not change its scope.
+    report_.combinedWeightKnown=paired && weightsAt>twinTopologyAt_;
+    report_.readbackKnown=single || report_.combinedWeightKnown;
+    // Presentation expires with the oldest evidence defining the weight's
+    // scope, including between protocol packets. Newer amounts cannot extend
+    // an older A7 pair proof or the current standalone relationship evidence.
+    if(paired) report_.readbackAtMs=std::min(weightsAt,twinStatusAt_);
+    else if(single) {
+        report_.readbackAtMs=std::min({weightsAt,values_[twin].at,values_[remoteCoworker].at});
+        if(const auto endpoint=values_.find(pairedDevice);endpoint!=values_.end())
+            report_.readbackAtMs=std::min(report_.readbackAtMs,endpoint->second.at);
     }
-    report_.loaded=loaded;report_.autoLoadArmed=*m==38 || (knownAuto && *autoState!=autoLoadComplete);
-    report_.autoLoadPhase.reset();report_.autoLoadCountdownMs.reset();report_.autoLoadCountdownAtMs=0;
-    if(knownAuto || (*m==38 && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete))
-        report_.autoLoadPhase=int(*autoState);
-    const auto countdown=values_.find(autoLoadCountdown);
-    if(report_.autoLoadArmed && report_.autoLoadPhase==12 && countdown!=values_.end() &&
-       countdown->second.at>=values_[autoLoadStatus].at &&
-       now_>=countdown->second.at && now_-countdown->second.at<=autoLoadCountdownFreshMs &&
-       countdown->second.value>=0 && countdown->second.value<=autoLoadCountdownMaximumMs) {
-        report_.autoLoadCountdownMs=int(countdown->second.value);report_.autoLoadCountdownAtMs=countdown->second.at;
-    }
-    // This profile recognizes only verified absence, never active Twin roles,
-    // peer readiness, combined limits or routing.
-    report_.twinKnown=standalone();report_.twin=false;
-    WeightLimitEvidence limits;limits.model="VOLTRA I";limits.firmware=firmware_;
-    limits.twinKnown=report_.twinKnown;limits.twin=report_.twin;
-    if(const auto max=fresh(maxForce)) limits.single.pounds=int(*max);
-    report_.maxWeight=resolveWeightLimit(limits,report_.unit).ticks;
-    report_.minWeight=report_.twinKnown ? voltraISingleMinimum(report_.unit) : 0;
+    const int units=report_.combinedWeightKnown ? 2 : 1;
+    report_.settings.weight=convertWeightUnits(int(*w)*units,WeightUnit::Pounds,report_.unit);
     report_.settings.magicMode=fresh(mountain)==1 ? MagicMode::Mountain :
         fresh(inverse)==1 ? MagicMode::InverseChains : MagicMode::Chains;
     const auto c=fresh(chains),e=fresh(eccentric);
-    report_.settings.magic={c && *c>0,c ? convertWeightUnits(int(*c),WeightUnit::Pounds,report_.unit) : 0,false};
-    report_.settings.eccentric={e && *e>0,e ? convertWeightUnits(int(*e),WeightUnit::Pounds,report_.unit) : 0,false};
-    const bool modifiers=modifiersKnown();
-    // Only the pair selected by 0x5569 is authoritative. Writing the derived
-    // pair can briefly echo success and then revert (upstream capture 8e1ea1c).
+    report_.settings.magic={c && *c>0,c ? convertWeightUnits(int(*c)*units,WeightUnit::Pounds,report_.unit) : 0,false};
+    report_.settings.eccentric={e && *e>0,e ? convertWeightUnits(int(*e)*units,WeightUnit::Pounds,report_.unit) : 0,false};
+    bool modifiers=report_.readbackKnown && modifiersKnown();
+    if(modifiers && paired) {
+        // A peer/topology change invalidates the scope of cached modifier
+        // amounts and their interpretation, even while their age is short.
+        for(const auto id:{chains,eccentric,inverse,extraMode,mountain,accessoryDisplayPercent})
+            modifiers=modifiers && values_[id].at>twinTopologyAt_;
+        if(fresh(accessoryDisplayPercent)==1)
+            for(const auto id:{chainsPercent,eccentricPercent})
+                modifiers=modifiers && values_[id].at>twinTopologyAt_;
+    }
     report_.percentageSupported=modifiers;
     report_.modifierUnitsSelectable=modifiers;
     report_.sharedModifierUnits=true;
@@ -499,7 +578,56 @@ void PhysicalSession::updateReport() {
         report_.settings.eccentric.enabled=report_.settings.eccentric.value>0;
     }
     report_.magicSupported={modifiers,modifiers,modifiers};report_.eccentricSupported=modifiers;
-    report_.autoLoadSupported=fresh(autoLoadEnabled)==1 && fresh(autoLoadSafetyEnabled)==1;
+}
+void PhysicalSession::updateReport() {
+    const bool wasLoaded=report_.loadStateKnown && report_.loaded;
+    report_={};
+    updateReadback();
+    if(report_.twinDetected && !commandFailed_) status_="Twin controls need verified host/peer/motor state";
+    const auto w=fresh(base),rawMotor=fresh(motor),m=freshMotorMode(),mode=fresh(workout),u=fresh(unit);
+    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) return;
+    // Ryan dff6227 documents readback 0/1, distinct from write commands 4/5.
+    // The October 18 unloaded capture reports 0. Retain recognized legacy
+    // report values, but never turn an unknown value into an unloaded state.
+    const auto autoState=fresh(autoLoadStatus);
+    const bool knownAuto=m==autoLoadMotorMode && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete;
+    if(*mode!=1 || !m || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
+        // A newly unknown/non-training mode must invalidate the previous report
+        // immediately. The weight target then remains an unconditional unload,
+        // rather than treating an unrecognized motor state as confirmed unloaded.
+        if(!commandFailed_) status_=*mode!=1 ?
+            (waitingWrite_ && waitingWrite_->first==workout ? "Opening Weight Training..." :
+             !entryHandled_ ? "Preparing Weight Training..." : "Weight Training inactive") :
+            report_.twinDetected ? "Twin controls need verified host/peer/motor state" : "Unknown motor state / tap to unload";
+        return;
+    }
+    trainingSeen_=true;
+    report_.loadStateKnown=standalone();
+    const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==autoLoadComplete);
+    if(report_.loadStateKnown && loaded && !wasLoaded) {
+        deviceSet_.reset();deviceRep_.reset();repSet_.reset();completedRep_=0;
+        repAt_=motionAt_=0;motionRevision_=repRevision_=0;
+    }
+    report_.loaded=report_.loadStateKnown && loaded;
+    report_.autoLoadArmed=report_.loadStateKnown && (*m==38 || (knownAuto && *autoState!=autoLoadComplete));
+    report_.autoLoadPhase.reset();report_.autoLoadCountdownMs.reset();report_.autoLoadCountdownAtMs=0;
+    if(knownAuto || (*m==38 && autoState && *autoState>=autoLoadWaiting && *autoState<=autoLoadComplete))
+        report_.autoLoadPhase=int(*autoState);
+    const auto countdown=values_.find(autoLoadCountdown);
+    if(report_.autoLoadArmed && report_.autoLoadPhase==12 && countdown!=values_.end() &&
+       countdown->second.at>=values_[autoLoadStatus].at &&
+       now_>=countdown->second.at && now_-countdown->second.at<=autoLoadCountdownFreshMs &&
+       countdown->second.value>=0 && countdown->second.value<=autoLoadCountdownMaximumMs) {
+        report_.autoLoadCountdownMs=int(countdown->second.value);report_.autoLoadCountdownAtMs=countdown->second.at;
+    }
+    // Only the unchanged standalone profile has control limits. A paired
+    // readback is not evidence of peer safety, current role or combined limits.
+    WeightLimitEvidence limits;limits.model="VOLTRA I";limits.firmware=firmware_;
+    limits.twinKnown=standalone();limits.twin=false;
+    if(const auto max=fresh(maxForce)) limits.single.pounds=int(*max);
+    report_.maxWeight=resolveWeightLimit(limits,report_.unit).ticks;
+    report_.minWeight=standalone() ? voltraISingleMinimum(report_.unit) : 0;
+    report_.autoLoadSupported=standalone() && fresh(autoLoadEnabled)==1 && fresh(autoLoadSafetyEnabled)==1;
     report_.autoUnloadHoldSeconds.reset();
     if(const auto delay=fresh(autoUnloadHoldTime); delay && *delay>=0 && *delay<=10)
         report_.autoUnloadHoldSeconds=int(*delay);
@@ -523,7 +651,12 @@ void PhysicalSession::updateReport() {
     report_.moving=live && std::abs(motionVelocity_)>stationarySpeedMmPerSec;
     report_.held=live && !report_.moving && fresh(offset) &&
         motionPosition_>=*fresh(offset)*10+heldExtensionMm && motionForce_>=heldForceTenthsLb;
-    report_.force=live ? std::optional<int>(int(std::lround(convertedWeightTicks(motionForce_,WeightUnit::Pounds,report_.unit)/10.0))) : std::optional<int>{};
+    report_.force=standalone() && live ? std::optional<int>(int(std::lround(convertedWeightTicks(motionForce_,WeightUnit::Pounds,report_.unit)/10.0))) : std::optional<int>{};
+    const auto wireWeight=values_.find(liveWireWeight);
+    if(standalone() && report_.loaded && liveWeightReadSupported_ && wireWeight!=values_.end() &&
+       now_>=wireWeight->second.at && now_-wireWeight->second.at<=liveWeightFreshMs) {
+        report_.liveWeightLbs=int(wireWeight->second.value);report_.liveWeightAtMs=wireWeight->second.at;
+    }
     // Rest-time register semantics have not been verified on this firmware.
     report_.restSeconds.reset();
     // Capability describes the source-backed base-register path. Execution also
@@ -535,8 +668,9 @@ void PhysicalSession::updateReport() {
     // curve/unit switches and motor reassertion remain excluded.
     report_.liveModifierAmountsSupported=report_.liveWeightSupported;
     report_.receivedAtMs=std::min({values_[base].at,values_[motor].at,values_[workout].at,values_[unit].at});
-    report_.revision=++reportRevision_;
+    report_.revision=standalone() ? ++reportRevision_ : 0;
     if(!busy() && !commandFailed_) status_=settingsReady() || liveWeightReady() ? "" :
+        report_.twinDetected ? "Twin controls need verified host/peer/motor state" :
         !updateAllowsControls() ? updateBlockReason() : freshDirectMotorMode()==5 ? "Active-set weight change unsupported; send debug log" :
         report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
 }
@@ -555,8 +689,9 @@ SessionReadiness PhysicalSession::readiness() const {
         fresh(mountLock)==securedMount && loadSafetyStatusSupported() && fresh(autoLoadStatus)==0;
     if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!activated_) r.reason="Waiting for VOLTRA activation status";
+    else if(twinObserved_) r.reason="Twin controls need verified host/peer/motor state";
     else if(!fresh(twin) || !fresh(remoteCoworker) || (values_.count(pairedDevice) && !fresh(pairedDevice))) r.reason="Reading VOLTRA link status; try again";
-    else if(!standalone()) r.reason="Twin/link state unsupported; send debug log";
+    else if(!standalone()) r.reason="Twin controls need verified host/peer/motor state";
     else if(!updateAllowsControls()) r.reason=updateBlockReason();
     else if(fresh(childLock)!=0) r.reason="Check VOLTRA child lock";
     else if(!settingsReady()) r.reason="Control state unavailable";
@@ -579,10 +714,17 @@ std::string PhysicalSession::diagnosticState() const {
     text+=" phase="+(workoutStatus_ ? std::to_string(*workoutStatus_) : "unknown")+
         " forceTenthsLb="+std::to_string(motionForce_)+" posMm="+std::to_string(motionPosition_)+
         " motionAgeMs="+(motionAt_ ? std::to_string(now_>=motionAt_ ? now_-motionAt_ : 0) : "missing");
+    text+=" twinLatch="+std::to_string(twinObserved_)+" A7={seen="+std::to_string(twinReplySeen_)+
+        " bytes="+std::to_string(twinReplyBytes_)+" accepted="+std::to_string(twinReplyAccepted_)+
+        " ownMatch="+std::to_string(twinReplyOwnMatch_)+" state="+(twinStatus_ ? std::to_string(twinStatus_->state) : "unknown")+
+        " peerPresent="+std::to_string(twinStatus_ && twinStatus_->peerPresent)+
+        " peerBattery="+(twinStatus_ && twinStatus_->peerBattery ? std::to_string(*twinStatus_->peerBattery) : "unknown")+
+        " ageMs="+(twinStatus_ && now_>=twinStatusAt_ ? std::to_string(now_-twinStatusAt_) : "missing")+"}";
     // Numeric state only. Never include the client identity, BLE address, name,
     // Wi-Fi details, or paired-device identifier (only its presence is retained).
     for(const auto id:{motor,workout,base,unit,maxForce,position,offset,childLock,otaState,
-                       mountLock,voidLock,autoLoadStatus,autoLoadCountdown,autoLoadEnabled,autoLoadSafetyEnabled,twin,remoteCoworker,pairedDevice}) {
+                       mountLock,voidLock,autoLoadStatus,autoLoadCountdown,autoLoadEnabled,autoLoadSafetyEnabled,twin,remoteCoworker,pairedDevice,
+                       lastCoworkerRole,peerAutoLoadStatus,liveWireWeight}) {
         text+=" "+std::to_string(id)+"=";
         const auto it=values_.find(id);
         if(it==values_.end()) text+="missing";
@@ -596,6 +738,7 @@ TransportResult PhysicalSession::setWeight(uint16_t pounds) {
 }
 TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
+    if(twinObserved_) {status_="Twin controls need verified host/peer/motor state";return TransportResult::Unsupported;}
     if((!settingsReady() && !liveWeightReady()) || (waitingWrite_ && waitingWrite_->first==motor)) {
         status_=!updateAllowsControls() ? updateBlockReason() : "Unload / wait for fresh control state";return TransportResult::Unsupported;
     }
@@ -633,6 +776,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     return TransportResult::Accepted;
 }
 TransportResult PhysicalSession::setLiveWeight(int ticks) {
+    if(twinObserved_) {status_="Twin controls need verified host/peer/motor state";return TransportResult::Unsupported;}
     if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) {
         status_=freshDirectMotorMode()==5 ? "Active-set drop unsupported; send debug log" : "Drop blocked: fresh loaded state required";
         diagnostic(status_);
@@ -688,6 +832,12 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
     }
     // Explicit unload remains available even if state is unknown or another request is pending.
     entryHandled_=true; // Cancel any connection-time mode entry too.
+    if(twinObserved_) {
+        // A single-unit unload can affect only one member; no verified host
+        // route or paired unload is available in this read-only Twin profile.
+        cancelWrites("Use VOLTRA to unload Twin; remote role unverified");
+        return TransportResult::Unsupported;
+    }
     cancelWrites("");
     status_="Unloading; wait for device confirmation";
     return writeParameter(motor,4,2) ? TransportResult::Accepted : TransportResult::Failed;
@@ -787,6 +937,11 @@ void PhysicalSession::tick(uint64_t now) {
             pollState(size_t(oldest-pollAt_.begin()));return;
         }
         if(enterTrainingOnConnect()) return;
+        // EP_STATUS is topology-only. Run behind critical group deadlines;
+        // an unsupported request must not monopolize the state scheduler.
+        if(!twinPollAt_ || now_-twinPollAt_>=criticalPollIntervalMs) {
+            twinPollAt_=now_;send(twinStatusCommand,{});return;
+        }
         // Follow the device's countdown without starving the critical groups
         // above. This emits reads only, never a resistance trigger or retry.
         const bool followingAuto=report_.autoLoadArmed || (waitingWrite_ && waitingWrite_->first==motor && waitingWrite_->second==38);
@@ -824,6 +979,13 @@ void PhysicalSession::tick(uint64_t now) {
             return;
         }
         if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();liveBefore_.reset();}
+        if(!liveWeightProbed_) {
+            liveWeightProbed_=true;read({liveWireWeight});return;
+        }
+        if(standalone() && report_.loadStateKnown && report_.loaded && liveWeightReadSupported_ &&
+           now_-liveWeightPollAt_>=liveWeightPollIntervalMs) {
+            liveWeightPollAt_=now_;read({liveWireWeight});return;
+        }
         if(!autoLoadCountdownProbed_) {
             // Probe optional display telemetry alone; an unsupported register
             // must never invalidate the required core-state response.
@@ -840,7 +1002,7 @@ void PhysicalSession::tick(uint64_t now) {
             send(0x11,payload);return; // Notification selection only; no load/settings replay.
         }
         if(backgroundRead_++%2) {
-            switch(infoRead_++%9) {
+            switch(infoRead_++%11) {
             case 0:read({pairedDevice});break;
             case 1:read({autoUnloadHoldTime});break;
             case 2:send(0x74,{});break;
@@ -850,6 +1012,8 @@ void PhysicalSession::tick(uint64_t now) {
             case 6:read({chainsPercent,eccentricPercent,legacyChainsPercent,legacyEccentricPercent});break;
             case 7:read({21028,21273,21716,telemetryRate,telemetrySubscribe});break;
             case 8:send(0xaa,{0x13,1});break; // Captured vendor state refresh, no resistance write.
+            case 9:read({lastCoworkerRole});break; // Historical role is diagnostic only.
+            case 10:read({peerAutoLoadStatus});break; // Unknown peer enum, no readiness inference.
             }
         } else pollState(0);
     }

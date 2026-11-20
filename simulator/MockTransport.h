@@ -34,6 +34,9 @@ public:
     void previewUnit(WeightUnit); // Render-only unit-specific limit/layout preview.
     void previewWeight(int ticks); // Render-only base/envelope layout preview.
     void previewAutoUnload(int seconds); // Synthetic read-only config, not a motor simulation.
+    // Render-only device readback, independent of selected base/modifier settings.
+    // Unset means unavailable; age can demonstrate stale live data with fresh core.
+    void previewLiveWeight(std::optional<int> pounds,uint64_t ageMs=0);
     void completeRep();
     void setHeld(bool held);
     void ignoreNextRequest() { ignoreNext_ = true; }
@@ -44,6 +47,9 @@ private:
     TrainingReport reported_;
     std::optional<TrainingSettings> pendingSettings_;
     bool pendingAuto_ = false, ignoreNext_ = false;
+    bool liveWeightPreview_=false;
+    std::optional<int> previewLiveWeightLbs_;
+    uint64_t previewLiveWeightAgeMs_=0;
     uint64_t heldSince_ = 0;
     uint64_t restSince_ = 0;
     bool consumeIgnored();

@@ -12,6 +12,14 @@ constexpr uint32_t connectionTimeoutMs=10000, connectionRetryDelayMs=500, mtuWai
 constexpr unsigned connectionAttempts=3;
 constexpr int transmitPowerDbm=9;
 constexpr int establishmentFailure=BLE_HS_HCI_ERR(BLE_ERR_CONN_ESTABLISHMENT);
+bool validDeviceId(const DeviceId& id) {
+    if(id.size()!=19 || id[17]!='/' || id[18]<'0' || id[18]>'3') return false;
+    for(size_t i=0;i<17;++i) {
+        if(i%3==2) {if(id[i]!=':') return false;}
+        else if(!((id[i]>='0' && id[i]<='9') || (id[i]>='a' && id[i]<='f') || (id[i]>='A' && id[i]<='F'))) return false;
+    }
+    return true;
+}
 }
 struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     NimBLEClient* client=nullptr;
@@ -99,10 +107,14 @@ std::vector<Advertisement> NimBleTransport::discovered() const {
     for(const auto& a:found) for(const auto& uuid:a.services) impl_->log("BLE advertised service: "+uuid);
     return found;
 }
+std::string NimBleTransport::deviceAddress(const DeviceId& id) const {
+    if(!validDeviceId(id)) return {};
+    const NimBLEAddress address(id.substr(0,17),uint8_t(id[18]-'0'));
+    return address.isNull() ? std::string{} : address.toString();
+}
 TransportResult NimBleTransport::connect(const DeviceId& id) {
     if(!impl_->client) return TransportResult::Unsupported;
-    const auto separator=id.find('/');
-    if(separator!=17 || id.size()!=19 || id[18]<'0' || id[18]>'3') return TransportResult::Failed;
+    if(!validDeviceId(id)) return TransportResult::Failed;
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
     {
@@ -196,7 +208,18 @@ void NimBleTransport::poll(uint64_t now) {
     // A late link-up after cancel never becomes an application connection.
     if((impl_->cancelling || (!impl_->connecting && !impl_->connected)) && impl_->client && impl_->client->isConnected()) impl_->client->disconnect();
     if(impl_->connecting) {
-        if(!impl_->radioBusy && now>=impl_->retryAt) {
+        if(!impl_->attempts && now>=impl_->retryAt && now-impl_->retryAt>connectionTimeoutMs+mtuWaitMs) {
+            // An old cancellation can fail to deliver a callback. Bound the
+            // queued request by the existing connect+MTU deadline, without
+            // pretending the old radio procedure has ended or reusing it.
+            impl_->log("BLE previous connection did not close; reconnect stopped");
+            impl_->connecting=false;
+            if(impl_->connection) impl_->connection(false);
+        }
+        // NimBLE 2.3.6 invokes its disconnect/failure callback before clearing
+        // the client's connection handle. Drain both the callback and handle
+        // before reuse; an immediate reselect must not race the closing link.
+        else if(!impl_->cancelling && !impl_->radioBusy && !impl_->client->isConnected() && now>=impl_->retryAt) {
             impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;
             impl_->attemptAt=now;++impl_->attempts;
             impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts));

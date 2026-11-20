@@ -23,10 +23,15 @@ public:
     bool connecting() const { return controller_.connecting(); }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
-    std::string diagnosticState() const { return (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+" lastFailure={"+lastControlFailure_+"}"; }
+    std::string diagnosticState() const {
+        return (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+
+            " lastConnectionFailure={"+lastConnectionFailure_+"} lastFailure={"+lastControlFailure_+"}";
+    }
     uint64_t loadRefusalRevision() const { return loadRefusalRevision_; }
     const std::string& loadRefusalMessage() const { return loadRefusalMessage_; }
-    TrainingReport report() const { return session_.trainingReport(); }
+    TrainingReport report() const;
+    bool readbackFresh() const;
+    bool twinFresh() const;
     // Presentation clock; prefer machine elapsed time, otherwise use its actual
     // set-close event. Never put locally elapsed seconds into TrainingReport.
     std::optional<int> restSeconds() const;
@@ -71,10 +76,12 @@ private:
     std::vector<DeviceEntry> recent_, devices_, knownDevices_;
     struct SeenDevice { DeviceEntry device; uint64_t at; };
     std::map<DeviceId,SeenDevice> seenDevices_;
+    struct RememberedTwin { DeviceId peer; std::string peerName; uint64_t at=0; bool available=false; };
+    std::map<DeviceId,RememberedTwin> twinLinks_; // Session RAM only; never stored.
     std::map<DeviceId, DropSettings> dropSettings_;
     DeviceId selected_;
     std::string name_, message_, presetError_;
-    std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_;
+    std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_,lastConnectionFailure_;
     uint64_t loadRefusalRevision_=0;
     void recordControlFailure(const std::string&);
     void recordLoadRefusal();
@@ -116,6 +123,8 @@ private:
     void stopDrops(const char*);
     void runDrops(const TrainingReport&);
     void refreshDiscovery(const std::vector<Advertisement>&);
+    void refreshTwinDevices();
+    void observeTwin(const TrainingReport&);
     void rememberConnection();
 };
 }

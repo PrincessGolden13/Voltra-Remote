@@ -13,6 +13,9 @@ public:
     // Asynchronous adapters expose only a completed scan window to the app.
     virtual bool scanInProgress() const { return false; }
     virtual std::vector<Advertisement> discovered() const { return {}; }
+    // Optional canonical radio address for matching observed device metadata.
+    // Only the adapter interprets its opaque DeviceId format.
+    virtual std::string deviceAddress(const DeviceId&) const { return {}; }
     // Accepted may mean queued. onConnection(true/false) delivers link outcome;
     // neither acceptance nor a link establishes a VOLTRA protocol session.
     virtual TransportResult connect(const DeviceId&) = 0;

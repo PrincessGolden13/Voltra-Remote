@@ -16,9 +16,15 @@ MockTransport::MockTransport() {
         r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
         r.liveModifierAmountsSupported = true;
         r.twinKnown = true; r.twin = i == 1 || i == 2;
+        r.twinDetected=r.twin;r.twinStatusFresh=true;r.combinedWeightKnown=r.twin;
+        r.twinLinkState=r.twin ? 0x12 : 0x00;
         // Explicit synthetic combined floor, not a physical Twin inference.
         r.minWeight = r.twin ? 10 : voltraISingleMinimum(r.unit);
         r.twinPeerName = i == 1 ? names[2] : i == 2 ? names[1] : "";
+        if(r.twin) {
+            r.twinPeerId=std::string(deviceId)+'-'+std::to_string(i==1 ? 2 : 1);
+            r.twinPeerBattery=75; // Explicit synthetic peer observation.
+        }
         r.telemetryValid = true; r.repsStarted = false;
         r.settings.magic.value = i == 4 ? 10 : 50;
         r.settings.eccentric.value = i == 4 ? 5 : 25;
@@ -62,9 +68,21 @@ void MockTransport::previewAutoUnload(int seconds) {
     devices_[active_].state.autoUnloadHoldSeconds=seconds;
     sent_=false;
 }
+void MockTransport::previewLiveWeight(std::optional<int> pounds,uint64_t ageMs) {
+    liveWeightPreview_=true;
+    previewLiveWeightLbs_=pounds && *pounds>=0 && *pounds<=32767 ? pounds : std::optional<int>{};
+    previewLiveWeightAgeMs_=std::min<uint64_t>(ageMs,2000);
+    sent_=false;
+}
 std::vector<DeviceEntry> MockTransport::catalog() const {
     std::vector<DeviceEntry> result;
-    for(const auto& d : devices_) result.push_back({d.id,d.name,false,d.state.twin ? d.state.twinPeerName : ""});
+    for(size_t i=0;i<devices_.size();++i) {
+        const auto& d=devices_[i];
+        const bool paired=d.state.twin;
+        const bool peerAvailable=paired && devices_[i==1 ? 2 : 1].online;
+        result.push_back({d.id,d.name,false,paired ? d.state.twinPeerName : "",
+            paired ? d.state.twinPeerId : DeviceId{},paired,peerAvailable});
+    }
     return result;
 }
 
@@ -78,6 +96,7 @@ TransportResult MockTransport::connect(const DeviceId& id) {
     if (it == devices_.end()) return TransportResult::Failed;
     active_ = size_t(it-devices_.begin()); connected_ = true; sent_ = subscribed_ = false;
     restSince_ = 0;
+    liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
     reported_ = {}; pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
     if (connection_) connection_(true);
     return TransportResult::Accepted;
@@ -86,6 +105,7 @@ void MockTransport::disconnect() {
     connected_ = subscribed_ = sent_ = false;
     pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
     reported_ = {}; heldSince_ = 0;
+    liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
     if (connection_) connection_(false);
 }
 std::vector<std::string> MockTransport::discoverServices() {
@@ -106,6 +126,10 @@ void MockTransport::setProfile(SimulatorProfile profile) {
     r.loaded = profile == SimulatorProfile::Loaded; r.autoLoadArmed = false;
     r.autoLoadPhase.reset();r.autoLoadCountdownMs.reset();r.autoLoadCountdownAtMs=0;
     r.twinKnown = profile != SimulatorProfile::TwinUnknown;
+    r.twinDetected=r.twin || profile==SimulatorProfile::TwinUnknown;
+    r.twinStatusFresh=r.twinKnown;r.combinedWeightKnown=r.twin && r.twinKnown;
+    r.twinLinkState=r.twinKnown ? std::optional<int>(r.twin ? 0x12 : 0x00) : std::optional<int>{};
+    liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
     r.moving = r.held = false; r.rep = 0; r.repsStarted = false; restSince_ = 0;
     r.force.reset(); r.setNumber.reset(); r.completedSets.reset(); r.lastSetReps.reset(); r.restSeconds.reset();
 }
@@ -153,12 +177,26 @@ void MockTransport::poll(uint64_t now) {
     lastMs_ = now; sent_ = true;
     if (state.loaded) { state.force = state.settings.weight; if (!state.setNumber) state.setNumber = 1; }
     else { state.force.reset(); if (restSince_) state.restSeconds = int((now-restSince_)/1000); }
+    state.readbackKnown=state.loadStateKnown=true;state.readbackAtMs=now;
+    state.twinDetected=state.twin || profile_==SimulatorProfile::TwinUnknown;
+    state.twinStatusFresh=state.twinKnown;state.combinedWeightKnown=state.twin && state.twinKnown;
+    state.twinAtMs=now;
+    // Synthetic device-side report only. The UI must use this independently of
+    // the selected base; explicit previews can differ, disappear or be stale.
+    if(liveWeightPreview_) {
+        state.liveWeightLbs=now>=previewLiveWeightAgeMs_ ? previewLiveWeightLbs_ : std::optional<int>{};
+        state.liveWeightAtMs=now>=previewLiveWeightAgeMs_ ? now-previewLiveWeightAgeMs_ : 0;
+    } else {
+        state.liveWeightLbs=state.force ? convertWeightUnits(*state.force,state.unit,WeightUnit::Pounds) : 0;
+        state.liveWeightAtMs=now;
+    }
     // Already-paired synthetic endpoints share a workout through one selected
     // session. This is not a second BLE connection or a duplicate command.
     if(active_ == 1 || active_ == 2) {
         auto& peer = devices_[active_ == 1 ? 2 : 1].state;
         const auto peerName = peer.twinPeerName;
-        peer = state; peer.twinPeerName = peerName;
+        const auto peerId = peer.twinPeerId;
+        peer = state; peer.twinPeerName = peerName;peer.twinPeerId=peerId;
     }
     state.motionAtMs=now;++state.motionRevision;
     state.repActive=state.loaded && (state.moving || state.held);

@@ -5,6 +5,7 @@
 #include "controller/ControlSession.h"
 #include "ble/BleTransport.h"
 #include "FrameParser.h"
+#include "TwinStatus.h"
 #include <map>
 #include <array>
 #include <deque>
@@ -14,6 +15,7 @@ public:
     PhysicalSession(BleTransport&,const std::array<uint8_t,16>& clientIdentity,
                     std::optional<std::array<uint8_t,6>> helloIdentity = {});
     void connectionChanged(bool) override;
+    void setSelectedAddress(std::string) override;
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
@@ -39,6 +41,11 @@ private:
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::optional<Observed> directMotor_;
+    std::optional<DeviceAddress> selectedAddress_;
+    std::optional<TwinStatus> twinStatus_;
+    uint64_t twinStatusAt_=0,twinTopologyAt_=0,twinPollAt_=0;
+    bool twinObserved_=false,twinReplyOwnMatch_=false,twinReplyAccepted_=false,twinReplySeen_=false;
+    size_t twinReplyBytes_=0;
     std::deque<std::pair<uint8_t,uint16_t>> seen_;
     TrainingReport report_;
     std::string status_,firmware_;
@@ -49,6 +56,8 @@ private:
     bool pairedReadSupported_=false,autoUnloadReadSupported_=false;
     bool autoLoadCountdownProbed_=false,autoLoadCountdownSupported_=false;
     uint64_t autoLoadPollAt_=0;
+    bool liveWeightProbed_=false,liveWeightReadSupported_=false;
+    uint64_t liveWeightPollAt_=0;
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
@@ -87,6 +96,8 @@ private:
     bool updateAllowsControls() const;
     const char* updateBlockReason() const;
     bool standalone() const;
+    bool twinStatusFresh() const;
+    void updateReadback();
     bool settingsReady() const;
     bool loadSafetyStatusSupported() const;
     bool controlContextReady() const;

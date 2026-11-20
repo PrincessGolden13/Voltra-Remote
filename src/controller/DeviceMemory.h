@@ -3,7 +3,15 @@
 namespace voltra {
 // Bounded local metadata storage; never silently evict previously added devices.
 inline constexpr size_t maximumRememberedDevices = 64;
-struct DeviceEntry { DeviceId id; std::string name; bool online = false; std::string twinPeer; };
+struct DeviceEntry {
+    DeviceId id;
+    std::string name;
+    bool online = false;
+    std::string twinPeer;
+    // Volatile, machine-observed relationship; never pairing configuration.
+    DeviceId twinPeerId{};
+    bool twinFresh = false, twinPeerAvailable = false;
+};
 class DeviceMemory {
 public:
     virtual ~DeviceMemory() = default;

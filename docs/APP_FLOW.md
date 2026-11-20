@@ -275,6 +275,12 @@ status target provides unload/cancel on editor screens.
 
 ## Evidence boundary
 
+November20 owner request supersedes the earlier base-only Live rule: Live now
+uses fresh device-reported whole-pound runtime wire load, with selected BASE
+separate and no calculated overload fallback. Missing/stale readings show --.
+Twin setting readbacks and topology are independently valid even when motor state
+is unsupported. See [implementation and physical limits](TWIN_LIVE_READBACK_2026_11_20.md).
+
 November 18 follow-up: the owner confirms Auto Load works on the machine and
 requests clearer hold/armed feedback. Weight touch now uses a 300 ms tap boundary
 and a 2000 ms Auto Load hold, with progress appearing after 300 ms; an intermediate

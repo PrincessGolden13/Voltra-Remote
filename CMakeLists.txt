@@ -17,6 +17,7 @@ endif()
 
 add_library(voltra_core
     src/protocol/FrameParser.cpp
+    src/protocol/TwinStatus.cpp
     src/protocol/Parameters.cpp
     src/controller/VoltraController.cpp
     src/controller/TrainingApplication.cpp)

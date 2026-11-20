@@ -20,6 +20,78 @@ TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, C
 bool TrainingApplication::remembered(const DeviceId& id) const {
     return std::any_of(recent_.begin(), recent_.end(), [&](const auto& d) { return d.id == id; });
 }
+TrainingReport TrainingApplication::report() const {
+    auto r=session_.trainingReport();
+    if(!r.twinPeerAddress.empty()) {
+        const auto resolve=[&](const DeviceEntry& d) {
+            if(d.id==selected_ || transport_.deviceAddress(d.id)!=r.twinPeerAddress) return false;
+            r.twinPeerId=d.id;r.twinPeerName=d.name;return true;
+        };
+        bool found=false;
+        for(const auto& entry:seenDevices_) if(resolve(entry.second.device)) {found=true;break;}
+        if(!found) for(const auto& d:recent_) if(resolve(d)) {found=true;break;}
+        if(!found) for(const auto& d:knownDevices_) if(resolve(d)) break;
+    }
+    return r;
+}
+bool TrainingApplication::readbackFresh() const {
+    const auto r=report();
+    return connected() && r.readbackKnown && now_>=r.readbackAtMs && now_-r.readbackAtMs<=2000 &&
+        (!r.combinedWeightKnown || (r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000));
+}
+bool TrainingApplication::twinFresh() const {
+    const auto r=report();
+    return connected() && r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000;
+}
+void TrainingApplication::observeTwin(const TrainingReport& r) {
+    if(selected_.empty() || !r.twinStatusFresh || now_<r.twinAtMs || now_-r.twinAtMs>2000) return;
+    const auto detach=[&](const DeviceId& id) {
+        const auto old=twinLinks_.find(id);
+        if(old==twinLinks_.end()) return;
+        const auto peer=twinLinks_.find(old->second.peer);
+        if(peer!=twinLinks_.end() && peer->second.peer==id) twinLinks_.erase(peer);
+        twinLinks_.erase(old);
+    };
+    if(r.twinLinkState==0) {
+        detach(selected_);
+    } else if(!r.twinPeerId.empty()) {
+        const auto old=twinLinks_.find(selected_),peer=twinLinks_.find(r.twinPeerId);
+        if(old!=twinLinks_.end() && old->second.peer!=r.twinPeerId) detach(selected_);
+        if(peer!=twinLinks_.end() && peer->second.peer!=selected_) detach(r.twinPeerId);
+        if(!twinLinks_.count(selected_) && twinLinks_.size()+2>maximumRememberedDevices) return;
+        const bool available=r.twinLinkState==0x12;
+        twinLinks_[selected_]={r.twinPeerId,r.twinPeerName,r.twinAtMs,available};
+        twinLinks_[r.twinPeerId]={selected_,name_,r.twinAtMs,available};
+    }
+}
+void TrainingApplication::refreshTwinDevices() {
+    const auto r=report();
+    const bool currentTwin=connected() && r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000;
+    for(auto& d:devices_) {
+        const auto it=twinLinks_.find(d.id);
+        if(it==twinLinks_.end()) {
+            // Synthetic catalog metadata is explicit; physical saved entries
+            // contain only ID/name and cannot invent a pairing relationship.
+            const auto known=std::find_if(knownDevices_.begin(),knownDevices_.end(),[&](const auto& k){return k.id==d.id;});
+            if(known==knownDevices_.end() || known->twinPeer.empty()) {
+                d.twinPeer.clear();d.twinPeerId.clear();d.twinFresh=d.twinPeerAvailable=false;
+            }
+            continue;
+        }
+        d.twinPeer=it->second.peerName;d.twinPeerId=it->second.peer;
+        const bool currentPeer=(selected_==d.id && r.twinPeerId==it->second.peer) ||
+            (selected_==it->second.peer && r.twinPeerId==d.id);
+        d.twinFresh=currentTwin && currentPeer && now_>=it->second.at && now_-it->second.at<=2000;
+        d.twinPeerAvailable=d.twinFresh && it->second.available && r.twinLinkState==0x12;
+    }
+    if(connected() && r.twinDetected && r.twinPeerId.empty()) {
+        const auto selected=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==selected_;});
+        if(selected!=devices_.end()) {
+            selected->twinPeer=r.twinPeerName.empty() ? "Twin peer" : r.twinPeerName;
+            selected->twinFresh=twinFresh();selected->twinPeerAvailable=selected->twinFresh && r.twinLinkState==0x12;
+        }
+    }
+}
 std::optional<int> TrainingApplication::restSeconds() const {
     if(!fresh()) return {};
     if(dropProgress_.active && report().setActive!=false) return {};
@@ -44,6 +116,12 @@ bool TrainingApplication::forget(const DeviceId& id) {
     remaining.erase(std::remove_if(remaining.begin(), remaining.end(), [&](const auto& d) { return d.id == id; }), remaining.end());
     if (memory_ && !memory_->save(remaining)) { message_ = "Could not remove saved device"; return false; }
     recent_ = std::move(remaining);
+    const auto old=twinLinks_.find(id);
+    if(old!=twinLinks_.end()) {
+        const auto peer=twinLinks_.find(old->second.peer);
+        if(peer!=twinLinks_.end() && peer->second.peer==id) twinLinks_.erase(peer);
+        twinLinks_.erase(old);
+    }
     dropSettings_.erase(id);
     if (selected_ == id) leave();
     message_.clear();
@@ -86,14 +164,19 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
         if (it == devices_.end()) devices_.push_back({a.id, a.name.empty() ? "VOLTRA" : a.name, true, {}});
         else { if(!a.name.empty()) it->name = a.name; it->online = true; }
     }
+    refreshTwinDevices();
 }
 bool TrainingApplication::select(const DeviceId& id) {
     if(maintenance_) return false;
-    const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && d.online; });
+    // A Twin host can stop advertising while retaining its saved BLE address.
+    // Only an explicit selection may try that remembered endpoint; automatic
+    // selection above still requires a completed, live advertisement scan.
+    const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && (d.online || remembered(d.id)); });
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
     const DeviceEntry chosen = *it;
     leave();
     if (!controller_.connect(chosen.id)) { message_ = controller_.feedback(); scan(); return false; }
+    session_.setSelectedAddress(transport_.deviceAddress(chosen.id));
     selected_ = chosen.id; name_ = chosen.name;
     if(connecting()) message_="Connecting to "+name_+"...";
     connectingDevice_ = chosen;
@@ -156,7 +239,11 @@ bool TrainingApplication::sendSettings(TrainingSettings s) {
 void TrainingApplication::adjustWeight(int delta) {
     if(dropRestore_) {message_="Restoring starting weight; please wait";return;}
     if (presetIntent_) { message_ = "Awaiting preset confirmation"; return; }
-    if (!settingsAllowed()) { message_ = "Device state unavailable"; return; }
+    if (!settingsAllowed()) {
+        const auto reason=session_.readiness().reason;
+        message_ = reason.empty() ? "Device state unavailable" : reason;
+        recordControlFailure(message_);return;
+    }
     auto r = report();
     if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
     dropStart_.reset(); // A subsequent manual base choice supersedes restoration.
@@ -536,10 +623,15 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now; controller_.tick(now);
+    refreshTwinDevices();
     if(connecting()) return;
     if(connectingDevice_ && !connected()) {
         const std::string feedback=controller_.feedback();
         message_=feedback=="Disconnected" && !session_.status().empty() ? session_.status() : feedback;
+        if(!message_.empty()) {
+            lastConnectionFailure_=("at="+std::to_string(now_)+" reason="+message_).substr(0,180);
+            diagnostic("Connection failure: "+message_);
+        }
     }
     else if(connected() && message_.compare(0,14,"Connecting to ")==0) message_.clear();
     if (scanPending_ && !transport_.scanInProgress()) { scanPending_=false; refreshDiscovery(transport_.discovered()); }
@@ -557,6 +649,7 @@ void TrainingApplication::tick(uint64_t now) {
     }
     if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();
+    observeTwin(r);refreshTwinDevices();
     if(!fresh()) restSince_.reset();
     else {
         const bool wasDropActive=dropProgress_.active;

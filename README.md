@@ -34,7 +34,10 @@ Stairs and Rest-Pause dropsets, load/unload and an explicit Auto Load long press
 Availability depends on confirmed device capabilities and current safety state.
 Read the dated [application flow](docs/APP_FLOW.md) and
 [validation record](docs/TESTING.md) for the distinction between implementation,
-simulator behavior and actual hardware observations. Real Twin work is deferred.
+simulator behavior and actual hardware observations. Physical Twin topology and
+combined setting readback are supported through a validated pair report. Twin
+resistance control remains unavailable until host, peer safety and the reported
+motor variants are established; use the VOLTRAs' controls for the pair.
 
 Turn the dial to edit weight. Tap the main number to load/unload. When unloaded,
 hold until the circular indicator completes at two seconds, then release to
@@ -43,6 +46,10 @@ cancels it. Auto Load shows pull/hold guidance and the device's countdown when
 available; tap the weight to cancel. An unloaded number is darker;
 confirmed loaded weight is bright. Pending intent stays distinct from device
 confirmation. Boot, reconnect, presets and updates never load resistance.
+The Live screen uses fresh device-reported whole-pound wire load rather than
+reconstructing resistance from the selected base/modifiers. Unavailable or stale
+readings show `--`; the selected BASE remains separately labeled. Physical Twin
+live-load scope still needs validation and is not doubled speculatively.
 
 Tap an off modifier tile to open its editor; tap an active tile to disable it,
 or hold and release to edit. The device name releases Bluetooth and returns to the

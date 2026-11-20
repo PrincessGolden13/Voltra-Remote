@@ -15,6 +15,7 @@ public:
     std::vector<Advertisement> scan() override;
     bool scanInProgress() const override;
     std::vector<Advertisement> discovered() const override;
+    std::string deviceAddress(const DeviceId&) const override;
     TransportResult connect(const DeviceId&) override;
     void disconnect() override;
     std::vector<std::string> discoverServices() override;

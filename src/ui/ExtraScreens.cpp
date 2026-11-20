@@ -249,27 +249,36 @@ void UiController::updateExtra() {
         const auto d=app_.drops();
         text(status_,r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
         const bool known=app_.fresh() && r.telemetryValid;
-        // Match Black's selected-weight display throughout the repetition.
-        // Sensor tension remains telemetry, never this primary control number.
-        largeValue(app_.fresh() ? weightText(r.settings.weight,r.unit) : "--");
-        text(start_,d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) : "");
+        const auto now=hardware_.nowMs();
+        constexpr uint64_t liveWeightFreshMs=500;
+        const bool liveWeightFresh=app_.fresh() && app_.readbackFresh() && r.liveWeightLbs && *r.liveWeightLbs>=0 &&
+            now>=r.liveWeightAtMs && now-r.liveWeightAtMs<=liveWeightFreshMs;
+        // The runtime wire-load register is a device report in whole pounds.
+        // Convert display units only: never reconstruct the changing load from
+        // base/curve/phase settings or substitute selected weight for missing data.
+        largeValue(liveWeightFresh ? weightText(convertWeightUnits(*r.liveWeightLbs,WeightUnit::Pounds,r.unit),r.unit) : "--");
+        text(start_,app_.readbackFresh() ? d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) :
+            "BASE "+weightText(r.settings.weight,r.unit)+" "+unitName(r.unit) : "");
         int next=d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : nextRestPauseWeight(r,d.percent);
         if(d.mode == DropMode::RestPause && app_.dropsCompleted() >= d.drops) next=r.settings.weight;
         const bool atFloor=known && r.minWeight>0 && r.settings.weight<=r.minWeight &&
             (d.mode==DropMode::Stairs ? d.step<0 : d.percent>0);
         text(nextWeight_,d.enabled ? atFloor ? "MIN "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
-            "NEXT "+(known ? weightText(next,r.unit) : "--") : unitName(r.unit));
-        const bool dropCue=known && hardware_.nowMs()<dropCueUntil_ && app_.confirmedDropWeight();
+            "NEXT "+(known ? weightText(next,r.unit) : "--") : std::string("LIVE ")+unitName(r.unit));
+        const bool dropCue=known && now<dropCueUntil_ && app_.confirmedDropWeight();
         if(dropCue) text(nextWeight_,"TARGET "+weightText(*app_.confirmedDropWeight(),r.unit)+" "+unitName(r.unit));
-        // Confirmed target feedback, not a claim that measured cable force has
-        // already changed. Visual fallback is always available on this board.
-        style::set_text_color(weight_,lv_color_hex(dropCue ? accent() : 0xf5f8ff),0);
+        // A confirmed target cue belongs to TARGET, not the actual load number:
+        // the target acknowledgement does not prove cable resistance changed.
+        style::set_text_color(weight_,lv_color_hex(liveWeightFresh ? white : dim),0);
         style::set_text_color(nextWeight_,lv_color_hex(dropCue ? accent() : 0xf5f8ff),0);
         const auto counters=app_.displayCounters();
         text(liveValues_[0],counters.set ? std::to_string(*counters.set) : "");
         text(liveValues_[1],counters.rep ? std::to_string(*counters.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
-        text(message_,known ? app_.dropPending() && app_.message().empty() ? "Setting drop..." : app_.message() : "State unknown / tap weight to unload");
+        const auto feedback=app_.dropPending() && app_.message().empty() ? std::string("Setting drop...") : app_.message();
+        text(message_,!app_.fresh() ? "State unavailable" :
+            !liveWeightFresh ? (feedback.empty() ? "Waiting for live load" : feedback) :
+            !known && feedback.empty() ? "Rep data unavailable" : feedback);
         const auto remaining=app_.restPauseRemainingPermille();
         if(remaining) {
             lv_bar_set_value(holdBar_,*remaining,LV_ANIM_OFF);
