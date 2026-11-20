@@ -8,7 +8,10 @@
 - Passive K518 GPIO1 ADC cache uses the source/schematic-backed divide-by-two
   rail input and an inferred LiPo estimate. USB-range, invalid and stale readings
   are unavailable. See REMOTE_BATTERY_2026_11_20.md for evidence and limitations.
-- Static review and real LVGL previews pass; public firmware builds follow.
+- Static review and real LVGL previews pass, including confirmed set end while
+  loaded with zero control calls. Public CI44770074824 at5ea859f passes both
+  firmware images, offline core and packaging. Downloaded descriptors, manifest,
+  USB/OTA, backend isolation and NVS/rollback checks pass; hashes in TESTING.md.
   Owner hardware calibration and actual threshold timing remain unverified.
   This is added to the held v0.4.10 draft and does not resolve its Twin blocker.
 

@@ -19,6 +19,18 @@ No new automated test source or physical battery/motor operation. Physical rail
 values, estimate calibration and exact threshold timing on the owner's unit remain
 unverified. Public firmware/build results follow; existing Twin publication hold
 remains in effect.
+PASS held-draft battery build: [CI44770074824](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44770074824)
+at5ea859f2cb9fa9e2d44a04202839da159dc73486 passes public Normal, isolated
+Simulator, offline core and packaging. Artifact14647696114 digest matches
+`7242819911b60573ec06750d8aa138fe5da064125eda65ff4c95c3cd381698c6`.
+Normal1,997,520bytes SHA-256
+`2fe2136f16cbb41421bbef85da803cb6b168876b51285a9835397591cbaaff96`;
+Simulator1,027,072bytes SHA-256
+`b8dd56ad5ab4c2a123d0bb33b198c88ad637d891f2a137a3f3d3b58c62f6d3a6`.
+Descriptors, manifest identity/size/hash, all USB hashes/offsets/partition map,
+USB/OTA Normal equality, defined-symbol backend isolation and strong NVS/rollback
+hooks pass. Receipt: ignored build/review-v0410-battery. No merge, tag or release
+publication; physical ADC calibration and alert timing remain unverified.
 
 November 20 v0.4.10: [one paired control and quieter screens](TWIN_PRESENTATION_2026_11_20.md)
 and [reported target-resistance correction](LIVE_TARGET_SOURCE_2026_11_20.md).
