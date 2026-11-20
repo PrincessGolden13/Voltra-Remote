@@ -1,5 +1,50 @@
 # Foundation baseline
 
+## November 20 remote battery alert addition
+
+- Implemented remote-battery warning at10% or below, queued through Live and
+  known active sets, acknowledged once until a known15% recovery. Explicit unload
+  stays accessible; modal input cannot toggle the obscured weight control.
+- Passive K518 GPIO1 ADC cache uses the source/schematic-backed divide-by-two
+  rail input and an inferred LiPo estimate. USB-range, invalid and stale readings
+  are unavailable. See REMOTE_BATTERY_2026_11_20.md for evidence and limitations.
+- Static review and real LVGL previews pass, including confirmed set end while
+  loaded with zero control calls. Public CI44770074824 at5ea859f passes both
+  firmware images, offline core and packaging. Downloaded descriptors, manifest,
+  USB/OTA, backend isolation and NVS/rollback checks pass; hashes in TESTING.md.
+  Owner hardware calibration and actual threshold timing remain unverified.
+  This is added to the held v0.4.10 draft and does not resolve its Twin blocker.
+
+## November 20 paired navigation and target correction v0.4.10
+
+- RELEASE HELD: the owner clarified that both icons must resolve the actual
+  current master for any pair. First-observed/cached endpoints are not role
+  evidence. PR10 is a draft, with no v0.4.10 tag or publication. The physical
+  current-role decoder is unresolved; generic read-only resolution is being
+  separated from saved navigation metadata and exercised with synthetic roles.
+
+- Owner feedback removes redundant Twin captions, TOTAL heading, overlapping
+  glyph and technical banner. Black is the host and Red the follower in the
+  observed pair. Paired circles now share availability and one navigation
+  endpoint, remembered across restarts without retaining readiness/load state.
+- Combined-LB settings use a two-pound grid, separate from base minimum and
+  effective maximum. No combined maximum or motor capability is guessed.
+- New pinned albert source captures distinguish B4 target resistance from
+  16003 runtime cable tension. Live now uses only the fresh standalone target,
+  whole-LB/half-KG formatting and no selected-base/sensor/modifier fallback.
+  See LIVE_TARGET_SOURCE_2026_11_20.md and TWIN_PRESENTATION_2026_11_20.md.
+- Offline core/reference validators, four published B4 source captures and real
+  LVGL renders/pointer previews pass. Generic renamed Master/Follower/Unknown/
+  Cancel previews pass with read-only probes; only explicit synthetic Master can
+  enter training. Saved pair metadata does not establish a current master.
+- CONFIRMED build only: CI44766603773 at ea1552b passes both public firmware
+  builds, offline core and packaging. Downloaded artifact/image identities,
+  manifest, USB hashes/partition map, backend isolation and strong NVS/rollback
+  hooks pass; exact hashes are in TESTING.md. PR10 remains draft, with no merge,
+  tag or release publication. The latest stored Twin report is still v0.4.8.
+  Physical Twin controls and exact Live LCD agreement remain unverified;
+  no physical motor commands or new automated test source.
+
 ## November 20 Twin readback and Live v0.4.9
 
 - CONFIRMED: report4ac675b8 connects and accepts the session, then reports motor

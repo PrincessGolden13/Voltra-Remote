@@ -39,7 +39,7 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
             }
             else if(code==LV_EVENT_RELEASED || code==LV_EVENT_PRESS_LOST) b->ui->weightHoldActive_=false;
         }
-        if (b->ui->touchMoved_ || b->ui->debugConsumed_ || b->ui->debugDialog_) {
+        if (b->ui->batteryAlertDialog_ || b->ui->touchMoved_ || b->ui->debugConsumed_ || b->ui->debugDialog_) {
             if(code==LV_EVENT_RELEASED) std::printf("Touch cancelled by movement: action=%d\n",b->action);
             return;
         }
@@ -130,18 +130,6 @@ lv_obj_t* UiController::linkIcon(lv_obj_t* parent, int size, uint32_t c) {
     }
     return group;
 }
-lv_obj_t* UiController::twinIcon(lv_obj_t* parent, int size, uint32_t c) {
-    auto* group = lv_obj_create(parent); lv_obj_remove_style_all(group);
-    lv_obj_set_size(group, size, size*2/3);
-    lv_obj_remove_flag(group, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(group, LV_OBJ_FLAG_SCROLLABLE);
-    for (int side=0; side<2; ++side) {
-        auto* ring = disc(group, side*size/3, 0, size*2/3, c, true);
-        style::set_bg_opa(ring, LV_OPA_TRANSP, 0);
-        style::set_shadow_width(ring, 0, 0);
-    }
-    return group;
-}
 std::vector<const DeviceEntry*> UiController::deviceChoices() const {
     std::vector<const DeviceEntry*> choices;
     std::vector<DeviceId> represented;
@@ -159,6 +147,11 @@ std::vector<const DeviceEntry*> UiController::deviceChoices() const {
             });
             if(owner!=devices.end()) shown=&*owner;
         }
+        const auto target=app_.selectionDevice(shown->id);
+        const auto selected=std::find_if(devices.begin(),devices.end(),[&](const auto& candidate) {
+            return candidate.id==target;
+        });
+        if(selected!=devices.end()) shown=&*selected;
         choices.push_back(shown);represented.push_back(shown->id);
         if(!shown->twinPeerId.empty()) represented.push_back(shown->twinPeerId);
     }
@@ -246,6 +239,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         auto* s = static_cast<UiController*>(lv_indev_get_user_data(input)); const auto p = s->hardware_.touch().sample();
         s->touchEventAt_=p.sampledAtMs ? p.sampledAtMs : s->hardware_.nowMs();
         data->continue_reading=s->hardware_.touch().hasPending();
+        if(p.pressed || s->touchDown_) s->batteryInteractionAt_=s->hardware_.nowMs();
         if(p.cancelled) {
             // A lost sample or old-screen gesture is never a synthetic click.
             if(s->touchDown_) diagnostic("Touch cancelled during hold ms="+std::to_string(s->hardware_.nowMs()-s->touchStartedAt_));
@@ -267,7 +261,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         // 18 px on K5). Paged pickers keep the stricter 2.5% swipe rejection so
         // a short attempted swipe cannot select a device or apply a preset.
         // Include release position, even if a busy frame skipped the movement.
-        const bool paged=!s->debugDialog_ && (s->page_==Screen::Devices || s->page_==Screen::Presets);
+        const bool paged=!s->debugDialog_ && !s->batteryAlertDialog_ && (s->page_==Screen::Devices || s->page_==Screen::Presets);
         const int tapSlop=std::max(1,std::min(s->width_,s->height_)/(paged ? 40 : 20));
         if ((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_) > tapSlop || std::abs(y-s->touchStartY_) > tapSlop)) s->touchMoved_=true;
         // Debug is a screen-wide gesture, not a tile selection. Allow 10% drift
@@ -275,13 +269,13 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         const int debugSlop=std::max(1,std::min(s->width_,s->height_)/10);
         if((p.pressed || s->touchDown_) && (std::abs(x-s->touchStartX_)>debugSlop || std::abs(y-s->touchStartY_)>debugSlop)) s->debugMoved_=true;
         const auto holdNow=s->touchEventAt_;
-        if((p.pressed || s->touchDown_) && !s->debugMoved_ && !s->wakeTouch_ && !s->debugDialog_ &&
+        if((p.pressed || s->touchDown_) && !s->debugMoved_ && !s->wakeTouch_ && !s->debugDialog_ && !s->batteryAlertDialog_ &&
            !s->debugConsumed_ && holdNow>=s->touchStartedAt_ && holdNow-s->touchStartedAt_>=debugHoldMs) {
             s->debugPending_=s->debugConsumed_=true;
             diagnostic("Six-second debug hold recognized");
             lv_indev_wait_release(input);
         }
-        if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_ && !s->debugConsumed_ && !s->debugDialog_) {
+        if(!p.pressed && s->touchDown_ && s->touchMoved_ && !s->wakeTouch_ && !s->debugConsumed_ && !s->debugDialog_ && !s->batteryAlertDialog_) {
             const int dx=x-s->touchStartX_, dy=y-s->touchStartY_;
             std::printf("Touch drag page=%d dx=%d dy=%d\n",int(s->page_),dx,dy);
             if(std::abs(dx) > s->width_/8 && std::abs(dx) > std::abs(dy)) {
@@ -294,9 +288,105 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         data->state = p.pressed && !s->wakeTouch_ && !s->debugConsumed_ ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
         if (!p.pressed) s->wakeTouch_ = false;
     });
-    lastTickMs_ = activityAt_ = hardware_.nowMs();
+    lastTickMs_ = activityAt_ = batteryInteractionAt_ = hardware_.nowMs();
 }
 UiController::~UiController() { hardware_.restAlert(0); lv_indev_delete(touch_); lv_display_delete(display_); lv_deinit(); }
+std::optional<uint8_t> UiController::remoteBatteryPercent() const {
+    // This is the remote hardware's optional reading, never VOLTRA's battery.
+    const auto percent=hardware_.batteryPercent();
+    return percent && *percent<=100 ? percent : std::nullopt;
+}
+void UiController::openBatteryAlert() {
+    if(batteryAlertDialog_) return;
+    batteryUnloadRequested_=false;
+    modeGestureUntil_=0;modeGestureClicks_=0;
+    if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
+    batteryAlertDialog_=lv_obj_create(lv_display_get_layer_top(display_));
+    lv_obj_set_size(batteryAlertDialog_,width_,height_);lv_obj_center(batteryAlertDialog_);
+    style::set_bg_color(batteryAlertDialog_,lv_color_hex(bg),0);
+    style::set_bg_opa(batteryAlertDialog_,LV_OPA_COVER,0);
+    style::set_border_width(batteryAlertDialog_,0,0);lv_obj_set_style_pad_all(batteryAlertDialog_,0,0);
+    lv_obj_remove_flag(batteryAlertDialog_,LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(batteryAlertDialog_,LV_OBJ_FLAG_CLICKABLE);
+    label(batteryAlertDialog_,"REMOTE BATTERY LOW",width_*76/100,height_*21/100,
+        width_<400 ? &lv_font_montserrat_14 : &lv_font_montserrat_18);
+    batteryAlertValue_=label(batteryAlertDialog_,"",width_*65/100,height_*31/100,&lv_font_montserrat_48);
+    color(batteryAlertValue_,amber);
+    batteryAlertText_=label(batteryAlertDialog_,"Charge the remote soon.",width_*76/100,height_*47/100);
+    lv_label_set_long_mode(batteryAlertText_,LV_LABEL_LONG_WRAP);
+    auto make=[&](const char* text,int y,lv_event_cb_t callback,lv_event_code_t event) {
+        auto* button=lv_button_create(batteryAlertDialog_);
+        lv_obj_set_size(button,width_*44/100,height_*12/100);
+        lv_obj_set_pos(button,width_*28/100,height_*y/100);
+        lv_obj_set_style_radius(button,LV_RADIUS_CIRCLE,0);
+        lv_obj_remove_flag(button,LV_OBJ_FLAG_SCROLLABLE);
+        auto* caption=label(button,text,width_*40/100,0);lv_obj_center(caption);
+        lv_obj_add_event_cb(button,callback,event,this);return button;
+    };
+    make("OK",59,[](lv_event_t* event) {
+        auto* ui=static_cast<UiController*>(lv_event_get_user_data(event));
+        if(!ui->touchMoved_ && !ui->debugConsumed_ && !ui->wakeTouch_) ui->closeBatteryAlert(true);
+    },LV_EVENT_CLICKED);
+    batteryAlertUnload_=make("UNLOAD",74,[](lv_event_t* event) {
+        auto* ui=static_cast<UiController*>(lv_event_get_user_data(event));
+        // Initial contact keeps explicit unload accessible through the modal.
+        if(!ui->debugConsumed_ && !ui->wakeTouch_) {
+            ui->batteryUnloadRequested_=true;ui->app_.unload();
+        }
+    },LV_EVENT_PRESSED);
+    activityAt_=hardware_.nowMs();sleeping_=dimmed_=false;
+    hardware_.setDisplayPower(false,false);
+    diagnostic("Remote low-battery alert opened");
+}
+void UiController::closeBatteryAlert(bool acknowledged) {
+    if(acknowledged) lowBatteryPending_=false;
+    if(batteryAlertDialog_) lv_obj_delete_async(batteryAlertDialog_);
+    batteryAlertDialog_=batteryAlertValue_=batteryAlertText_=batteryAlertUnload_=nullptr;
+    batteryInteractionAt_=hardware_.nowMs();
+    if(touchDown_) debugConsumed_=true;
+    lv_indev_wait_release(touch_);
+}
+void UiController::updateBatteryAlert(uint64_t now) {
+    const auto percent=remoteBatteryPercent();
+    if(percent) {
+        batteryAlertPercent_=*percent;
+        // A five-point recovery avoids repeated alerts around the 10% boundary.
+        if(*percent>=batteryRearmPercent) {
+            lowBatteryEpisode_=lowBatteryPending_=false;
+            if(batteryAlertDialog_) closeBatteryAlert(false);
+        } else if(*percent<=lowBatteryPercent && !lowBatteryEpisode_) {
+            lowBatteryEpisode_=lowBatteryPending_=true;
+        }
+    }
+    const auto report=app_.report();
+    const bool activeSet=app_.fresh() && report.loaded && report.setActive!=false &&
+        (report.repsStarted.value_or(false) || report.repActive.value_or(false) || report.moving);
+    const auto modal=[](Screen screen) {
+        return screen==Screen::Reset || screen==Screen::Wifi || screen==Screen::Updates ||
+            screen==Screen::SavePreset || screen==Screen::OverridePreset || screen==Screen::PresetNotice ||
+            screen==Screen::ForgetDevice || screen==Screen::ConnectionNotice || screen==Screen::ControlNotice;
+    };
+    const bool blocked=!percent || page_==Screen::Live || (rebuild_ && next_==Screen::Live) || activeSet ||
+        debugDialog_ || debugPending_ || debugDisconnectPending_ || restNotice_ ||
+        modal(page_) || (rebuild_ && modal(next_)) || app_.connecting() || app_.resolvingSelection() ||
+        (updates_ && updates_->status().busy()) || (reports_ && reports_->status().busy()) ||
+        (wifi_ && wifi_->status().setupActive);
+    if(batteryAlertDialog_ && blocked) closeBatteryAlert(false);
+    if(!batteryAlertDialog_ && lowBatteryPending_ && !blocked && !touchDown_ && !weightHoldActive_ &&
+        !wakeTouch_ && !hardware_.touch().hasPending() && !editDirty_ && !app_.pending() && !rebuild_ &&
+        !report.autoLoadArmed && now>=batteryInteractionAt_ && now-batteryInteractionAt_>=batteryAlertIdleMs) openBatteryAlert();
+    if(!batteryAlertDialog_) return;
+    value(batteryAlertValue_,std::to_string(batteryAlertPercent_)+"%");
+    if(app_.connected()) lv_obj_remove_flag(batteryAlertUnload_,LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(batteryAlertUnload_,LV_OBJ_FLAG_HIDDEN);
+    std::string text="Charge the remote soon.";
+    if(batteryUnloadRequested_) {
+        text=!app_.connected() ? "Disconnected. Check VOLTRA." : app_.pending() ? "Unload requested.\nWaiting for VOLTRA." :
+            app_.fresh() && !report.loaded && !report.autoLoadArmed ? "VOLTRA is unloaded.\nCharge the remote soon." :
+            app_.message().empty() ? "Check VOLTRA to confirm unload." : app_.message();
+    }
+    value(batteryAlertText_,text);
+}
 void UiController::dismissRestAlert() {
     hardware_.restAlert(0);
     restBuzzing_ = restNotice_ = false;
@@ -348,10 +438,20 @@ void UiController::readTouch() {
 }
 void UiController::navigate(Screen page) {
     weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=false;
+    if(page==Screen::Live && batteryAlertDialog_) closeBatteryAlert(false);
+    const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
+    if(trainingPage && !app_.selectionReady()) page=Screen::Devices;
+    // Choosing another screen cancels a read-only connection probe. A late
+    // response must not reopen training after the user has left selection.
+    if(app_.resolvingSelection() && page!=Screen::Devices) app_.leave();
     if(page_==Screen::Wifi && page!=Screen::Wifi && wifi_) wifi_->cancelConnectionCheck();
     diagnostic("Screen="+std::to_string(int(page)));
     modeGestureUntil_ = 0;
-    if (page == Screen::ForgetDevice && forgetId_.empty()) { forgetId_=app_.selectedDevice();forgetName_=app_.name(); }
+    if (page == Screen::ForgetDevice && forgetId_.empty()) {
+        forgetId_=app_.selectedDevice();forgetName_=app_.name();
+        const auto report=app_.report();
+        if((report.twinDetected || report.twin) && !report.twinPeerName.empty()) forgetName_+=" + "+report.twinPeerName;
+    }
     rotaryAdjustment_.reset();
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
@@ -370,6 +470,7 @@ void UiController::navigate(Screen page) {
     if (page == Screen::Drops) { draftDrops_ = app_.drops(); dropField_ = 1; }
 }
 void UiController::act(int action, const std::string& id, bool held) {
+    if(batteryAlertDialog_ && action!=Unload) return;
     if(debugDisconnectPending_ && action!=Unload) return;
     // Installation reserves the disconnected remote until failure/restart.
     // Unload is never gated, including if connection state unexpectedly changes.
@@ -390,9 +491,15 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == Select) {
         if (held && app_.remembered(id)) {
             forgetId_ = id;
-            for (const auto& d : app_.devices()) if (d.id == id) forgetName_ = d.name;
+            for (const auto& d : app_.devices()) if (d.id == id) {
+                forgetName_=d.name;
+                if(!d.twinPeer.empty()) forgetName_+=" + "+d.twinPeer;
+            }
             navigate(Screen::ForgetDevice);
-        } else if (!held) {if(app_.select(id)) navigate(Screen::Main);else if(!app_.message().empty()) navigate(Screen::ConnectionNotice);}
+        } else if (!held) {
+            if(app_.select(id)) navigate(app_.selectionReady() ? Screen::Main : Screen::Devices);
+            else if(!app_.message().empty()) navigate(Screen::ConnectionNotice);
+        }
         return;
     }
     if (action == CancelForget) { navigate(Screen::Devices); return; }
@@ -495,7 +602,7 @@ void UiController::act(int action, const std::string& id, bool held) {
             const int base = app_.report().settings.weight;
             if(percent && base <= 0) return;
             const int converted = target.value_or(int(std::lround(percent ? draftValue_*100.0/base : draftValue_*base/100.0)));
-            draftPercent_ = percent; draftValue_ = std::clamp(converted,std::min(1,editMaximum()),editMaximum());
+            draftPercent_ = percent; draftValue_ = editValue(converted);
             target = draftValue_; edited();
         }
         return;
@@ -542,7 +649,7 @@ void UiController::build() {
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
     weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=autoFeedbackVisible_=false;
-    center_ = battery_ = twinIcon_ = nullptr; ticks_.fill(nullptr);
+    center_ = battery_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
     wifiBody_=wifiButton_=wifiReset_=wifiBack_=nullptr;
@@ -570,6 +677,13 @@ void UiController::build() {
     battery_ = label(face_, "", width_*45/100, height_*91/100, small); color(battery_, soft);
     if (int(page_) >= int(Screen::Presets)) { buildExtra(); return; }
     if (page_ == Screen::Devices) {
+        if(app_.resolvingSelection()) {
+            message_=label(face_,app_.message(),width_*76/100,height_*38/100,medium);
+            lv_label_set_long_mode(message_,LV_LABEL_LONG_WRAP);
+            color(message_,soft);
+            button(face_,"Cancel",width_*32/100,height_*62/100,width_*36/100,height_*12/100,DismissConnection);
+            return;
+        }
         auto* gear = button(face_, LV_SYMBOL_SETTINGS, width_*44/100, height_*4/100, width_*12/100, height_*9/100, OpenSettings);
         color(gear, accent());
         const auto& devices = app_.devices();
@@ -588,33 +702,31 @@ void UiController::build() {
                 });
                 const DeviceEntry* peer=found==devices.end() ? nullptr : &*found;
                 const bool pairFresh=d.twinFresh || (peer && peer->twinFresh);
-                const bool active[]={d.online || (peer && peer->twinFresh && peer->twinPeerAvailable),
-                    d.twinFresh && d.twinPeerAvailable};
-                const DeviceId ids[]={d.id,d.twinPeerId};
+                // An observed pair is one control. A peer need not advertise
+                // separately while linked, so both rings share availability.
+                const bool active=d.online || (peer && peer->online) ||
+                    (pairFresh && (d.twinPeerAvailable || (peer && peer->twinPeerAvailable)));
+                const auto selection=app_.selectionDevice(d.id);
+                if(active || app_.remembered(selection)) bind(group,Select,selection);
                 const std::string names[]={d.name,peer ? peer->name : d.twinPeer.empty() ? "Twin peer" : d.twinPeer};
                 for(int side=0;side<2;++side) {
                     const int diameter=size*64/100;
-                    auto* circle=disc(group,side*size*36/100,size*13/100,diameter,accent(),active[side]);
+                    auto* circle=disc(group,side*size*36/100,size*13/100,diameter,accent(),active);
                     style::set_bg_opa(circle,LV_OPA_TRANSP,0);style::set_shadow_width(circle,0,0);
-                    if(!pairFresh && !active[side]) style::set_border_color(circle,lv_color_hex(muted),0);
-                    if(!ids[side].empty() && ((side==0 ? d.online : peer && peer->online) || app_.remembered(ids[side])))
-                        bind(circle,Select,ids[side]);
+                    if(!pairFresh && !active) style::set_border_color(circle,lv_color_hex(muted),0);
                     auto* name=label(circle,names[side],diameter*55/100,diameter*25/100,small);
                     style::set_align(name,LV_ALIGN_TOP_LEFT);
                     lv_obj_set_x(name,diameter*(side==0 ? 5 : 40)/100);
                     lv_label_set_long_mode(name,LV_LABEL_LONG_DOT);lv_obj_set_height(name,small->line_height*2);
-                    color(name,active[side] ? bright : muted);
-                    if(!ids[side].empty()) deviceRows_.push_back({circle,ids[side]});
+                    color(name,active ? bright : muted);
                 }
-                auto* caption=label(group,pairFresh ? "TWIN" : "Twin status unknown",size,size*83/100,small);
-                color(caption,pairFresh ? accent() : amber);
+                deviceRows_.push_back({group,selection});
                 continue;
             }
             auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, accent(), d.online);
             if (d.online || app_.remembered(d.id)) bind(tile, Select, d.id);
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
-            auto* icon = d.twinPeer.empty() ? linkIcon(tile, size*40/100, d.online ? bright : muted) :
-                twinIcon(tile, size*45/100, d.online ? accent() : muted);
+            auto* icon = linkIcon(tile, size*40/100, d.online ? bright : muted);
             style::align(icon, LV_ALIGN_TOP_MID, 0, size*16/100);
             auto* name = label(tile, d.name, size*90/100, size*49/100, small);
             lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
@@ -652,10 +764,7 @@ void UiController::build() {
     }
     status_ = label(face_, "", width_*62/100, height_*30/100, small);
     color(status_, soft);
-    if (page_ == Screen::Main) {
-        twinIcon_ = twinIcon(face_, width_*7/100, accent());
-        lv_obj_set_pos(twinIcon_, width_*17/100, height_*30/100);
-    } else { bind(status_, Unload); lv_obj_set_ext_click_area(status_, height_/100); }
+    if (page_ != Screen::Main) { bind(status_, Unload); lv_obj_set_ext_click_area(status_, height_/100); }
     if (!rp) {
         const uint32_t centerAccent = accent();
         const int size = width_*42/100;
@@ -821,6 +930,13 @@ int UiController::editMaximum() const {
     else { s.eccentric.enabled = true; s.eccentric.percent = draftPercent_; }
     return modifierMaximum(r, s, page_ == Screen::Magic);
 }
+int UiController::editValue(int amount) const {
+    const auto r=app_.report();
+    const int maximum=editMaximum();
+    const int minimum=std::min(draftPercent_ ? 1 : weightIncrementTicks(r),maximum);
+    const int clamped=std::clamp(amount,minimum,maximum);
+    return draftPercent_ ? clamped : weightTicksDown(r,clamped);
+}
 void UiController::rotate(int delta) {
     if(page_ == Screen::Devices) {
         if (runtime_ && modeGestureUntil_ && hardware_.nowMs() <= modeGestureUntil_) {
@@ -842,8 +958,9 @@ void UiController::rotate(int delta) {
         const auto r = app_.report();
         const bool weight = page_ == Screen::Main || page_ == Screen::Live;
         const int current = weight ? app_.weightPreview().value_or(r.settings.weight) : page_ == Screen::Drops ? draftDrops_.step : draftValue_;
-        const int wholeUnit = weight || page_ == Screen::Drops || !draftPercent_ ? ticksPerUnit(r.unit) : 1;
-        delta = rotaryAdjustment_.delta(delta,current,hardware_.nowMs(),wholeUnit);
+        const bool absolute=weight || page_ == Screen::Drops || !draftPercent_;
+        const int wholeUnit=absolute ? ticksPerUnit(r.unit) : 1;
+        delta=rotaryAdjustment_.delta(delta,current,hardware_.nowMs(),wholeUnit,absolute ? weightIncrementTicks(r) : 1);
         if(!delta) return; // Coarse cadence may be collecting the next detent.
     }
     if (page_ == Screen::Presets) {
@@ -867,18 +984,21 @@ void UiController::rotate(int delta) {
     if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta); return; }
     if (page_ != Screen::Drops) {
         auto& memory = unitSelection();
-        draftValue_ = std::clamp(draftValue_+delta, std::min(1,editMaximum()), editMaximum());
+        draftValue_ = editValue(draftValue_+delta);
         memory.percent.reset(); memory.absolute.reset();
         (draftPercent_ ? memory.percent : memory.absolute) = draftValue_;
         edited(); return;
     }
-    if (draftDrops_.mode == DropMode::Stairs) draftDrops_.step = std::clamp(draftDrops_.step+delta, -editMaximum(), editMaximum());
+    if (draftDrops_.mode == DropMode::Stairs) {
+        const int amount=std::clamp(draftDrops_.step+delta,-editMaximum(),editMaximum());
+        draftDrops_.step=(amount<0 ? -1 : 1)*weightTicksDown(app_.report(),std::abs(amount));
+    }
     else if (dropField_ == 0) draftDrops_.drops = std::clamp(draftDrops_.drops+delta, 0, 9);
     else if (dropField_ == 1) draftDrops_.percent = std::clamp(draftDrops_.percent+delta, 0, 80);
     else draftDrops_.holdSeconds = std::clamp(draftDrops_.holdSeconds+delta, 1, std::max(1,restPauseHoldMaximum(app_.report())));
 }
 void UiController::update() {
-    const auto battery = hardware_.batteryPercent();
+    const auto battery = remoteBatteryPercent();
     const char* batteryIcon = !battery ? LV_SYMBOL_BATTERY_EMPTY : *battery > 85 ? LV_SYMBOL_BATTERY_FULL :
         *battery > 60 ? LV_SYMBOL_BATTERY_3 : *battery > 35 ? LV_SYMBOL_BATTERY_2 :
         *battery > 10 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
@@ -908,15 +1028,7 @@ void UiController::update() {
         color(weight_, !readback || !loadKnown ? amber : preview ? muted : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
         value(title_,detectedTwin ? app_.name()+" + "+(r.twinPeerName.empty() ? "Twin peer" : r.twinPeerName) : app_.name());
-        value(status_,detectedTwin ? !topologyFresh ? "Twin status unknown" : !r.twin ? "Twin link not active" :
-            readback ? std::string("TWIN  |  TOTAL ")+unitName(r.unit) : "Twin / reading total..." : "");
-        color(status_,topologyFresh && r.twin && readback ? accent() : amber);
-        if(detectedTwin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
-        for(uint32_t i=0;i<lv_obj_get_child_count(twinIcon_);++i)
-            style::set_border_color(lv_obj_get_child(twinIcon_,int32_t(i)),lv_color_hex(topologyFresh && r.twin ? accent() : amber),0);
-        lv_obj_set_width(status_,width_*76/100);
-        style::set_text_font(status_, &lv_font_montserrat_14,0);
-        style::align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
+        value(status_,"");
         updateScale(readback ? shownWeight : 0,readback ? r.maxWeight : 0,"",atMaximum ? maximumColor : accent());
         for(auto* mark:scaleLabels_) {
             if(readback && r.maxWeight>0) lv_obj_remove_flag(mark,LV_OBJ_FLAG_HIDDEN);
@@ -977,13 +1089,12 @@ void UiController::update() {
         if (counters.completedSets && counters.lastSetReps) summary = std::to_string(*counters.completedSets)+" | "+std::to_string(*counters.lastSetReps);
         if (const auto rest=app_.restSeconds()) summary += "    "+std::to_string(*rest/60)+":"+(*rest%60 < 10 ? "0" : "")+std::to_string(*rest%60);
         value(stats_,summary);
-        value(message_,detectedTwin && (!loadKnown || !topologyFresh || !r.combinedWeightKnown || r.maxWeight==0) && !app_.pending() ?
-            "Twin controls need verified\nhost/peer state" : !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
+        value(message_,!app_.fresh() ? (app_.message().empty() ? detectedTwin ? "" : "State unknown / tap weight to unload" : app_.message()) :
             r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
             preview ? "Setting weight..." : atMaximum ? "MAX" : "");
         lv_obj_set_width(message_,width_*68/100);
-        lv_obj_set_y(message_,height_*(detectedTwin ? 82 : 88)/100);
-        color(message_,detectedTwin && (!loadKnown || !topologyFresh) ? amber : atMaximum && app_.message().empty() ? maximumColor : soft);
+        lv_obj_set_y(message_,height_*88/100);
+        color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
         updateAutoLoadFeedback();
         return;
     }
@@ -1025,7 +1136,7 @@ void UiController::update() {
             updateScale(draftDrops_.step, r.maxWeight, "", accent(), true);
         }
     } else {
-        draftValue_ = std::clamp(draftValue_, std::min(1,editMaximum()), editMaximum());
+        draftValue_ = editValue(draftValue_);
         largeValue(editMaximum() == 0 ? "OFF" : (draftPercent_ ? std::to_string(draftValue_) : weightText(draftValue_,r.unit))+(draftPercent_ ? "%" : ""));
         const bool atMaximum = app_.fresh() && draftValue_ >= editMaximum();
         color(weight_, atMaximum ? limitAccent() : bright);
@@ -1084,10 +1195,7 @@ void UiController::updateAutoLoadFeedback() {
         }
         if(visible) {
             lv_obj_add_flag(status_,LV_OBJ_FLAG_HIDDEN);
-            if(detectedTwin) lv_obj_remove_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
-            else lv_obj_add_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
         } else lv_obj_remove_flag(status_,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(twinIcon_,width_*17/100,height_*(visible ? 17 : 30)/100);
         lv_obj_set_y(title_,height_*(visible ? 17 : 21)/100);
         lv_obj_set_y(center_,height_*(visible ? 38 : 35)/100);
         const int scale=std::min(width_*(visible ? 390 : 560)/480,
@@ -1214,7 +1322,7 @@ void UiController::tick() {
         const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
         updates_->tick(now,w.connected && !w.setupActive,!app_.connected() && !app_.connecting() && !app_.pending() && (!reports_ || !reports_->status().busy()));
         if(updates_->status().phase==UpdatePhase::Available && !updatePromptShown_ &&
-           !debugDialog_ && !debugPending_ && !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
+           !batteryAlertDialog_ && !debugDialog_ && !debugPending_ && !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
             updatePromptShown_=true;navigate(Screen::Updates);
         }
     }
@@ -1226,15 +1334,21 @@ void UiController::tick() {
     }
     if(!app_.fresh() || !app_.confirmedDropWeight() || !app_.report().loaded) dropCueUntil_=0;
     rememberModifiers();
+    if(page_!=Screen::Devices && int(page_)<int(Screen::Settings) && app_.connected() && !app_.selectionReady())
+        navigate(Screen::Devices);
     if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting() &&
         !(rebuild_ && next_==Screen::Devices)) {
         app_.leave(true);navigate(app_.message().empty() ? Screen::Devices : Screen::ConnectionNotice);
     }
     if (page_ == Screen::Devices) {
-        if (!debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
-            (!updates_ || (!updates_->startupPending() && !updates_->status().busy())) && app_.tryAutomaticSelection()) navigate(Screen::Main);
-        std::string signature;
-        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+d.twinPeerId+
+        if (!batteryAlertDialog_ && !debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
+            (!updates_ || (!updates_->startupPending() && !updates_->status().busy()))) {
+            if(app_.selectionFailed()) navigate(Screen::ConnectionNotice);
+            else if(app_.connected() && app_.selectionReady()) navigate(Screen::Main);
+            else if(app_.tryAutomaticSelection()) {next_=Screen::Devices;rebuild_=true;}
+        }
+        std::string signature=app_.resolvingSelection() ? "resolving" : "devices";
+        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+d.twinPeerId+d.twinSelectionId+
             (d.online ? "1" : "0")+(d.twinFresh ? "F" : "?")+(d.twinPeerAvailable ? "P" : "-")+(app_.remembered(d.id) ? "S" : "D");
         // Do not destroy a tile underneath a held finger when a scan completes.
         if (!touchDown_ && signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
@@ -1245,7 +1359,7 @@ void UiController::tick() {
         // an edit or retry; only a new input event can set editDirty_.
         constexpr uint64_t editSettleMs = 150;
         if(editDirty_ && !app_.pending() && now-editedAt_ >= editSettleMs) {
-            draftValue_ = std::clamp(draftValue_,std::min(1,editMaximum()),editMaximum());
+            draftValue_ = editValue(draftValue_);
             const bool accepted = app_.applyModifier(page_ == Screen::Magic,draftMode_,draftValue_,draftPercent_);
             editDirty_=false;
             if(returnAfterEdit_ && accepted) navigate(Screen::Main);
@@ -1267,23 +1381,24 @@ void UiController::tick() {
     const int delta = hardware_.rotary().getDelta();
     const bool pressed = hardware_.rotary().wasPressed();
     const bool wasSleeping = sleeping_;
-    if (delta || pressed) { activityAt_ = now; sleeping_ = false; }
+    if (delta || pressed) { activityAt_ = batteryInteractionAt_ = hardware_.nowMs(); sleeping_ = false; }
     if (modeGestureUntil_ && now > modeGestureUntil_) modeGestureUntil_ = 0;
-    if (pressed && !wasSleeping && !debugDialog_ && page_ == Screen::Devices && runtime_) {
+    if (pressed && !wasSleeping && !batteryAlertDialog_ && !debugDialog_ && page_ == Screen::Devices && runtime_) {
         modeGestureUntil_ = now+3000; modeGestureClicks_ = 0;
     }
-    if (delta && !wasSleeping && !debugDialog_ && !debugDisconnectPending_) {
+    if (delta && !wasSleeping && !batteryAlertDialog_ && !debugDialog_ && !debugDisconnectPending_) {
         diagnostic("Dial delta="+std::to_string(delta)+" screen="+std::to_string(int(page_)));
         rotate(delta);
     }
     if (pressed && !wasSleeping) {
-        if (debugDialog_ || debugDisconnectPending_) { if(app_.connected()) unloadFromDebugDialog(); }
+        if(batteryAlertDialog_) { /* The modal's explicit buttons own input. */ }
+        else if (debugDialog_ || debugDisconnectPending_) { if(app_.connected()) unloadFromDebugDialog(); }
         else if (page_ == Screen::Presets) act(ChoosePreset,"",false);
         else if (page_ == Screen::PresetNotice) act(Unload,"",false);
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
     }
     // Keep unload visible while loaded, pending, armed, or connected with unknown state.
-    const bool mustStayAwake = restNotice_ || debugDialog_ || (reports_ && reports_->status().busy()) || (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
+    const bool mustStayAwake = batteryAlertDialog_ || restNotice_ || debugDialog_ || (reports_ && reports_->status().busy()) || (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
     // An action above can block on GATT and record activity later than `now`.
     // Sample again; unsigned subtraction from the old loop clock sleeps instantly.
     const auto powerNow=hardware_.nowMs();
@@ -1301,8 +1416,9 @@ void UiController::tick() {
     lv_timer_handler();
     updateAutoLoadFeedback(); // Input callbacks may have released/cancelled the hold.
     if(debugPending_) {debugPending_=false;openDebugDialog();}
-    updateDebugDialog();
+    if(!batteryAlertDialog_) updateDebugDialog();
     // Navigation is deferred until after input callbacks return.
     if (rebuild_) { build(); update(); }
+    updateBatteryAlert(hardware_.nowMs());
 }
 }

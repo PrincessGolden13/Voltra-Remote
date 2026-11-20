@@ -8,9 +8,13 @@ struct DeviceEntry {
     std::string name;
     bool online = false;
     std::string twinPeer;
-    // Volatile, machine-observed relationship; never pairing configuration.
+    // Machine-observed navigation relationship; never pairing configuration.
+    // Storage may retain IDs/names, but freshness/availability always restart false.
     DeviceId twinPeerId{};
     bool twinFresh = false, twinPeerAvailable = false;
+    // One cached discovery candidate for the observed pair; never a current
+    // master-role claim or permission to open training controls.
+    DeviceId twinSelectionId{};
 };
 class DeviceMemory {
 public:

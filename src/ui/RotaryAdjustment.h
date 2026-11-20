@@ -8,7 +8,7 @@ namespace voltra {
 class RotaryAdjustment {
 public:
     void reset() { *this = {}; }
-    int delta(int detents, int current, uint64_t now, int ticksPerWholeUnit) {
+    int delta(int detents, int current, uint64_t now, int ticksPerWholeUnit,int fineIncrement=1) {
         if (!detents) return 0;
         const int direction = detents > 0 ? 1 : -1;
         const int count = std::abs(detents);
@@ -52,7 +52,8 @@ public:
             coarseDetents_%=detentsPerGentleStep;
             if(!steps) return 0;
         }
-        const int quantum = level_ == 0 ? 1 : (level_ == 3 ? 10 : 5)*ticksPerWholeUnit;
+        const int increment=std::max(1,fineIncrement);
+        const int quantum = level_ == 0 ? increment : (level_ == 3 ? 10 : 5)*ticksPerWholeUnit*increment;
         // First accelerated step reaches the next grid mark in the direction of
         // travel. Positive modulo also handles negative stairs amounts correctly.
         const int remainder = (current%quantum+quantum)%quantum;

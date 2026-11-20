@@ -1,5 +1,95 @@
 # Validation status and pending tests
 
+November 20 v0.4.10 addition: [remote battery alert/estimate](REMOTE_BATTERY_2026_11_20.md).
+PASS static review: source is the remote hardware's valid optional reading only,
+not VOLTRA/peer battery. Queue at <=10%, defer Live/pending-Live/known active sets,
+other modals, gestures, connection resolution and critical work. OK acknowledges
+one episode; known >=15% rearms. Unknown/invalid readings defer without losing a
+pending warning. Modal input cannot reach underlying weight/load controls; explicit
+UNLOAD remains available. Board-owned ADC cache uses no I2C or power writes.
+PASS real LVGL previews at360/466/480: threshold10 alert, deferred Live then
+set-over display and explicit unload confirmation. Extended360 previews cover
+active set on Settings, dismiss/no jitter nag,15->10 rearm, unknown/255, held touch
+and encoder-input consumption.
+Separate360/466/480 loaded-rest previews retain loaded=true and repsStarted=true
+while changing the fresh setActive report to false: Live returns to Main and the
+warning appears with OK/UNLOAD, with zero control calls. An unload is not required
+to receive the deferred warning after a confirmed set end.
+No new automated test source or physical battery/motor operation. Physical rail
+values, estimate calibration and exact threshold timing on the owner's unit remain
+unverified. Public firmware/build results follow; existing Twin publication hold
+remains in effect.
+PASS held-draft battery build: [CI44770074824](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44770074824)
+at5ea859f2cb9fa9e2d44a04202839da159dc73486 passes public Normal, isolated
+Simulator, offline core and packaging. Artifact14647696114 digest matches
+`7242819911b60573ec06750d8aa138fe5da064125eda65ff4c95c3cd381698c6`.
+Normal1,997,520bytes SHA-256
+`2fe2136f16cbb41421bbef85da803cb6b168876b51285a9835397591cbaaff96`;
+Simulator1,027,072bytes SHA-256
+`b8dd56ad5ab4c2a123d0bb33b198c88ad637d891f2a137a3f3d3b58c62f6d3a6`.
+Descriptors, manifest identity/size/hash, all USB hashes/offsets/partition map,
+USB/OTA Normal equality, defined-symbol backend isolation and strong NVS/rollback
+hooks pass. Receipt: ignored build/review-v0410-battery. No merge, tag or release
+publication; physical ADC calibration and alert timing remain unverified.
+
+November 20 v0.4.10: [one paired control and quieter screens](TWIN_PRESENTATION_2026_11_20.md)
+and [reported target-resistance correction](LIVE_TARGET_SOURCE_2026_11_20.md).
+UNRELEASED: the owner requires actual current-master resolution for every pair.
+The physical decoder remains unavailable; PR10 stays draft and publication is held.
+The later generic router is checked with explicit synthetic roles only.
+PASS: existing offline core/packet inspector build and pinned Ryan validators
+(203 SDK packets, weight5..230,593 modifier packets, SDK identity consistency).
+Four published CRC-valid independent B4 captures decode a6LB reported target;
+the published Twin-source frame is rejected by the independent target decoder.
+No new automated test source or physical motor command is added.
+PASS: actual LVGL Main/Devices/unknown-motor renders at360/466/480 show names-only
+headers, no caption/banner/dial overlap and matched availability. Synthetic
+pointer previews on both paired circles at every size open the same endpoint.
+Live renders at all three sizes cover reported28 versusBASE25, zero, absent,
+stale-- andKG. These are offline visual/source checks, not physical compatibility.
+Independent static review checks pair navigation versus current authorization,
+absolute two-pound grids, target context/freshness and rollback-readable storage.
+PASS: actual DesktopDeviceMemory preview across separate processes restores one
+pair, with connection/readback/freshness/readiness absent; either side selects the
+same candidate. Subsequent role-aware LVGL previews use Orchid/Slate aliases with
+no pair catalog: follower-first probes follower then master read-only, master-first
+probes master, Unknown probes each endpoint once and fails, and Cancel disconnects.
+At360/466/480 only fresh explicit synthetic Master reaches training. These previews
+do not establish a physical role decoder or authorize any physical Twin command.
+PASS: independent static review of the later role-aware framework checks bounded
+reciprocal probes, dynamic readiness, cancellation, the physical query allowlist,
+no automatic workout entry during discovery, and the mock's role/identity guard
+before queued mutation. Physical role stays Unknown and cannot promote a Twin.
+PASS baseline only: [CI44763541029](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44763541029)
+at47f5f911e649db300825581e7919c5e7be0b756d builds both public images and packaging.
+Artifact14643255564 digest matches
+`c8e9ede972fcd9ed88b0a087ffd45a6b66b73a141b690716a54075c773105ae1`;
+Normal1,977,088bytes SHA-256
+`9bcaccceb3445dcaa3aa97858a1dbacb20cf92f781a62763f176f2a93962bf65`,
+Simulator1,006,144bytes SHA-256
+`77d65850155b7341205b3a20058f09f48954b562a739016db3b3e380e8522e80`.
+Descriptors, manifest, USB hashes/offsets/partition map, USB/OTA equality, backend
+isolation and strong NVS/rollback hooks pass. This artifact predates the subsequent
+role-aware router/probe changes and is not approved as master autodetection.
+PASS held-draft framework: [CI44766603773](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44766603773)
+at ea1552bb28e0e7d0cdf36e02de36fa318e2e5379 builds public Normal, isolated
+Simulator, offline core and packages. Artifact14644108166 digest matches
+`b802a17b4cea580ebefe4c9fb216fcc662e389f378d87402a7ba93873b57a27c`.
+Normal1,983,376bytes SHA-256
+`00f34c8251dedbf6799ebf1f8c1a4651174a2a90ec98a39eaf5ab525e6a3b9fd`;
+Simulator1,012,576bytes SHA-256
+`266af4f2aa05aaedea809c49de4a791b94c2e8c294ad5d06c785b03bf352c1bf`.
+Both descriptors, manifest identity/length/hash, all USB hashes/offsets/partition
+map and USB/OTA Normal equality pass. ELF defined-symbol checks confirm physical
+backend only in Normal, mock only in Simulator and both strong NVS erase-range
+protection/verifyRollbackLater hooks. Receipt: ignored build/review-v0410-role.
+These checks approve the draft's build/artifacts, not physical master detection.
+PR10 stays draft; no merge, release tag or publication was performed.
+Physical Twin adjustment/load/unload remains unresolved. The latest stored Twin
+report still predatesv0.4.9, and A003, peer safety and a scoped combined maximum
+remain unknown. Device-reported B4 target compatibility and exact agreement with
+the owner's changing VOLTRA LCD still require a physical comparison.
+
 November 20 v0.4.9: [Twin/readback, reconnect and Live changes](TWIN_LIVE_READBACK_2026_11_20.md).
 PASS: changed offline core/packet inspector with CMake 3.31.6/GNU 14.2.0, existing
 Ryan packet validator (203 SDK packets, weight 5..230, 593 modifier packets) and

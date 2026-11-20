@@ -45,6 +45,16 @@ private:
     void updateDebugDialog();
     void sendDebugReport();
     void unloadFromDebugDialog();
+    static constexpr uint8_t lowBatteryPercent=10, batteryRearmPercent=15;
+    static constexpr uint64_t batteryAlertIdleMs=600;
+    bool lowBatteryEpisode_=false, lowBatteryPending_=false, batteryUnloadRequested_=false;
+    uint8_t batteryAlertPercent_=0;
+    uint64_t batteryInteractionAt_=0;
+    lv_obj_t *batteryAlertDialog_=nullptr,*batteryAlertValue_=nullptr,*batteryAlertText_=nullptr,*batteryAlertUnload_=nullptr;
+    std::optional<uint8_t> remoteBatteryPercent() const;
+    void updateBatteryAlert(uint64_t now);
+    void openBatteryAlert();
+    void closeBatteryAlert(bool acknowledged);
     bool updatePromptShown_=false;
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;
@@ -62,7 +72,7 @@ private:
     lv_obj_t *tiles_[3]{};
     lv_obj_t *stairs_[3]{};
     lv_obj_t* dropTitle_ = nullptr;
-    lv_obj_t *center_ = nullptr, *battery_ = nullptr, *twinIcon_ = nullptr;
+    lv_obj_t *center_ = nullptr, *battery_ = nullptr;
     lv_obj_t *scaleLabels_[7]{}, *choiceNames_[3]{};
     static constexpr int tickCount = 41;
     std::array<lv_obj_t*, tickCount> ticks_{};
@@ -131,7 +141,6 @@ private:
     lv_obj_t* arc(lv_obj_t*, int size, uint32_t color);
     lv_obj_t* disc(lv_obj_t*, int x, int y, int size, uint32_t accent, bool active);
     lv_obj_t* linkIcon(lv_obj_t*, int size, uint32_t color);
-    lv_obj_t* twinIcon(lv_obj_t*, int size, uint32_t color);
     void glow(lv_obj_t*, uint32_t accent, bool active);
     void buildScale();
     void updateScale(int selected, int maximum, const std::string& suffix, uint32_t accent, bool negative = false);
@@ -141,5 +150,6 @@ private:
     void update();
     void rotate(int delta);
     int editMaximum() const;
+    int editValue(int amount) const;
 };
 }

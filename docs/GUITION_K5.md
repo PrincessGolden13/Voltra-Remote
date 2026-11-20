@@ -1,5 +1,12 @@
 # Guition K5 hardware validation
 
+November 20: the [remote battery estimate](REMOTE_BATTERY_2026_11_20.md) adds a
+passive GPIO1 ADC reader using the evidenced K518 divider and an inferred LiPo
+voltage profile. The low-battery warning queues through Live and active sets.
+The owner's ADC calibration/rail observations remain unverified; normal USB-range
+and invalid/stale values return unavailable. Earlier battery-absence notes below
+describe the original bring-up firmware.
+
 November 9: the [rest completion alert](REST_ALERT_2026_11_09.md) adds a detected
 DRV2605/2605L driver. The owner confirmed factory-firmware vibration; the new
 driver still needs a physical trial. Older absence-of-vibration notes below

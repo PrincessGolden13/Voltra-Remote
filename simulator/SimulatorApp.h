@@ -94,45 +94,59 @@ struct SimulatorApp {
             application.select(o.device == 0 ? MockTransport::deviceId :
                 std::string(MockTransport::deviceId) + '-' + std::to_string(o.device));
             transport.setProfile(static_cast<SimulatorProfile>(o.profile));
-            if(o.weightUnit >= 0) transport.previewUnit(static_cast<WeightUnit>(o.weightUnit));
-            if(o.weightTicks >= 0) transport.previewWeight(o.weightTicks);
-            if(o.modifierValue >= 0) transport.previewModifier(o.modifierValue);
-            if(o.autoUnloadSeconds>=0) transport.previewAutoUnload(o.autoUnloadSeconds);
             application.tick(hardware.nowMs());
-            if (o.dropMode == 1 || o.liveDrops == 1) {
-                auto drops = application.drops(); drops.mode = o.dropMode ? DropMode::RestPause : DropMode::Stairs;
-                drops.enabled = o.liveDrops == 1;
-                drops.holdSeconds=o.holdSeconds;
-                application.applyDrops(drops);
-            }
-            if(o.previewReps) {
-                application.tick(hardware.nowMs());
-                for(int rep=0;rep<o.previewReps;++rep) {
-                    hardware.previewClock(hardware.nowMs()+100);transport.completeRep();application.tick(hardware.nowMs());
-                    hardware.previewClock(hardware.nowMs()+100);application.tick(hardware.nowMs());
+            if(!o.renderPath.empty()) {
+                // Resolve ordinary read-only selection before applying a scene
+                // to its final endpoint. Only offline renders advance this clock;
+                // interactive hosts retain the normal asynchronous UI flow.
+                constexpr uint64_t selectionPreviewLimitMs=30000;
+                const auto started=hardware.nowMs();
+                while(application.resolvingSelection() && hardware.nowMs()-started<selectionPreviewLimitMs) {
+                    hardware.previewClock(hardware.nowMs()+20);application.tick(hardware.nowMs());
                 }
             }
-            if(o.holdElapsedMs>=0) {
-                // Exercise the ordinary mock motion -> controller hold path;
-                // no direct UI progress injection and no physical transport.
+            if(application.selectionReady()) {
+                transport.setProfile(static_cast<SimulatorProfile>(o.profile));
+                if(o.weightUnit >= 0) transport.previewUnit(static_cast<WeightUnit>(o.weightUnit));
+                if(o.weightTicks >= 0) transport.previewWeight(o.weightTicks);
+                if(o.modifierValue >= 0) transport.previewModifier(o.modifierValue);
+                if(o.autoUnloadSeconds>=0) transport.previewAutoUnload(o.autoUnloadSeconds);
                 application.tick(hardware.nowMs());
-                hardware.previewClock(hardware.nowMs()+100);
-                transport.completeRep();application.tick(hardware.nowMs());
-                hardware.previewClock(hardware.nowMs()+100);
-                transport.setHeld(true);application.tick(hardware.nowMs());
-                const auto holdStart=hardware.nowMs();
-                for(int elapsed=50;elapsed<=o.holdElapsedMs;elapsed+=50) {
-                    hardware.previewClock(holdStart+elapsed);application.tick(hardware.nowMs());
+                if (o.dropMode == 1 || o.liveDrops == 1) {
+                    auto drops = application.drops(); drops.mode = o.dropMode ? DropMode::RestPause : DropMode::Stairs;
+                    drops.enabled = o.liveDrops == 1;
+                    drops.holdSeconds=o.holdSeconds;
+                    application.applyDrops(drops);
                 }
-                hardware.previewClock(holdStart+o.holdElapsedMs);application.tick(hardware.nowMs());
-            }
-            if(o.finishSet) {
-                // Offline preview of an explicit end/unload and the ordinary
-                // controller's confirmed-unloaded base restore. No test fixture
-                // packets or physical transport are introduced.
-                application.unload();
-                for(int tick=0;tick<20;++tick) {
-                    hardware.previewClock(hardware.nowMs()+100);application.tick(hardware.nowMs());
+                if(o.previewReps) {
+                    application.tick(hardware.nowMs());
+                    for(int rep=0;rep<o.previewReps;++rep) {
+                        hardware.previewClock(hardware.nowMs()+100);transport.completeRep();application.tick(hardware.nowMs());
+                        hardware.previewClock(hardware.nowMs()+100);application.tick(hardware.nowMs());
+                    }
+                }
+                if(o.holdElapsedMs>=0) {
+                    // Exercise the ordinary mock motion -> controller hold path;
+                    // no direct UI progress injection and no physical transport.
+                    application.tick(hardware.nowMs());
+                    hardware.previewClock(hardware.nowMs()+100);
+                    transport.completeRep();application.tick(hardware.nowMs());
+                    hardware.previewClock(hardware.nowMs()+100);
+                    transport.setHeld(true);application.tick(hardware.nowMs());
+                    const auto holdStart=hardware.nowMs();
+                    for(int elapsed=50;elapsed<=o.holdElapsedMs;elapsed+=50) {
+                        hardware.previewClock(holdStart+elapsed);application.tick(hardware.nowMs());
+                    }
+                    hardware.previewClock(holdStart+o.holdElapsedMs);application.tick(hardware.nowMs());
+                }
+                if(o.finishSet) {
+                    // Offline preview of an explicit end/unload and the ordinary
+                    // controller's confirmed-unloaded base restore. No test fixture
+                    // packets or physical transport are introduced.
+                    application.unload();
+                    for(int tick=0;tick<20;++tick) {
+                        hardware.previewClock(hardware.nowMs()+100);application.tick(hardware.nowMs());
+                    }
                 }
             }
             ui.navigate(static_cast<Screen>(o.screen));

@@ -15,17 +15,28 @@ public:
     void setMaintenance(bool active) { maintenance_=active; }
     void setDiscoveryPaused(bool paused) { discoveryPaused_=paused; }
     bool select(const DeviceId&);
+    // Both members share one discovery candidate. Only fresh current-role
+    // evidence can promote a paired endpoint into the training session.
+    // Cached navigation metadata must never authorize resistance commands.
+    DeviceId selectionDevice(const DeviceId&) const;
+    bool resolvingSelection() const { return selectionPhase_==SelectionPhase::Resolving; }
+    bool selectionReady() const;
+    bool selectionFailed() const { return selectionPhase_==SelectionPhase::Failed; }
     bool tryAutomaticSelection();
     bool remembered(const DeviceId&) const;
     bool forget(const DeviceId&);
     void leave(bool preserveFailure = false);
     bool connected() const { return controller_.confirmed().connected; }
-    bool connecting() const { return controller_.connecting(); }
+    bool connecting() const { return controller_.connecting() || resolvingSelection(); }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { return name_; }
     std::string diagnosticState() const {
-        return (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+
-            " lastConnectionFailure={"+lastConnectionFailure_+"} lastFailure={"+lastControlFailure_+"}";
+        // The debug uploader bounds this context to 2048 bytes. Keep both
+        // read-only candidate snapshots first, before long previous failures.
+        return (selectionTrace_.empty() ? std::string{} : "selectionProbes={"+selectionTrace_+"} ")+
+            "lastConnectionFailure={"+lastConnectionFailure_+"} "+
+            (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+
+            " lastFailure={"+lastControlFailure_+"}";
     }
     uint64_t loadRefusalRevision() const { return loadRefusalRevision_; }
     const std::string& loadRefusalMessage() const { return loadRefusalMessage_; }
@@ -42,7 +53,7 @@ public:
         return pending_ && fresh() && report().unit==weightIntentUnit_ ? weightIntent_ : std::optional<int>{};
     }
     bool fresh() const;
-    bool pending() const { return pending_ || session_.busy() || dropRestore_.has_value(); }
+    bool pending() const { return resolvingSelection() || pending_ || session_.busy() || dropRestore_.has_value(); }
     // Pending intent only; machine-confirmed arming lives in TrainingReport.
     bool autoLoadRequested() const { return pending_ && autoLoadRequested_; }
     const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
@@ -76,12 +87,33 @@ private:
     std::vector<DeviceEntry> recent_, devices_, knownDevices_;
     struct SeenDevice { DeviceEntry device; uint64_t at; };
     std::map<DeviceId,SeenDevice> seenDevices_;
-    struct RememberedTwin { DeviceId peer; std::string peerName; uint64_t at=0; bool available=false; };
-    std::map<DeviceId,RememberedTwin> twinLinks_; // Session RAM only; never stored.
+    struct RememberedTwin {
+        DeviceId peer;
+        std::string peerName;
+        uint64_t at=0;
+        bool available=false;
+        DeviceId selection;
+        bool navigationKnown=false; // Confirmed paired identity, including saved navigation only.
+    };
+    std::map<DeviceId,RememberedTwin> twinLinks_; // Availability/timestamps are never stored.
     std::map<DeviceId, DropSettings> dropSettings_;
     DeviceId selected_;
     std::string name_, message_, presetError_;
     std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_,lastConnectionFailure_;
+    enum class SelectionPhase { Idle, Resolving, Ready, Failed };
+    SelectionPhase selectionPhase_=SelectionPhase::Idle;
+    uint64_t selectionStartedAt_=0,selectionReadAt_=0;
+    bool selectionReading_=false;
+    std::vector<DeviceId> selectionProbed_;
+    DeviceId selectionPeerCandidate_;
+    DeviceId selectionFirstEndpoint_,selectionExpectedPeer_,selectionResolvedPeer_;
+    bool selectionFirstPeerObserved_=false,selectionResolvedTwin_=false;
+    std::string selectionTrace_;
+    bool beginSelectionEndpoint(const DeviceId&);
+    bool runSelection();
+    void failSelection(const std::string&);
+    void traceSelectionEndpoint();
+    bool retainSelectionControl();
     uint64_t loadRefusalRevision_=0;
     void recordControlFailure(const std::string&);
     void recordLoadRefusal();
@@ -125,6 +157,7 @@ private:
     void refreshDiscovery(const std::vector<Advertisement>&);
     void refreshTwinDevices();
     void observeTwin(const TrainingReport&);
+    void saveTwinNavigation();
     void rememberConnection();
 };
 }

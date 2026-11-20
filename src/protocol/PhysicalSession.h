@@ -16,6 +16,8 @@ public:
                     std::optional<std::array<uint8_t,6>> helloIdentity = {});
     void connectionChanged(bool) override;
     void setSelectedAddress(std::string) override;
+    bool setReadOnlyProbe(bool) override;
+    bool readOnlyProbe() const override { return readOnlyProbe_; }
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
@@ -56,11 +58,23 @@ private:
     bool pairedReadSupported_=false,autoUnloadReadSupported_=false;
     bool autoLoadCountdownProbed_=false,autoLoadCountdownSupported_=false;
     uint64_t autoLoadPollAt_=0;
-    bool liveWeightProbed_=false,liveWeightReadSupported_=false;
-    uint64_t liveWeightPollAt_=0;
+    bool liveWeightProbed_=false;
+    // The terse runtime target belongs to one exact standalone loaded context.
+    // A settings/core/topology transition cannot reuse an earlier rep's target.
+    struct RuntimeTargetObservation {
+        int tenthsLb;
+        uint64_t at;
+        int64_t motor,workout,unit,base;
+    };
+    std::optional<RuntimeTargetObservation> runtimeTarget_;
+    unsigned runtimeTargetFrames_=0;
+    uint16_t runtimeTargetSource_=0;
+    size_t runtimeTargetBytes_=0;
+    bool runtimeTargetShapeValid_=false;
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
+    bool readOnlyProbe_=false; // Connection reset must preserve explicit probe intent.
     bool bootstrapWriteJustCompleted_=false;
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;

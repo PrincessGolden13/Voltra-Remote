@@ -1,5 +1,9 @@
 # November 20: Twin readback, connection handling and live load
 
+Later v0.4.10 corrections supersede the separate member selection and Live
+runtime-weight source below: [paired navigation/presentation](TWIN_PRESENTATION_2026_11_20.md)
+and [device-reported target resistance](LIVE_TARGET_SOURCE_2026_11_20.md).
+
 Baseline: published v0.4.8; main c0f3f95. The owner reports Black paired with Red,
 missing Twin indication, a failed first connection, halved weights and refused
 adjustment. They also request device-reported live load during Magic/eccentric
