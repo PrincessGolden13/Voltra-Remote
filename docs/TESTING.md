@@ -39,6 +39,20 @@ Simulator1,006,144bytes SHA-256
 Descriptors, manifest, USB hashes/offsets/partition map, USB/OTA equality, backend
 isolation and strong NVS/rollback hooks pass. This artifact predates the subsequent
 role-aware router/probe changes and is not approved as master autodetection.
+PASS held-draft framework: [CI44766603773](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44766603773)
+at ea1552bb28e0e7d0cdf36e02de36fa318e2e5379 builds public Normal, isolated
+Simulator, offline core and packages. Artifact14644108166 digest matches
+`b802a17b4cea580ebefe4c9fb216fcc662e389f378d87402a7ba93873b57a27c`.
+Normal1,983,376bytes SHA-256
+`00f34c8251dedbf6799ebf1f8c1a4651174a2a90ec98a39eaf5ab525e6a3b9fd`;
+Simulator1,012,576bytes SHA-256
+`266af4f2aa05aaedea809c49de4a791b94c2e8c294ad5d06c785b03bf352c1bf`.
+Both descriptors, manifest identity/length/hash, all USB hashes/offsets/partition
+map and USB/OTA Normal equality pass. ELF defined-symbol checks confirm physical
+backend only in Normal, mock only in Simulator and both strong NVS erase-range
+protection/verifyRollbackLater hooks. Receipt: ignored build/review-v0410-role.
+These checks approve the draft's build/artifacts, not physical master detection.
+PR10 stays draft; no merge, release tag or publication was performed.
 Physical Twin adjustment/load/unload remains unresolved. The latest stored Twin
 report still predatesv0.4.9, and A003, peer safety and a scoped combined maximum
 remain unknown. Device-reported B4 target compatibility and exact agreement with

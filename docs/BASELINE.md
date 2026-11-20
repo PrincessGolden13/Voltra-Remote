@@ -19,7 +19,14 @@
   whole-LB/half-KG formatting and no selected-base/sensor/modifier fallback.
   See LIVE_TARGET_SOURCE_2026_11_20.md and TWIN_PRESENTATION_2026_11_20.md.
 - Offline core/reference validators, four published B4 source captures and real
-  LVGL renders/pointer previews pass. Full firmware/artifact checks follow.
+  LVGL renders/pointer previews pass. Generic renamed Master/Follower/Unknown/
+  Cancel previews pass with read-only probes; only explicit synthetic Master can
+  enter training. Saved pair metadata does not establish a current master.
+- CONFIRMED build only: CI44766603773 at ea1552b passes both public firmware
+  builds, offline core and packaging. Downloaded artifact/image identities,
+  manifest, USB hashes/partition map, backend isolation and strong NVS/rollback
+  hooks pass; exact hashes are in TESTING.md. PR10 remains draft, with no merge,
+  tag or release publication. The latest stored Twin report is still v0.4.8.
   Physical Twin controls and exact Live LCD agreement remain unverified;
   no physical motor commands or new automated test source.
 
