@@ -142,6 +142,28 @@ lv_obj_t* UiController::twinIcon(lv_obj_t* parent, int size, uint32_t c) {
     }
     return group;
 }
+std::vector<const DeviceEntry*> UiController::deviceChoices() const {
+    std::vector<const DeviceEntry*> choices;
+    std::vector<DeviceId> represented;
+    const auto& devices=app_.devices();
+    for(const auto& device:devices) {
+        if(std::find(represented.begin(),represented.end(),device.id)!=represented.end()) continue;
+        const DeviceEntry* shown=&device;
+        // Pair only exact identities reported by the protocol. A one-sided
+        // relationship may arrive before its peer's scan record; names and
+        // physical proximity never establish a pair.
+        if(device.twinPeerId.empty()) {
+            const auto owner=std::find_if(devices.begin(),devices.end(),[&](const auto& candidate) {
+                return candidate.id!=device.id && candidate.twinPeerId==device.id &&
+                    std::find(represented.begin(),represented.end(),candidate.id)==represented.end();
+            });
+            if(owner!=devices.end()) shown=&*owner;
+        }
+        choices.push_back(shown);represented.push_back(shown->id);
+        if(!shown->twinPeerId.empty()) represented.push_back(shown->twinPeerId);
+    }
+    return choices;
+}
 void UiController::buildScale() {
     for (int i=0; i<tickCount; ++i) {
         const double a = (180.0 + i*180.0/(tickCount-1))*3.141592653589793/180.0;
@@ -360,7 +382,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     if(action==DismissControl) {navigate(app_.connected() ? Screen::Main : Screen::Devices);return;}
     rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
-        const size_t count = (app_.devices().size()+3)/4;
+        const size_t count = (deviceChoices().size()+3)/4;
         if (action == PreviousDevices && devicePage_ > 0) --devicePage_;
         if (action == NextDevices && devicePage_+1 < count) ++devicePage_;
         next_ = Screen::Devices; rebuild_ = true; return;
@@ -551,11 +573,43 @@ void UiController::build() {
         auto* gear = button(face_, LV_SYMBOL_SETTINGS, width_*44/100, height_*4/100, width_*12/100, height_*9/100, OpenSettings);
         color(gear, accent());
         const auto& devices = app_.devices();
-        const size_t pages = std::max(size_t(1), (devices.size()+3)/4);
+        const auto choices=deviceChoices();
+        const size_t pages = std::max(size_t(1), (choices.size()+3)/4);
         devicePage_ = std::min(devicePage_, pages-1);
-        for (size_t i=0; i<4 && devicePage_*4+i < devices.size(); ++i) {
-            const auto& d = devices[devicePage_*4+i];
+        for (size_t i=0; i<4 && devicePage_*4+i < choices.size(); ++i) {
+            const auto& d = *choices[devicePage_*4+i];
             const int size = width_*32/100;
+            if(!d.twinPeerId.empty() || !d.twinPeer.empty()) {
+                auto* group=lv_obj_create(face_);lv_obj_remove_style_all(group);
+                lv_obj_set_size(group,size,size);lv_obj_set_pos(group,width_*(17+int(i%2)*34)/100,height_*(14+int(i/2)*34)/100);
+                lv_obj_remove_flag(group,LV_OBJ_FLAG_CLICKABLE);lv_obj_remove_flag(group,LV_OBJ_FLAG_SCROLLABLE);
+                const auto found=std::find_if(devices.begin(),devices.end(),[&](const auto& candidate) {
+                    return !d.twinPeerId.empty() && candidate.id==d.twinPeerId;
+                });
+                const DeviceEntry* peer=found==devices.end() ? nullptr : &*found;
+                const bool pairFresh=d.twinFresh || (peer && peer->twinFresh);
+                const bool active[]={d.online || (peer && peer->twinFresh && peer->twinPeerAvailable),
+                    d.twinFresh && d.twinPeerAvailable};
+                const DeviceId ids[]={d.id,d.twinPeerId};
+                const std::string names[]={d.name,peer ? peer->name : d.twinPeer.empty() ? "Twin peer" : d.twinPeer};
+                for(int side=0;side<2;++side) {
+                    const int diameter=size*64/100;
+                    auto* circle=disc(group,side*size*36/100,size*13/100,diameter,accent(),active[side]);
+                    style::set_bg_opa(circle,LV_OPA_TRANSP,0);style::set_shadow_width(circle,0,0);
+                    if(!pairFresh && !active[side]) style::set_border_color(circle,lv_color_hex(muted),0);
+                    if(!ids[side].empty() && ((side==0 ? d.online : peer && peer->online) || app_.remembered(ids[side])))
+                        bind(circle,Select,ids[side]);
+                    auto* name=label(circle,names[side],diameter*55/100,diameter*25/100,small);
+                    style::set_align(name,LV_ALIGN_TOP_LEFT);
+                    lv_obj_set_x(name,diameter*(side==0 ? 5 : 40)/100);
+                    lv_label_set_long_mode(name,LV_LABEL_LONG_DOT);lv_obj_set_height(name,small->line_height*2);
+                    color(name,active[side] ? bright : muted);
+                    if(!ids[side].empty()) deviceRows_.push_back({circle,ids[side]});
+                }
+                auto* caption=label(group,pairFresh ? "TWIN" : "Twin status unknown",size,size*83/100,small);
+                color(caption,pairFresh ? accent() : amber);
+                continue;
+            }
             auto* tile = disc(face_, width_*(17+int(i%2)*34)/100, height_*(14+int(i/2)*34)/100, size, accent(), d.online);
             if (d.online || app_.remembered(d.id)) bind(tile, Select, d.id);
             else lv_obj_remove_flag(tile, LV_OBJ_FLAG_CLICKABLE);
@@ -570,7 +624,7 @@ void UiController::build() {
             color(name, d.online ? bright : muted);
             deviceRows_.push_back({tile, d.id});
         }
-        message_ = label(face_, devices.empty() ? "Searching for VOLTRAs..." : "", width_*74/100, height_*83/100, small);
+        message_ = label(face_, choices.empty() ? "Searching for VOLTRAs..." : "", width_*74/100, height_*83/100, small);
         color(message_, soft);
         if (!runtime_ || runtime_->simulated()) {
             auto* mode = label(face_,"SIMULATOR",width_*50/100,height_*91/100,small);
@@ -840,38 +894,51 @@ void UiController::update() {
     const auto r = app_.report();
     if (int(page_) >= int(Screen::Presets)) { updateExtra(); return; }
     if (page_ == Screen::Main) {
+        const bool detectedTwin=r.twinDetected || r.twin;
+        const bool topologyFresh=app_.twinFresh();
+        const bool readback=app_.readbackFresh() && (!detectedTwin || (topologyFresh && r.combinedWeightKnown));
+        const bool loadKnown=app_.fresh() && r.loadStateKnown;
         const auto preview=app_.weightPreview();
         const int shownWeight=preview.value_or(r.settings.weight);
-        largeValue(r.revision ? weightText(shownWeight,r.unit) : "--");
-        const bool atMaximum = app_.fresh() && r.maxWeight > 0 && shownWeight >= r.maxWeight;
+        largeValue(readback ? weightText(shownWeight,r.unit) : "--");
+        const bool atMaximum = readback && r.maxWeight > 0 && shownWeight >= r.maxWeight;
         const uint32_t maximumColor = limitAccent();
         // Retain a darker unloaded number, even when its hue indicates the limit.
         const uint32_t numberColor = r.loaded ? maximumColor : ((maximumColor & 0xfefefeu) >> 1);
-        color(weight_, !app_.fresh() ? amber : preview ? muted : r.loaded ? bright : atMaximum ? numberColor : muted);
+        color(weight_, !readback || !loadKnown ? amber : preview ? muted : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
-        value(status_, r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
-        color(status_, r.twinKnown ? accent() : amber);
-        if(r.twinKnown && r.twin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
+        value(title_,detectedTwin ? app_.name()+" + "+(r.twinPeerName.empty() ? "Twin peer" : r.twinPeerName) : app_.name());
+        value(status_,detectedTwin ? !topologyFresh ? "Twin status unknown" : !r.twin ? "Twin link not active" :
+            readback ? std::string("TWIN  |  TOTAL ")+unitName(r.unit) : "Twin / reading total..." : "");
+        color(status_,topologyFresh && r.twin && readback ? accent() : amber);
+        if(detectedTwin) lv_obj_remove_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(twinIcon_, LV_OBJ_FLAG_HIDDEN);
+        for(uint32_t i=0;i<lv_obj_get_child_count(twinIcon_);++i)
+            style::set_border_color(lv_obj_get_child(twinIcon_,int32_t(i)),lv_color_hex(topologyFresh && r.twin ? accent() : amber),0);
         lv_obj_set_width(status_,width_*76/100);
         style::set_text_font(status_, &lv_font_montserrat_14,0);
         style::align(status_, LV_ALIGN_TOP_MID, 0, height_*30/100);
-        updateScale(shownWeight, r.maxWeight, "", atMaximum ? maximumColor : accent());
+        updateScale(readback ? shownWeight : 0,readback ? r.maxWeight : 0,"",atMaximum ? maximumColor : accent());
+        for(auto* mark:scaleLabels_) {
+            if(readback && r.maxWeight>0) lv_obj_remove_flag(mark,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(mark,LV_OBJ_FLAG_HIDDEN);
+        }
+        const bool modifierKnown[]={readback && r.magicSupported[int(r.settings.magicMode)],readback && r.eccentricSupported};
         for (int i=0; i<2; ++i) {
             const auto m = i == 0 ? r.settings.magic : r.settings.eccentric;
             const uint32_t c = accent();
-            color(tiles_[i], m.enabled ? bright : muted);
-            value(miniValue_[i], !m.enabled && m.value == 0 ? "OFF" :
+            color(tiles_[i],modifierKnown[i] && m.enabled ? bright : muted);
+            value(miniValue_[i],!modifierKnown[i] ? "--" : !m.enabled && m.value == 0 ? "OFF" :
                 (m.percent ? std::to_string(m.value) : weightText(m.value,r.unit))+(m.percent ? "%" : unitName(r.unit)));
-            color(miniValue_[i], m.enabled ? bright : muted);
-            style::set_arc_color(miniArc_[i], lv_color_hex(m.enabled ? c : 0x46536a), LV_PART_INDICATOR);
-            lv_arc_set_value(miniArc_[i], percentOf(m.value, modifierMaximum(r, r.settings, i == 0)));
-            style::set_border_color(tiles_[i], lv_color_hex(m.enabled ? c : 0x39475b), 0);
+            color(miniValue_[i],!modifierKnown[i] ? amber : m.enabled ? bright : muted);
+            style::set_arc_color(miniArc_[i],lv_color_hex(modifierKnown[i] && m.enabled ? c : 0x46536a),LV_PART_INDICATOR);
+            lv_arc_set_value(miniArc_[i],modifierKnown[i] ? percentOf(m.value,modifierMaximum(r,r.settings,i==0)) : 0);
+            style::set_border_color(tiles_[i],lv_color_hex(modifierKnown[i] && m.enabled ? c : 0x39475b),0);
         }
-        value(modeLabels_[0], magicName(r.settings.magicMode));
-        color(modeLabels_[0], r.settings.magic.enabled ? bright : muted);
-        color(modeLabels_[2], r.settings.eccentric.enabled ? bright : muted);
-        const bool supported[] = {std::any_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; }),
-            r.eccentricSupported, true}; // Local dropset editor remains visible when execution is unavailable.
+        value(modeLabels_[0],modifierKnown[0] ? magicName(r.settings.magicMode) : "Magic");
+        color(modeLabels_[0],modifierKnown[0] && r.settings.magic.enabled ? bright : muted);
+        color(modeLabels_[2],modifierKnown[1] && r.settings.eccentric.enabled ? bright : muted);
+        const bool supported[] = {std::any_of(r.magicSupported.begin(), r.magicSupported.end(), [](bool b) { return b; }) || detectedTwin,
+            r.eccentricSupported || detectedTwin,true}; // Unknown Twin values stay visibly unknown, never zero.
         for (int i=0; i<3; ++i) {
             if (supported[i]) lv_obj_remove_flag(tiles_[i], LV_OBJ_FLAG_HIDDEN);
             else lv_obj_add_flag(tiles_[i], LV_OBJ_FLAG_HIDDEN);
@@ -910,10 +977,13 @@ void UiController::update() {
         if (counters.completedSets && counters.lastSetReps) summary = std::to_string(*counters.completedSets)+" | "+std::to_string(*counters.lastSetReps);
         if (const auto rest=app_.restSeconds()) summary += "    "+std::to_string(*rest/60)+":"+(*rest%60 < 10 ? "0" : "")+std::to_string(*rest%60);
         value(stats_,summary);
-        value(message_, !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
+        value(message_,detectedTwin && (!loadKnown || !topologyFresh || !r.combinedWeightKnown || r.maxWeight==0) && !app_.pending() ?
+            "Twin controls need verified\nhost/peer state" : !app_.fresh() ? (app_.message().empty() ? "State unknown / tap weight to unload" : app_.message()) :
             r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
             preview ? "Setting weight..." : atMaximum ? "MAX" : "");
-        color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
+        lv_obj_set_width(message_,width_*68/100);
+        lv_obj_set_y(message_,height_*(detectedTwin ? 82 : 88)/100);
+        color(message_,detectedTwin && (!loadKnown || !topologyFresh) ? amber : atMaximum && app_.message().empty() ? maximumColor : soft);
         updateAutoLoadFeedback();
         return;
     }
@@ -1001,8 +1071,9 @@ void UiController::updateAutoLoadFeedback() {
             if(visible) lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(item,LV_OBJ_FLAG_HIDDEN);
         }
-        const bool supported[]={std::any_of(r.magicSupported.begin(),r.magicSupported.end(),[](bool b){return b;}),
-            r.eccentricSupported,true};
+        const bool detectedTwin=r.twinDetected || r.twin;
+        const bool supported[]={std::any_of(r.magicSupported.begin(),r.magicSupported.end(),[](bool b){return b;}) || detectedTwin,
+            r.eccentricSupported || detectedTwin,true};
         for(int i=0;i<3;++i) {
             if(visible || !supported[i]) lv_obj_add_flag(tiles_[i],LV_OBJ_FLAG_HIDDEN);
             else lv_obj_remove_flag(tiles_[i],LV_OBJ_FLAG_HIDDEN);
@@ -1013,8 +1084,10 @@ void UiController::updateAutoLoadFeedback() {
         }
         if(visible) {
             lv_obj_add_flag(status_,LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
+            if(detectedTwin) lv_obj_remove_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(twinIcon_,LV_OBJ_FLAG_HIDDEN);
         } else lv_obj_remove_flag(status_,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(twinIcon_,width_*17/100,height_*(visible ? 17 : 30)/100);
         lv_obj_set_y(title_,height_*(visible ? 17 : 21)/100);
         lv_obj_set_y(center_,height_*(visible ? 38 : 35)/100);
         const int scale=std::min(width_*(visible ? 390 : 560)/480,
@@ -1161,7 +1234,8 @@ void UiController::tick() {
         if (!debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
             (!updates_ || (!updates_->startupPending() && !updates_->status().busy())) && app_.tryAutomaticSelection()) navigate(Screen::Main);
         std::string signature;
-        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+(d.online ? "1" : "0")+(app_.remembered(d.id) ? "S" : "D");
+        for (const auto& d : app_.devices()) signature += d.id+d.name+d.twinPeer+d.twinPeerId+
+            (d.online ? "1" : "0")+(d.twinFresh ? "F" : "?")+(d.twinPeerAvailable ? "P" : "-")+(app_.remembered(d.id) ? "S" : "D");
         // Do not destroy a tile underneath a held finger when a scan completes.
         if (!touchDown_ && signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
     }

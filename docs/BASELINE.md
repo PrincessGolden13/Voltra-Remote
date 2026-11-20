@@ -1,5 +1,20 @@
 # Foundation baseline
 
+## November 20 Twin readback and Live v0.4.9
+
+- CONFIRMED: report4ac675b8 connects and accepts the session, then reports motor
+  A003, current coworker2/02004701 and base65. The owner/photos show combined130
+  with absolute modifiers150/50 versus remote75/25. Only one report from today is
+  stored; the next newest report is from November18. See TWIN_LIVE_READBACK_2026_11_20.md.
+- Implemented read-only own-matched A7 topology, independent paired setting
+  readback, named Venn display, explicit saved-endpoint selection, bounded BLE
+  teardown handling and device-reported whole-pound Live weight. Existing source
+  validators/core and actual LVGL render checks pass; details in TESTING.md.
+- UNRESOLVED: current Twin host/follower, peer safety, combined limits and A003.
+  Twin resistance controls remain blocked; this does not claim full Twin repair.
+  Physical Live LCD agreement and fresh Twin/reselection observations remain needed.
+  No physical commands or new test source. Public CI/publication results follow.
+
 ## November 18 Auto Load feedback and unload reset v0.4.8
 
 - CONFIRMED publication: the owner approved v0.4.8 in chat. [Tag build44342205239](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44342205239)

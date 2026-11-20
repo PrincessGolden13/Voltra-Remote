@@ -57,6 +57,7 @@ private:
     lv_obj_t *autoLoadArc_=nullptr,*autoLoadTitle_=nullptr,*autoLoadPrompt_=nullptr;
     bool weightHoldActive_=false,weightAutoLoadGesture_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
     void updateAutoLoadFeedback();
+    std::vector<const DeviceEntry*> deviceChoices() const;
     lv_obj_t *miniArc_[3]{}, *miniValue_[3]{}, *modeLabels_[3]{}, *choice_[3]{};
     lv_obj_t *tiles_[3]{};
     lv_obj_t *stairs_[3]{};

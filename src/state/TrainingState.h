@@ -18,6 +18,18 @@ struct TrainingReport {
     TrainingSettings settings;
     WeightUnit unit = WeightUnit::Pounds;
     std::string firmwareVersion, twinPeerName;
+    // Separate read-only presentation from valid load/control state. A known
+    // weight or topology must never manufacture a control-report revision.
+    bool readbackKnown=false,loadStateKnown=false;
+    uint64_t readbackAtMs=0;
+    bool twinDetected=false,twinStatusFresh=false,combinedWeightKnown=false;
+    uint64_t twinAtMs=0;
+    std::string twinPeerAddress,twinPeerId; // RAM-only identity resolution, never diagnostic output.
+    std::optional<int> twinLinkState,twinPeerBattery;
+    // Device-reported wire weight (16003), in whole pounds. This is separate
+    // from the selected base and from AA81 sensor force. Twin scope is unknown.
+    std::optional<int> liveWeightLbs;
+    uint64_t liveWeightAtMs=0;
     std::optional<bool> repsStarted;
     std::optional<bool> setActive; // Actual device workout phase, not a local timer.
     std::optional<bool> resting; // Confirmed between-set rest, distinct from a weight-induced statistics close.

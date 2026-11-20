@@ -14,6 +14,7 @@ class ControlSession {
 public:
     virtual ~ControlSession() = default;
     virtual void connectionChanged(bool) {}
+    virtual void setSelectedAddress(std::string) {} // Selected identity for protocol reply matching only.
     virtual void notification(const std::string&,const Bytes&) {}
     virtual void tick(uint64_t) {}
     virtual bool accepted() const { return true; }

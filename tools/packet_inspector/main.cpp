@@ -1,4 +1,5 @@
 #include "protocol/FrameParser.h"
+#include "protocol/TwinStatus.h"
 #include <iostream>
 #include <string>
 #include <cctype>
@@ -16,4 +17,11 @@ int main(int argc, char** argv) {
     std::cout << "Valid framing and CRC; command=0x" << std::hex << unsigned(frame->command)
         << " sequence=" << std::dec << frame->sequence << " payload_bytes=" << frame->payload.size()
         << "\nThis does not validate command meaning or device behavior.\n";
+    if(frame->command==voltra::twinStatusCommand) {
+        const auto twin=voltra::decodeTwinStatus(*frame);
+        if(!twin) {std::cerr << "Unsupported Twin status shape/state/identity consistency\n";return 1;}
+        std::cout << "Twin status=" << twin->state << " peer_present=" << twin->peerPresent
+            << " own_battery=" << twin->ownBattery << " peer_battery=" << twin->peerBattery.value_or(-1)
+            << "\nRole and peer safety remain unknown; addresses omitted.\n";
+    }
 }

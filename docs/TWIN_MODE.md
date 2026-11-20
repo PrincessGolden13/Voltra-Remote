@@ -1,5 +1,12 @@
 # Existing Twin pairs
 
+November20: [Twin/readback and Live update](TWIN_LIVE_READBACK_2026_11_20.md)
+adds strict read-only A7 topology, peer identity matching, Venn device/main
+presentation and confirmed combined setting scope. Motor/control validity remains
+separate. Black's rawA003, current routing, peer safety and combined limits are
+not established; physical Twin resistance controls remain unavailable. This
+supersedes the earlier absence of any live Twin decoder, not the control boundary.
+
 November 9: [the expanded source audit](PROTOCOL_AUDIT_2026_11_09.md) covers all
 seven supplied firmware/protocol/hardware repositories and SDK/Android history.
 Twin parameters and master ownership are documented; a live direct-BLE decoder

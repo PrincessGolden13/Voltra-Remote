@@ -1,5 +1,25 @@
 # Validation status and pending tests
 
+November 20 v0.4.9: [Twin/readback, reconnect and Live changes](TWIN_LIVE_READBACK_2026_11_20.md).
+PASS: changed offline core/packet inspector with CMake 3.31.6/GNU 14.2.0, existing
+Ryan packet validator (203 SDK packets, weight 5..230, 593 modifier packets) and
+pinned SDK consistency validator. The new strict A7 inspector accepts five full
+published source fixtures and rejects the published short fixture without identity.
+These are source/decoder checks, not physical compatibility evidence.
+PASS: existing stevenpoint watch206 native protocol suite 37/37, including its A7
+fixtures/Twin mode constants. This validates that upstream source, not our state
+machine. Native syntax checks cover PhysicalSession and UI; embedded compilation
+is validated separately by CI. No new automated test source is added.
+PASS: actual LVGL headless renders at 360/466/480 inspect Twin/current/unknown/stale,
+long peer names, Black/Red Venn selection, 130/150/50 combined readback with unknown
+motor and unknown maximum, and Live 28 versus BASE 25, zero, missing/stale -- and KG.
+Independent static review corrected stale topology recovery, contradictory reports,
+own-identity mismatch quarantine and scope expiry between callbacks.
+Physical checks remain: A7 compatibility/name matching, quick reselection, direct
+16003 agreement with VOLTRA's changing LCD and report delivery. Physical Twin
+role/peer safety/limits/A003 are unresolved; this release does not enable controls
+or claim the user's Twin adjustment failure is fully repaired. CI/artifacts follow.
+
 November 18 v0.4.8 follow-up: [Auto Load visual feedback](AUTO_LOAD_FEEDBACK_2026_11_18.md).
 The owner confirms an actual Auto Load trial succeeds but remote progress/armed
 feedback is missing. The new UI and read-only countdown changes were built and
