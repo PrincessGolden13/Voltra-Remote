@@ -113,6 +113,8 @@ private:
     const char* updateBlockReason() const;
     bool standalone() const;
     bool twinStatusFresh() const;
+    CurrentTwinRole currentTwinRole() const;
+    const char* readOnlyControlReason() const;
     void updateReadback();
     bool settingsReady() const;
     bool loadSafetyStatusSupported() const;

@@ -123,7 +123,7 @@ UpdateStatus Esp32FirmwareUpdate::status() const {
 void Esp32FirmwareUpdate::set(UpdatePhase phase,const std::string& message,int percent) {
     bool changed=false;
     {Lock lock(mutex_);changed=view_.phase!=phase || view_.message!=message || view_.percent/10!=percent/10;
-        view_.phase=phase;view_.message=message;view_.percent=percent;}
+        view_.phase=phase;view_.message=message;view_.percent=percent;++view_.revision;}
     if(changed) Serial.printf("Firmware update: %s (%d%%)\n",message.c_str(),percent);
 }
 void Esp32FirmwareUpdate::tick(uint64_t now,bool networkReady,bool controlIdle) {
@@ -145,7 +145,7 @@ void Esp32FirmwareUpdate::check() {
     if(!mutex_ || workerActive_ || status().phase==UpdatePhase::Ready) return;
     bootCheckDone_=true;startupPending_=false;
     if(!controlIdle_) {set(UpdatePhase::Error,"Return to Devices before updating");return;}
-    if(!networkReady_) {set(UpdatePhase::Error,"Connect Wi-Fi in Settings first");return;}
+    if(!networkReady_) {set(UpdatePhase::Error,"Wi-Fi is disconnected. Try checking again.");return;}
     launch(false);
 }
 bool Esp32FirmwareUpdate::install() {

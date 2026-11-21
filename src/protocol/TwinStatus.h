@@ -7,14 +7,18 @@ namespace voltra {
 // Captured EP_STATUS layout in stevenpoint/voltra_remote 1c14860 and the
 // identity decoder in albertzhang86/voltra-remote c4f288. Identity, optional
 // battery metadata and known topology semantics have independent validity.
-// None supplies current-role/peer-lock evidence.
+// The exact marker-1 paired words additionally form a bounded read-only role
+// profile: published controller 0x12 and owner-identified follower 0x22. This
+// inference does not supply peer safety or resistance-control authorization.
 constexpr uint8_t twinStatusCommand=0xa7;
 constexpr int twinStatusUnknown=-1,twinStatusAlone=0x00,twinStatusJoining=0x11,twinStatusPaired=0x12;
+enum class TwinStatusRole { Unknown, Master, Follower };
 using DeviceAddress=std::array<uint8_t,6>;
 struct TwinStatus {
     // Normalized semantic state: only consistent alone/paired is established.
     // Transitions and unrecognized values retain identity with unknown state.
     int state=twinStatusUnknown,rawState=0,marker=0;
+    TwinStatusRole role=TwinStatusRole::Unknown;
     DeviceAddress own{},peer{};
     std::optional<int> ownBattery;
     std::optional<int> peerBattery;

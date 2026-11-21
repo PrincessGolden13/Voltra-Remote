@@ -69,7 +69,10 @@ struct SimulatorOptions {
 
 class PreviewWifiSetup final : public WifiSetup {
 public:
-    WifiSetupStatus status() const override {return {true,false,false,"","","VOLTRA-Setup-DEMO","Connect your phone to setup Wi-Fi"};}
+    WifiSetupStatus status() const override {
+        WifiSetupStatus result;result.setupActive=true;result.setupNetwork="VOLTRA-Setup-DEMO";
+        result.message="Connect your phone to setup Wi-Fi";return result;
+    }
     bool start() override {return false;}
     void stop() override {}
     void tick(bool) override {}

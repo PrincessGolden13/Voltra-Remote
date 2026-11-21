@@ -54,11 +54,13 @@ void UiController::buildExtra() {
     }
     if(page_==Screen::ConnectionNotice) {
         label(face_,"CONNECTION ENDED",width_*76/100,height_*22/100,heading);
-        label(face_,app_.message(),width_*74/100,height_*38/100,medium);
-        if(app_.selectionFailed()) {
-            action("Send debug log",20,58,60,11,SendDebugLog);
-            action("OK",33,74,34,12,DismissConnection);
-        } else action("OK",33,72,34,12,DismissConnection);
+        auto* reason=label(face_,app_.message(),width_*74/100,height_*38/100,medium);
+        lv_obj_set_height(reason,height_*18/100);lv_label_set_long_mode(reason,LV_LABEL_LONG_DOT);
+        action("Send debug log",20,58,60,11,SendDebugLog);
+        if(app_.canRetrySelection()) {
+            action("Retry",20,74,28,12,RetryConnection);
+            action("Back",52,74,28,12,DismissConnection);
+        } else action("Back",33,74,34,12,DismissConnection);
         return;
     }
     if (page_ == Screen::ForgetDevice) {
@@ -198,11 +200,11 @@ void UiController::updateExtra() {
             const auto u=updates_->status();
             std::string body="Installed: " VOLTRA_VERSION;
             if(!u.version.empty()) body+="\nLatest: "+u.version;
-            body+="\n\n"+u.message;
+            body+="\n\n"+(updateCheckMessage_.empty() ? u.message : updateCheckMessage_);
             if(u.phase==UpdatePhase::Installing) body+="\n"+std::to_string(u.percent)+"%";
             text(updateBody_,body);
-            if(u.busy()) lv_obj_add_state(updateCheck_,LV_STATE_DISABLED);else lv_obj_remove_state(updateCheck_,LV_STATE_DISABLED);
-            if(u.phase==UpdatePhase::Available) lv_obj_remove_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);
+            if(u.busy() || updateCheckPending_) lv_obj_add_state(updateCheck_,LV_STATE_DISABLED);else lv_obj_remove_state(updateCheck_,LV_STATE_DISABLED);
+            if(u.phase==UpdatePhase::Available && !updateCheckPending_) lv_obj_remove_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);
         }
     }
     if(page_==Screen::Wifi) {

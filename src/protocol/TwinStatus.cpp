@@ -35,7 +35,17 @@ std::optional<TwinStatus> inspectTwinStatus(const Frame& frame,const char*& reas
     if(result.peerPresent && result.peer==result.own) return {};
     if(result.peerPresent && p[offset+15]<=100) result.peerBattery=int(p[offset+15]);
     if(result.rawState==twinStatusAlone && !result.peerPresent) result.state=twinStatusAlone;
-    else if(result.rawState==twinStatusPaired && result.peerPresent) result.state=twinStatusPaired;
+    else if((result.rawState==twinStatusPaired || result.rawState==0x22) && result.peerPresent)
+        result.state=twinStatusPaired;
+    // Exact observed words only, not a generalized role/connection bitfield.
+    // Host 0x12: stevenpoint 1c14860 / albert c4f288 native controller captures.
+    // Follower 0x22: owner-identified Red, report 2ab11a8e, marker1/own-slot match.
+    // PhysicalSession separately binds this read-only profile to the selected
+    // endpoint, fresh current relationship fields and the topology epoch.
+    if(result.marker==1 && result.state==twinStatusPaired) {
+        if(result.rawState==0x12) result.role=TwinStatusRole::Master;
+        else if(result.rawState==0x22) result.role=TwinStatusRole::Follower;
+    }
     reason=result.state==twinStatusUnknown ? "identity-known-state-unknown" : "accepted";
     return result;
 }

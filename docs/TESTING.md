@@ -1,5 +1,25 @@
 # Validation status and pending tests
 
+November21 v0.4.11: [connection handoff and Retry](TWIN_HANDOFF_2026_11_21.md).
+PASS independent source review: bounded exact12/22 read-only role inference,
+own-match/current-field/epoch/freshness requirements, reciprocal second candidate,
+role-derived navigation hint only and retained physical probe. Every app manual
+command and automatic recipe is blocked in the read-only view. Standalone stale
+unload remains accessible. BLE reuse requires matching terminal evidence and queue
+drain, not a time-only fallback. Unsupported Bluetooth-occupied wording is removed.
+PASS existing core/packet-inspector builds and PhysicalSession native syntax check.
+PASS real LVGL360/466/480 pointer flows: generic renamed follower->master, direct
+master, Retry after stage/code error, Back and explicit Send debug log consent.
+Master view remains probe1/readOnlyView1; dial/tap preserves base/load and produces
+zero backend control calls. No new test source or physical operation. Firmware,
+package and publication results follow after execution; physical radio improvement
+and Twin resistance control remain unverified/unsupported respectively.
+PASS independent Wi-Fi source review: queue the manual check before reconnect,
+wait the existing discovery window, issue one saved join, preserve an ongoing join's
+deadline and adopt a running startup check. Cancel pending work on navigation,
+VOLTRA use, setup, upload or install. No credential writes/reset, portal or
+automatic installation; existing install save/readback checks remain in place.
+
 November21 v0.4.10 diagnostic update: [report357833b6](TWIN_STATUS_REPORT_2026_11_21.md).
 PASS existing core/packet-inspector builds and five full published A7 payloads;
 the published short/truncated payload remains rejected. Identity/metadata

@@ -9,6 +9,9 @@ namespace voltra {
 namespace {
 // Radio-link policy only: never retry a protocol or resistance command.
 constexpr uint32_t connectionTimeoutMs=10000, connectionRetryDelayMs=500, mtuWaitMs=1000;
+// Allow the pinned stack's terminal callback to return before client reuse.
+// This is a radio handoff policy, not a VOLTRA command or readiness delay.
+constexpr uint32_t clientSettleMs=100;
 constexpr unsigned connectionAttempts=3;
 constexpr int transmitPowerDbm=9;
 constexpr int establishmentFailure=BLE_HS_HCI_ERR(BLE_ERR_CONN_ESTABLISHMENT);
@@ -56,16 +59,32 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     bool connected=false;
     unsigned diagnosticRx=0,diagnosticTx=0;
     bool connecting=false, radioBusy=false, linkObserved=false, cancelling=false;
-    NimBLEAddress target;
+    NimBLEAddress target,radioTarget;
     unsigned attempts=0;
-    uint64_t now=0, retryAt=0, attemptAt=0, linkUpAt=0;
+    uint64_t now=0, retryAt=0, attemptAt=0, linkUpAt=0, handoffUntil=0;
+    bool terminalObserved=true,mtuReady=false;
+    BleConnectionFailure failure;
+    void fail(BleConnectionStage stage,int reason=0,bool timedOut=false) {
+        failure={stage,reason,timedOut};
+        log("BLE failure stage="+std::to_string(int(stage))+" code="+std::to_string(reason)+" timeout="+std::to_string(timedOut));
+    }
     // Stack callbacks only publish events. Application callbacks run in poll().
-    std::atomic<int> linkEvent{0}; // 1=link up, negative=NimBLE failure reason.
-    std::atomic<bool> mtuReady{false};
-    void onConnect(NimBLEClient*) override { linkEvent=1; }
-    void onConnectFail(NimBLEClient*,int reason) override { linkEvent=-std::max(1,reason); }
-    void onDisconnect(NimBLEClient*,int reason) override { linkEvent=-std::max(1,reason); }
-    void onMTUChange(NimBLEClient*,uint16_t) override { mtuReady=true; }
+    enum class LinkKind { Up, Failed, Down, Mtu };
+    struct LinkEvent { uint32_t generation; LinkKind kind; NimBLEAddress peer; int reason; bool cancelled; };
+    std::deque<LinkEvent> linkEvents;
+    std::atomic<uint32_t> radioGeneration{0},cancelledGeneration{0};
+    std::atomic<bool> linkOverflow{false};
+    void queueLink(LinkKind kind,NimBLEClient* source,int reason=0,const NimBLEAddress* knownPeer=nullptr) {
+        const auto generation=radioGeneration.load();
+        const auto peer=knownPeer ? *knownPeer : source->getPeerAddress();
+        std::lock_guard<std::mutex> lock(mutex);
+        if(linkEvents.size()>=16) {linkOverflow=true;return;}
+        linkEvents.push_back({generation,kind,peer,reason,cancelledGeneration.load()==generation});
+    }
+    void onConnect(NimBLEClient* source) override { queueLink(LinkKind::Up,source); }
+    void onConnectFail(NimBLEClient* source,int reason) override { queueLink(LinkKind::Failed,source,reason); }
+    void onDisconnect(NimBLEClient* source,int reason) override { queueLink(LinkKind::Down,source,reason); }
+    void onMTUChange(NimBLEClient* source,uint16_t) override { queueLink(LinkKind::Mtu,source); }
 };
 NimBleTransport::NimBleTransport() : impl_(std::make_unique<Impl>()) {}
 NimBleTransport::~NimBleTransport() { disconnect(); if(impl_->client) NimBLEDevice::deleteClient(impl_->client); }
@@ -112,9 +131,11 @@ std::string NimBleTransport::deviceAddress(const DeviceId& id) const {
     const NimBLEAddress address(id.substr(0,17),uint8_t(id[18]-'0'));
     return address.isNull() ? std::string{} : address.toString();
 }
+BleConnectionFailure NimBleTransport::connectionFailure() const { return impl_->failure; }
 TransportResult NimBleTransport::connect(const DeviceId& id) {
-    if(!impl_->client) return TransportResult::Unsupported;
-    if(!validDeviceId(id)) return TransportResult::Failed;
+    impl_->failure={};
+    if(!impl_->client) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
+    if(!validDeviceId(id)) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
     {
@@ -129,10 +150,13 @@ TransportResult NimBleTransport::connect(const DeviceId& id) {
 }
 void NimBleTransport::disconnect() {
     impl_->connecting=false;
-    if(impl_->radioBusy) impl_->cancelling=true;
+    impl_->cancelledGeneration=impl_->radioGeneration.load();
     if(impl_->scanner && impl_->scanner->isScanning()) impl_->scanner->stop();
-    if(impl_->client && impl_->client->isConnected()) impl_->client->disconnect();
-    else if(impl_->client && impl_->radioBusy) impl_->client->cancelConnect();
+    if(!impl_->cancelling && !impl_->terminalObserved && impl_->client && (impl_->radioBusy || impl_->client->isConnected() || ble_gap_conn_active())) {
+        impl_->cancelling=true;
+        if(impl_->client->isConnected()) impl_->client->disconnect();
+        else impl_->client->cancelConnect();
+    }
     ++impl_->generation;
     { std::lock_guard<std::mutex> lock(impl_->mutex); impl_->received.clear(); }
     impl_->overflow=false;
@@ -144,32 +168,43 @@ void NimBleTransport::disconnect() {
 }
 std::vector<std::string> NimBleTransport::discoverServices() {
     std::vector<std::string> result;
+    const auto previousError=impl_->client ? impl_->client->getLastError() : 0;
     if(impl_->client && impl_->client->isConnected())
         // NimBLE 2.x defaults to cached-only; true performs actual discovery.
         for(const auto* s:impl_->client->getServices(true)) result.push_back(s->getUUID().toString());
     impl_->log("BLE services: "+std::to_string(result.size()));
+    if(result.empty()) {
+        const auto error=impl_->client ? impl_->client->getLastError() : 0;
+        impl_->fail(BleConnectionStage::Services,error!=previousError ? error : 0);
+    }
     return result;
 }
 std::vector<Characteristic> NimBleTransport::discoverCharacteristics(const std::string& service) {
     std::vector<Characteristic> result;
     if(!impl_->client || !impl_->client->isConnected()) return result;
+    const auto previousError=impl_->client->getLastError();
     const auto* s=impl_->client->getService(service.c_str());
     if(s) for(auto* c:s->getCharacteristics(true)) {
         const auto uuid=c->getUUID().toString(); impl_->characteristics[uuid]=c;
         result.push_back({uuid,c->canNotify(),c->canWrite() || c->canWriteNoResponse()});
         impl_->log("BLE characteristic "+uuid+" notify="+std::to_string(c->canNotify())+" write="+std::to_string(c->canWrite())+" writeNoResponse="+std::to_string(c->canWriteNoResponse()));
     }
+    if(result.empty()) {
+        const auto error=impl_->client->getLastError();
+        impl_->fail(BleConnectionStage::Characteristics,error!=previousError ? error : 0);
+    }
     return result;
 }
 TransportResult NimBleTransport::subscribe(const std::string& uuid) {
     const auto it=impl_->characteristics.find(uuid);
-    if(it==impl_->characteristics.end() || !it->second->canNotify()) return TransportResult::Unsupported;
+    if(it==impl_->characteristics.end() || !it->second->canNotify()) {impl_->fail(BleConnectionStage::Subscription);return TransportResult::Unsupported;}
     // NimBLE subscribe() returns true even when no CCCD is found. A callback
     // alone cannot prove notifications were enabled on the peripheral.
     if(!it->second->getDescriptor(NimBLEUUID(uint16_t(0x2902)))) {
-        impl_->log("BLE notification descriptor missing: "+uuid);return TransportResult::Failed;
+        impl_->fail(BleConnectionStage::Subscription);impl_->log("BLE notification descriptor missing: "+uuid);return TransportResult::Failed;
     }
     const auto generation=impl_->generation;
+    const auto previousError=impl_->client->getLastError();
     const bool ok=it->second->subscribe(true,[this,uuid,generation](NimBLERemoteCharacteristic*,uint8_t* data,size_t size,bool) {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         // Overflow invalidates the session; losing state must never preserve readiness.
@@ -177,6 +212,10 @@ TransportResult NimBleTransport::subscribe(const std::string& uuid) {
         impl_->received.push_back({generation,uuid,Bytes(data,data+size)});
     });
     impl_->log(std::string(ok ? "BLE subscribed " : "BLE subscription failed ")+uuid);
+    if(!ok) {
+        const auto error=impl_->client->getLastError();
+        impl_->fail(BleConnectionStage::Subscription,error!=previousError ? error : 0);
+    }
     return ok ? TransportResult::Accepted : TransportResult::Failed;
 }
 TransportResult NimBleTransport::write(const std::string& uuid,const Bytes& bytes) {
@@ -189,13 +228,40 @@ TransportResult NimBleTransport::write(const std::string& uuid,const Bytes& byte
 }
 void NimBleTransport::poll(uint64_t now) {
     impl_->now=now;
-    const int event=impl_->linkEvent.exchange(0);
-    if(event<0) {
-        impl_->radioBusy=false;impl_->linkObserved=false;impl_->cancelling=false;
-        impl_->log("BLE link ended: "+std::to_string(-event));
-        if(impl_->connected) { disconnect();return; }
+    if(impl_->linkOverflow.exchange(false)) {
+        const bool pending=impl_->connecting;
+        impl_->fail(BleConnectionStage::Radio);impl_->log("BLE callback queue overflow");
+        disconnect();if(pending && impl_->connection) impl_->connection(false);return;
+    }
+    std::deque<Impl::LinkEvent> events;
+    {std::lock_guard<std::mutex> lock(impl_->mutex);events.swap(impl_->linkEvents);}
+    for(const auto& event:events) {
+        // The radio owner advances only when a physical attempt starts, never
+        // when another endpoint is merely queued behind teardown. Keep the
+        // source peer too, so an old endpoint cannot end the new connection.
+        if(event.generation!=impl_->radioGeneration.load() || !(event.peer==impl_->radioTarget)) {
+            impl_->log("BLE ignored stale callback");continue;
+        }
+        if(event.kind==Impl::LinkKind::Mtu) {
+            if(!event.cancelled && !impl_->cancelling) impl_->mtuReady=true;
+            continue;
+        }
+        if(event.kind==Impl::LinkKind::Up) {
+            if(event.cancelled || impl_->cancelling || !impl_->connecting) {
+                impl_->cancelling=true;
+                if(impl_->client->isConnected()) impl_->client->disconnect();
+            } else {impl_->linkObserved=true;impl_->linkUpAt=now;}
+            continue;
+        }
+        const bool teardown=event.cancelled || impl_->cancelling || (!impl_->connected && !impl_->attempts);
+        impl_->radioBusy=false;impl_->linkObserved=false;impl_->mtuReady=false;impl_->cancelling=false;impl_->terminalObserved=true;
+        impl_->handoffUntil=now+clientSettleMs;
+        impl_->log("BLE link ended: "+std::to_string(event.reason));
+        if(teardown) {impl_->log("BLE previous connection closed");continue;}
+        impl_->fail(impl_->connected ? BleConnectionStage::Link : BleConnectionStage::Radio,event.reason);
+        if(impl_->connected) {disconnect();return;}
         if(impl_->connecting && impl_->attempts) {
-            if(-event==establishmentFailure && impl_->attempts<connectionAttempts) {
+            if(event.reason==establishmentFailure && impl_->attempts<connectionAttempts) {
                 impl_->retryAt=now+connectionRetryDelayMs;
                 impl_->log("BLE establishment retry scheduled");
             } else {
@@ -203,15 +269,17 @@ void NimBleTransport::poll(uint64_t now) {
                 if(impl_->connection) impl_->connection(false);
             }
         }
-    } else if(event==1 && !impl_->cancelling) { impl_->linkObserved=true;impl_->linkUpAt=now; }
+    }
     // Cancellation must finish before reusing this client for another attempt.
     // A late link-up after cancel never becomes an application connection.
-    if((impl_->cancelling || (!impl_->connecting && !impl_->connected)) && impl_->client && impl_->client->isConnected()) impl_->client->disconnect();
+    if(!impl_->terminalObserved && (impl_->cancelling || (!impl_->connecting && !impl_->connected)) &&
+       impl_->client && impl_->client->isConnected()) impl_->client->disconnect();
     if(impl_->connecting) {
         if(!impl_->attempts && now>=impl_->retryAt && now-impl_->retryAt>connectionTimeoutMs+mtuWaitMs) {
             // An old cancellation can fail to deliver a callback. Bound the
             // queued request by the existing connect+MTU deadline, without
             // pretending the old radio procedure has ended or reusing it.
+            impl_->fail(BleConnectionStage::Teardown,0,true);
             impl_->log("BLE previous connection did not close; reconnect stopped");
             impl_->connecting=false;
             if(impl_->connection) impl_->connection(false);
@@ -219,23 +287,47 @@ void NimBleTransport::poll(uint64_t now) {
         // NimBLE 2.3.6 invokes its disconnect/failure callback before clearing
         // the client's connection handle. Drain both the callback and handle
         // before reuse; an immediate reselect must not race the closing link.
-        else if(!impl_->cancelling && !impl_->radioBusy && !impl_->client->isConnected() && now>=impl_->retryAt) {
-            impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;
-            impl_->attemptAt=now;++impl_->attempts;
-            impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts));
-            if(!impl_->client->connect(impl_->target,true,true,true)) impl_->linkEvent=-std::max(1,impl_->client->getLastError());
+        else if(impl_->terminalObserved && !impl_->cancelling && !impl_->radioBusy && !impl_->client->isConnected() && !ble_gap_conn_active() &&
+                now>=impl_->retryAt && now>=impl_->handoffUntil) {
+            bool launch=false;
+            {
+                std::lock_guard<std::mutex> lock(impl_->mutex);
+                // Drain all callbacks belonging to the previous radio owner
+                // before publishing a new owner. A queued logical selection
+                // alone can never retag an old terminal event.
+                if(impl_->linkEvents.empty() && !impl_->linkOverflow) {
+                    ++impl_->radioGeneration;impl_->radioTarget=impl_->target;
+                    impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;impl_->terminalObserved=false;
+                    impl_->attemptAt=now;++impl_->attempts;launch=true;
+                }
+            }
+            if(launch) {
+                impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts));
+                const auto previousError=impl_->client->getLastError();
+                if(!impl_->client->connect(impl_->target,true,true,true)) {
+                    // Early failures can leave NimBLE's previous lastError intact.
+                    // Do not attribute a stale code to this attempt.
+                    const auto error=impl_->client->getLastError();
+                    impl_->queueLink(Impl::LinkKind::Failed,impl_->client,error!=previousError ? error : 0,&impl_->radioTarget);
+                }
+            }
         }
         if(!impl_->cancelling && impl_->attempts && impl_->linkObserved && impl_->client->isConnected() && (impl_->mtuReady || now-impl_->linkUpAt>=mtuWaitMs)) {
             impl_->connecting=false;impl_->connected=true;
+            impl_->failure={};
             impl_->log("BLE connected MTU="+std::to_string(impl_->client->getMTU()));
             if(impl_->connection) impl_->connection(true);
         } else if(impl_->attempts && impl_->radioBusy && now-impl_->attemptAt>connectionTimeoutMs+mtuWaitMs) {
+            impl_->fail(BleConnectionStage::Radio,0,true);
             impl_->log("BLE connection timed out");
             disconnect();
             if(impl_->connection) impl_->connection(false);
         }
     }
-    if(impl_->connected && (!impl_->client->isConnected() || impl_->overflow)) { disconnect(); return; }
+    if(impl_->connected && (!impl_->client->isConnected() || impl_->overflow)) {
+        impl_->fail(impl_->overflow ? BleConnectionStage::Notifications : BleConnectionStage::Link);
+        disconnect();return;
+    }
     std::deque<Impl::Received> pending;
     { std::lock_guard<std::mutex> lock(impl_->mutex); pending.swap(impl_->received); }
     for(const auto& r:pending)

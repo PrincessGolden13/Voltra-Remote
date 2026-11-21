@@ -14,6 +14,7 @@ public:
     // Never disconnects, unloads, or changes any confirmed machine state.
     void setMaintenance(bool active) { maintenance_=active; }
     void setDiscoveryPaused(bool paused) { discoveryPaused_=paused; }
+    bool discoveryInProgress() const { return transport_.scanInProgress(); }
     bool select(const DeviceId&);
     // Both members share one discovery candidate. Only fresh current-role
     // evidence can promote a paired endpoint into the training session.
@@ -21,7 +22,10 @@ public:
     DeviceId selectionDevice(const DeviceId&) const;
     bool resolvingSelection() const { return selectionPhase_==SelectionPhase::Resolving; }
     bool selectionReady() const;
+    bool selectionReadOnlyView() const { return selectionReadOnlyView_; }
     bool selectionFailed() const { return selectionPhase_==SelectionPhase::Failed; }
+    bool canRetrySelection() const;
+    bool retrySelection();
     bool tryAutomaticSelection();
     bool remembered(const DeviceId&) const;
     bool forget(const DeviceId&);
@@ -34,6 +38,7 @@ public:
         // The debug uploader bounds this context to 2048 bytes. Keep both
         // read-only candidate snapshots first, before long previous failures.
         return (selectionTrace_.empty() ? std::string{} : "selectionProbes={"+selectionTrace_+"} ")+
+            (selectionFirstFailure_.empty() ? std::string{} : "firstConnectionFailure={"+selectionFirstFailure_+"} ")+
             "lastConnectionFailure={"+lastConnectionFailure_+"} "+
             (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+
             " lastFailure={"+lastControlFailure_+"}";
@@ -102,18 +107,20 @@ private:
     std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_,lastConnectionFailure_;
     enum class SelectionPhase { Idle, Resolving, Ready, Failed };
     SelectionPhase selectionPhase_=SelectionPhase::Idle;
-    uint64_t selectionStartedAt_=0,selectionReadAt_=0;
+    uint64_t selectionStartedAt_=0,selectionEndpointStartedAt_=0,selectionReadAt_=0;
     bool selectionReading_=false;
     std::vector<DeviceId> selectionProbed_;
     DeviceId selectionPeerCandidate_;
     DeviceId selectionFirstEndpoint_,selectionExpectedPeer_,selectionResolvedPeer_;
     bool selectionFirstPeerObserved_=false,selectionResolvedTwin_=false;
-    std::string selectionTrace_;
+    bool selectionReadOnlyView_=false;
+    DeviceId retrySelectionCandidate_;
+    std::string selectionTrace_,selectionFirstFailure_;
     bool beginSelectionEndpoint(const DeviceId&);
     bool runSelection();
     void failSelection(const std::string&);
     void traceSelectionEndpoint();
-    bool retainSelectionControl();
+    bool retainSelectionControl(bool requireControl=true);
     uint64_t loadRefusalRevision_=0;
     void recordControlFailure(const std::string&);
     void recordLoadRefusal();

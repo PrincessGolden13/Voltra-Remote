@@ -1,5 +1,24 @@
 # Foundation baseline
 
+## November 21 connection handoff v0.4.11
+
+- CONFIRMED report2ab11a8e: the first endpoint connects and returns own-matched
+  marker1/raw0x22; the next never opens a session. The generic occupied-Bluetooth
+  claim had no evidence. Unknown role caused a six-second wait on the first member.
+- Added bounded INFERRED read-only0x12/0x22 role routing, fresh reciprocal master
+  verification, persisted navigation candidate only and read-only Main with the
+  backend probe retained. Every physical Twin command remains blocked.
+- BLE client reuse now requires terminal callback evidence, drained events and
+  cleared handle/GAP. Neutral stage/code failures and explicit Retry replace the
+  occupied-device guess. No physical operation; hardware behavior unverified.
+- Existing core/inspector and real LVGL360/466/480 pointer checks pass, including
+  zero control calls from read-only inputs. See TWIN_HANDOFF_2026_11_21.md.
+  Public firmware and publication receipts follow after execution.
+- The v0.4.10 update did not change Wi-Fi storage/networking. The offline Updates
+  message tested connection only, even while the saved profile was reconnecting.
+  Manual Check now retries that profile before checking GitHub, without reset,
+  credential writes or automatic installation. Board profile presence is unverified.
+
 ## November 21 Twin diagnostic update
 
 - CONFIRMED report357833b6 runs v0.4.9 with successful BLE/authentication and

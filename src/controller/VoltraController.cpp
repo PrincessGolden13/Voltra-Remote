@@ -3,6 +3,26 @@
 #include "protocol/Parameters.h"
 #include <algorithm>
 namespace voltra {
+namespace {
+std::string connectionFailureText(BleConnectionFailure failure,const char* fallback) {
+    if(failure.stage==BleConnectionStage::Teardown && failure.timedOut)
+        return "Bluetooth cleanup timed out. Restart remote and try again";
+    const char* stage=nullptr;
+    switch(failure.stage) {
+    case BleConnectionStage::Setup:stage="setup";break;
+    case BleConnectionStage::Teardown:stage="previous connection cleanup";break;
+    case BleConnectionStage::Radio:stage="radio connection";break;
+    case BleConnectionStage::Services:stage="service discovery";break;
+    case BleConnectionStage::Characteristics:stage="characteristic discovery";break;
+    case BleConnectionStage::Subscription:stage="notification subscription";break;
+    case BleConnectionStage::Link:stage="link";break;
+    case BleConnectionStage::Notifications:stage="notification queue";break;
+    default:return fallback;
+    }
+    return std::string("Bluetooth ")+stage+(failure.timedOut ? " timed out" : " failed")+
+        (failure.reason ? " (code "+std::to_string(failure.reason)+")" : "");
+}
+}
 VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlSession* controls)
     : transport_(t), policy_(p), controls_(controls) {
     transport_.onConnection([this](bool connected) {
@@ -14,7 +34,8 @@ VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlS
         confirmed_ = {}; requested_ = {}; parser_.reset();
         confirmed_.connected = connected;
         pendingLoad_.reset();
-        feedback_ = failed ? "Bluetooth may be in use. Disconnect other app and retry; check VOLTRA is nearby." : "Disconnected";
+        feedback_ = disconnecting_ ? "Disconnected" : connectionFailureText(transport_.connectionFailure(),
+            failed ? "Bluetooth connection failed; try again" : "Disconnected");
     });
     transport_.onNotification([this](const std::string& characteristic, const Bytes& bytes) {
         if (controls_) controls_->notification(characteristic,bytes);
@@ -40,13 +61,13 @@ VoltraController::~VoltraController() {
 bool VoltraController::connect(const DeviceId& id) {
     disconnect();
     connecting_ = true;feedback_ = "Connecting...";
-    if (transport_.connect(id) != TransportResult::Accepted) { connecting_=false;feedback_="Connection unavailable";return false; }
+    if (transport_.connect(id) != TransportResult::Accepted) { connecting_=false;feedback_=connectionFailureText(transport_.connectionFailure(),"Connection unavailable");return false; }
     return linkUp_ ? finishConnection() : true;
 }
 bool VoltraController::finishConnection() {
     const auto services = transport_.discoverServices();
     if (std::find(services.begin(), services.end(), VoltraGattProfile::service) == services.end()) {
-        disconnect(); feedback_="VOLTRA service unavailable";return false;
+        return failConnection("VOLTRA service unavailable");
     }
     const auto chars = transport_.discoverCharacteristics(VoltraGattProfile::service);
     const auto found = std::find_if(chars.begin(), chars.end(), [](const Characteristic& c) {
@@ -56,18 +77,18 @@ bool VoltraController::finishConnection() {
         return c.uuid == VoltraGattProfile::write && c.canWrite;
     });
     if (found == chars.end() || writable == chars.end() || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
-        disconnect(); feedback_="VOLTRA subscription failed";return false;
+        return failConnection("VOLTRA subscription failed");
     }
     // The pinned SDK and ESP32 reference receive replies on both channels.
     // This is a profile decision, not a generic subscribe-to-everything policy.
     if (writable->canNotify && transport_.subscribe(writable->uuid) != TransportResult::Accepted) {
-        disconnect();feedback_="VOLTRA response subscription failed";return false;
+        return failConnection("VOLTRA response subscription failed");
     }
     const auto telemetry=std::find_if(chars.begin(),chars.end(),[](const Characteristic& c) {
         return c.uuid==VoltraGattProfile::telemetry && c.canNotify;
     });
     if(telemetry!=chars.end() && transport_.subscribe(telemetry->uuid)!=TransportResult::Accepted) {
-        disconnect();feedback_="VOLTRA telemetry subscription failed";return false;
+        return failConnection("VOLTRA telemetry subscription failed");
     }
     // Subscription is not handshake success. The protocol session owns bootstrap
     // and application acceptance; neither step may replay a load/settings intent.
@@ -76,11 +97,17 @@ bool VoltraController::finishConnection() {
     feedback_="Connected / reading VOLTRA";
     return true;
 }
+bool VoltraController::failConnection(const char* fallback) {
+    const auto failure=connectionFailureText(transport_.connectionFailure(),fallback);
+    disconnect();feedback_=failure;return false;
+}
 void VoltraController::disconnect() {
+    disconnecting_=true;
     connecting_=false;linkUp_=false;
     if (controls_) controls_->connectionChanged(false);
     transport_.disconnect(); confirmed_ = {}; requested_ = {}; parser_.reset();
     pendingLoad_.reset();
+    disconnecting_=false;
 }
 void VoltraController::tick(uint64_t now) {
     now_ = now;
