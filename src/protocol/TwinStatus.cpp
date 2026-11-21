@@ -13,26 +13,58 @@ int digit(char c) {
     if(c>='A' && c<='F') return c-'A'+10;
     return -1;
 }
-}
-std::optional<TwinStatus> decodeTwinStatus(const Frame& frame) {
+std::optional<TwinStatus> inspectTwinStatus(const Frame& frame,const char*& reason) {
+    reason="envelope";
     if(frame.command!=twinStatusCommand || frame.protocol!=wire::protocolId ||
        frame.sender!=0x10 || frame.receiver!=0xaa) return {};
     const auto& p=frame.payload;
+    reason="layout";
+    if((p.size()!=22 && p.size()!=23) || (frame.type!=0x04 && frame.type!=0x08)) return {};
     const size_t offset=p.size()==23 ? 1 : 0;
-    if((p.size()!=22 && p.size()!=23) || (offset && p[0]!=0) ||
-       p[offset]>100 || p[offset+1]!=1) return {};
+    reason="reply-status";
+    if(offset && p[0]!=0) return {};
     TwinStatus result;
-    result.ownBattery=p[offset];result.state=p[offset+2];
-    if(result.state!=twinStatusAlone && result.state!=twinStatusJoining && result.state!=twinStatusPaired) return {};
+    if(p[offset]<=100) result.ownBattery=int(p[offset]);
+    result.marker=p[offset+1];result.rawState=p[offset+2];
     std::copy_n(p.begin()+offset+3,6,result.own.begin());
     std::copy_n(p.begin()+offset+9,6,result.peer.begin());
     result.peerPresent=present(result.peer);
-    if(!present(result.own) || (result.peerPresent && result.peer==result.own) ||
-       (result.state==twinStatusAlone && result.peerPresent) ||
-       (result.state==twinStatusPaired && !result.peerPresent)) return {};
-    if(p[offset+15]>100) return {};
-    if(result.peerPresent) result.peerBattery=int(p[offset+15]);
+    reason="own-absent";
+    if(!present(result.own)) return {};
+    reason="same-identities";
+    if(result.peerPresent && result.peer==result.own) return {};
+    if(result.peerPresent && p[offset+15]<=100) result.peerBattery=int(p[offset+15]);
+    if(result.rawState==twinStatusAlone && !result.peerPresent) result.state=twinStatusAlone;
+    else if(result.rawState==twinStatusPaired && result.peerPresent) result.state=twinStatusPaired;
+    reason=result.state==twinStatusUnknown ? "identity-known-state-unknown" : "accepted";
     return result;
+}
+}
+std::optional<TwinStatus> decodeTwinStatus(const Frame& frame) {
+    const char* reason=nullptr;
+    return inspectTwinStatus(frame,reason);
+}
+std::string twinStatusDiagnostic(const Frame& frame,std::optional<DeviceAddress> selectedAddress) {
+    const char* reason=nullptr;
+    const auto decoded=inspectTwinStatus(frame,reason);
+    std::string text="reason="+std::string(reason)+" type="+std::to_string(frame.type)+
+        " sender="+std::to_string(frame.sender)+" receiver="+std::to_string(frame.receiver)+
+        " protocol="+std::to_string(frame.protocol)+" bytes="+std::to_string(frame.payload.size());
+    const auto& p=frame.payload;
+    if(p.size()!=22 && p.size()!=23) return text;
+    const size_t offset=p.size()==23 ? 1 : 0;
+    DeviceAddress own{},peer{};
+    std::copy_n(p.begin()+offset+3,6,own.begin());
+    std::copy_n(p.begin()+offset+9,6,peer.begin());
+    text+=" reply="+(offset ? std::to_string(p[0]) : "push")+
+        " header="+std::to_string(p[offset])+","+std::to_string(p[offset+1])+","+std::to_string(p[offset+2])+
+        " peerBattery="+std::to_string(p[offset+15])+
+        " ownPresent="+std::to_string(present(own))+" peerPresent="+std::to_string(present(peer))+
+        " distinct="+std::to_string(own!=peer)+
+        " slot0Match="+(selectedAddress ? std::to_string(own==*selectedAddress) : "unknown")+
+        " slot1Match="+(selectedAddress ? std::to_string(peer==*selectedAddress) : "unknown")+
+        " state="+(decoded ? std::to_string(decoded->state) : "unknown");
+    return text;
 }
 std::optional<DeviceAddress> parseDeviceAddress(const std::string& id) {
     if(id.size()!=17) return {};

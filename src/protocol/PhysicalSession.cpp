@@ -131,6 +131,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     values_.clear();directMotor_.reset();seen_.clear();report_={};firmware_.clear();
     twinStatus_.reset();twinStatusAt_=twinTopologyAt_=twinPollAt_=0;
     twinObserved_=twinReplyOwnMatch_=twinReplyAccepted_=twinReplySeen_=false;twinReplyBytes_=0;
+    twinReplyDiagnostic_.clear();twinDiagnosticAt_=0;
     pairedReadSupported_=autoUnloadReadSupported_=false;
     autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
     liveWeightProbed_=false;runtimeTarget_.reset();
@@ -362,9 +363,9 @@ void PhysicalSession::apply(const Frame& f) {
         const auto decoded=decodeTwinStatus(f);
         const bool previousAccepted=twinReplyAccepted_,previousSeen=twinReplySeen_;
         const bool previousFresh=twinStatusFresh();
-        const size_t previousBytes=twinReplyBytes_;
         twinReplySeen_=true;
         twinReplyBytes_=p.size();
+        twinReplyDiagnostic_=twinStatusDiagnostic(f,selectedAddress_);
         twinReplyOwnMatch_=decoded && selectedAddress_ && decoded->own==*selectedAddress_;
         twinReplyAccepted_=decoded && twinReplyOwnMatch_;
         // A fully decoded non-alone indication contradicts standalone safety
@@ -382,16 +383,23 @@ void PhysicalSession::apply(const Frame& f) {
                 runtimeTarget_.reset();
             }
             twinStatus_=decoded;twinStatusAt_=now_;
-            if(changed || !previousAccepted) diagnostic("Twin status="+std::to_string(decoded->state)+
-                " ownMatch=1 peerPresent="+std::to_string(decoded->peerPresent));
+            if(changed || !previousAccepted) {
+                diagnostic("Twin status="+std::to_string(decoded->state)+" "+twinReplyDiagnostic_);
+                twinDiagnosticAt_=now_;
+            }
         } else {
             // Invalid or wrong-device topology invalidates the previous live
             // proof without erasing the connection's detected-Twin latch.
             twinStatus_.reset();
             runtimeTarget_.reset();
-            if(!previousSeen || previousAccepted || previousBytes!=p.size())
-                diagnostic("Twin status rejected bytes="+std::to_string(p.size())+
-                    " shape="+std::to_string(bool(decoded))+" ownMatch="+std::to_string(twinReplyOwnMatch_));
+            // Alternating 22-byte pushes and 23-byte replies must not erase
+            // every useful event with the same rejection. The latest detail
+            // remains in every report, even between these bounded log entries.
+            constexpr uint64_t rejectionLogIntervalMs=30000;
+            if(!previousSeen || previousAccepted || now_<twinDiagnosticAt_ || now_-twinDiagnosticAt_>=rejectionLogIntervalMs) {
+                diagnostic("Twin status rejected "+twinReplyDiagnostic_);
+                twinDiagnosticAt_=now_;
+            }
         }
         updateReport();return;
     }
@@ -770,7 +778,8 @@ std::string PhysicalSession::diagnosticState() const {
         " ownMatch="+std::to_string(twinReplyOwnMatch_)+" state="+(twinStatus_ ? std::to_string(twinStatus_->state) : "unknown")+
         " peerPresent="+std::to_string(twinStatus_ && twinStatus_->peerPresent)+
         " peerBattery="+(twinStatus_ && twinStatus_->peerBattery ? std::to_string(*twinStatus_->peerBattery) : "unknown")+
-        " ageMs="+(twinStatus_ && now_>=twinStatusAt_ ? std::to_string(now_-twinStatusAt_) : "missing")+"}";
+        " ageMs="+(twinStatus_ && now_>=twinStatusAt_ ? std::to_string(now_-twinStatusAt_) : "missing")+
+        " detail={"+twinReplyDiagnostic_+"}}";
     // Numeric state only. Never include the client identity, BLE address, name,
     // Wi-Fi details, or paired-device identifier (only its presence is retained).
     for(const auto id:{motor,workout,twin,remoteCoworker,lastCoworkerRole,peerAutoLoadStatus,maxForce,

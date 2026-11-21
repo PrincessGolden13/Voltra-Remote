@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
         const auto twin=voltra::decodeTwinStatus(*frame);
         if(!twin) {std::cerr << "Unsupported Twin status shape/state/identity consistency\n";return 1;}
         std::cout << "Twin status=" << twin->state << " peer_present=" << twin->peerPresent
-            << " own_battery=" << twin->ownBattery << " peer_battery=" << twin->peerBattery.value_or(-1)
+            << " own_battery=" << twin->ownBattery.value_or(-1) << " peer_battery=" << twin->peerBattery.value_or(-1)
             << "\nRole and peer safety remain unknown; addresses omitted.\n";
     }
     if(frame->command==0xb4) {

@@ -48,6 +48,8 @@ private:
     uint64_t twinStatusAt_=0,twinTopologyAt_=0,twinPollAt_=0;
     bool twinObserved_=false,twinReplyOwnMatch_=false,twinReplyAccepted_=false,twinReplySeen_=false;
     size_t twinReplyBytes_=0;
+    std::string twinReplyDiagnostic_;
+    uint64_t twinDiagnosticAt_=0;
     std::deque<std::pair<uint8_t,uint16_t>> seen_;
     TrainingReport report_;
     std::string status_,firmware_;
