@@ -1315,7 +1315,7 @@ void UiController::requestUpdateCheck() {
     if(!w.connected && !w.saved) {updateCheckMessage_="Set up Wi-Fi in Settings first";return;}
     updateCheckPending_=true;updateWifiRequested_=w.connecting;updateCheckAt_=hardware_.nowMs();
     updateCheckRevision_=updates_->status().revision;
-    updateCheckMessage_=w.connected ? "Starting update check…" : "Connecting to saved Wi-Fi…";
+    updateCheckMessage_=w.connected ? "Starting update check..." : "Connecting to saved Wi-Fi...";
 }
 void UiController::tickUpdateCheck(uint64_t now) {
     if(!updateCheckPending_) return;
