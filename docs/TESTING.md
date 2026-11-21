@@ -9,9 +9,43 @@ and no application third visit. Typed first failure wins over generic role error
 fresh topology contradictions win over prior failures, including at the deadline.
 Read-only/role/Retry/command permissions are unchanged. Compact diagnostics retain
 stage/code/timeout/attempts/radio time without duplicate closed-session context.
-PASS existing core/packet-inspector build and diff checks. UI and public firmware/
-package checks follow after execution. Physical retry recovery remains unverified; Twin
+PASS existing core/packet-inspector build and diff checks. Physical retry recovery remains unverified; Twin
 resistance controls remain unavailable. No new automated test source.
+PASS real LVGL at360/466/480: exact report timing of first preacceptance timeout
+(10141ms/code13), then accepted Follower(2940ms), retains the original timeout in
+the notice and only two automatic candidates. Actual Retry resolves the updated
+Master directly and enters read-only Main with probe1/controlCalls0. Fresh
+contradictory identity overrides the earlier failure, including a separate clock
+jump onto the30s global deadline. Layouts fit all three display sizes. These
+previews validate application/UI behavior, not native radio recovery.
+PASS [CI44960382285](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44960382285)
+at e1de93d31a5b28efafafdc901f3aae87939f1bda: Normal/isolated Simulator, offline
+core/inspector and packaging. Artifact14729287754 digest matches
+`cede7fcf1c41bb8b03331e52ca20675ec8d5e4056930009c72e005d05346917f`.
+Normal2,015,776bytes SHA-256
+`57065610796199155c7454902c85faf4ff8d05d23bddcc9775f6af45735d3a4d`;
+Simulator1,034,288bytes SHA-256
+`44122ffff23e003e4c42d86af36905abec8581efee066009841ae50e527c4606`.
+Both explicit0.4.12 descriptors, manifest identity/size/hash, all USB file hashes,
+offsets and partition map, and USB Normal=OTA pass. Defined-symbol checks confirm
+physical backend only in Normal, mock only in Simulator and strong GLOBAL
+__wrap_esp_partition_erase_range and verifyRollbackLater hooks in both images.
+Merge43651822df543ed26a0d4da194d6d20dc664c1ce has the checked tree. Receipt:
+ignored build/review-v0412/validation.json.
+PASS [tag CI44960798145](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44960798145)
+at v0.4.12/43651822df543ed26a0d4da194d6d20dc664c1ce: build, packaging and draft
+creation. Artifact14729378523 digest matches
+`8699ae4ea2d8080b935afd23dd7d62d8b58b41fc6080b3ba24ec504a6e8a0b80`.
+Both firmware images exactly match the reviewed PR bytes above. Descriptor,
+manifest, all USB hashes/offsets/partition map, backend isolation and strong
+NVS/rollback checks pass. All four draft assets' sizes/digests and release notes
+match the tagged files. Receipt: ignored build/review-v0412-tag/validation.json.
+PASS publication: release454053504 published as latest ordinary v0.4.12 at
+2026-11-21T23:20:17Z. Downloaded public latest-feed manifest and pinned Normal image
+pass schema/board/channel/layout/version, descriptor, length and SHA-256; binary
+bytes match the reviewed tag. Receipt: ignored build/published-v0412/verification.json.
+No physical installation or connection/motor operation was performed. Real radio
+recovery from the new policy remains unverified; physical Twin controls unavailable.
 
 November21 v0.4.11: [connection handoff and Retry](TWIN_HANDOFF_2026_11_21.md).
 PASS independent source review: bounded exact12/22 read-only role inference,

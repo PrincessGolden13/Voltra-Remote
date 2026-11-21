@@ -10,7 +10,21 @@
   handoff barriers and keep one retry layer/two application endpoints. Surface
   the actual prior failure and compact duplicated diagnostics.
 - See TWIN_TIMEOUT_2026_11_21.md. Physical recovery remains unverified and Twin
-  resistance controls remain unavailable. Validation/publication receipts follow.
+  resistance controls remain unavailable.
+- PASS independent source review, existing core/inspector and real LVGL at
+  360/466/480: exact report sequence preserves typed timeout, two automatic
+  candidates only, explicit Retry opens Master read-only with probe1 and zero
+  control calls, and fresh contradictions win including at the global deadline.
+- CONFIRMED CI44960382285 at e1de93d builds both public firmware images, core and
+  package. Artifact14729287754 passes descriptor/manifest/USB/partition/hash,
+  backend isolation and strong NVS/rollback checks. Hashes are in TESTING.md.
+  Merge4365182 has the exact checked tree.
+- CONFIRMED publication: tag CI44960798145 passes at4365182; both images exactly
+  match the reviewed PR build and all four assets/notes pass verification.
+  [v0.4.12](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.12)
+  is published as latest at23:20:17UTC on November21. Public latest manifest and
+  pinned image pass identity/length/SHA-256 and match the tag. No physical
+  installation or radio/motor operation was performed; Twin controls remain blocked.
 
 ## November 21 connection handoff v0.4.11
 
