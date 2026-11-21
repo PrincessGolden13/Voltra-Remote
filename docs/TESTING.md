@@ -30,6 +30,18 @@ Defined-symbol checks confirm physical backend only in Normal, mock only in
 Simulator and both strong GLOBAL __wrap_esp_partition_erase_range and
 verifyRollbackLater hooks. Mergea238b7f has the exact checked tree. Receipt:
 ignored build/review-v0410-nov21. Tagged publication checks follow separately.
+PASS publication: [tag CI44952693885](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44952693885)
+atv0.4.10/934b070f180649ebb1798cd3389fe108824b8408 passes builds, packaging and
+draft creation. Artifact14726226806 digest matches
+`463ef9a4bcd5b5d4c72494fe6142aec4f2af06f00a6f1a018736055ee40e3761`.
+Normal and Simulator are byte-identical to the reviewed PR images above. Full
+manifest, USB/partition/hash, backend and strong NVS/rollback checks pass; all four
+release asset hashes/sizes match. Receipt: ignored build/review-v0410-nov21-tag.
+The diagnostic release was published as latest at2026-11-21T21:45:22Z. Downloaded
+public latest-feed manifest and pinned image pass schema/board/channel/layout/
+version/descriptor/size/SHA-256 checks against the reviewed Normal image.
+No physical installation or motor operation was performed. Twin resistance
+controls remain unavailable; the next owner report supplies missing status fields.
 
 November 20 v0.4.10 addition: [remote battery alert/estimate](REMOTE_BATTERY_2026_11_20.md).
 PASS static review: source is the remote hardware's valid optional reading only,

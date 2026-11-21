@@ -28,7 +28,8 @@ Physical current role remains Unknown.
 
 New reports include rejection reason, frame type/direction/protocol, scalar
 battery/marker/state bytes, identity-presence/distinctness and selected-address
-matches against both slots. No address bytes or device names are recorded.
+matches against both slots. These Twin status fields contain no address bytes
+or device names; the standard report still includes the last20 events.
 Slot order does not establish role. Reviewed public A7 captures are from the
 controller; a follower capture is still needed to verify slot interpretation.
 
@@ -43,7 +44,7 @@ reported but cannot reverse the address interpretation or authorize controls.
 ## Diagnostic publication
 
 The previous hold was on claiming a completed Twin-control fix. v0.4.10 is now
-prepared as an explicitly diagnostic update so the owner can obtain fields missing
+published as an explicitly diagnostic update so the owner can obtain fields missing
 from v0.4.9 through the remote's update workflow. It includes the checked screen
 and battery work. Physical Twin resistance commands remain unavailable. An
 unresolved master stops selection and offers Send debug log using existing consent.

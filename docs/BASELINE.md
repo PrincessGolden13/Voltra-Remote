@@ -10,13 +10,18 @@
   sanitized header/both-slot match detail and bound status logging. Unknown
   role/state cannot authorize paired controls or totals. Screen text omits
   "peer" and redundant Twin captions.
-- v0.4.10 is prepared for diagnostic publication to expose the missing fields
+- v0.4.10 is published as a diagnostic update to expose the missing fields
   through the remote update workflow. This supersedes the earlier release hold
   as a diagnostic step, not as proof of working Twin controls.
 - CONFIRMED: CI44952181058 at55c5139 passes Normal/Simulator, offline core and
   packaging. Downloaded image/manifest/USB/partition/backend/NVS/rollback checks
   pass; exact hashes are in TESTING.md. Mergea238b7f has the checked tree.
-  Tagged publication checks follow; physical Twin commands remain blocked.
+- CONFIRMED publication: tag CI44952693885 passes at934b070f; tagged images
+  exactly match the reviewed PR build and all release assets pass verification.
+  [v0.4.10](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.10)
+  is latest, published November21 at21:45:22UTC. Public feed and pinned image pass
+  identity, length and SHA-256 checks. Physical Twin commands remain blocked;
+  no physical installation or motor action was performed.
 
 ## November 20 remote battery alert addition
 

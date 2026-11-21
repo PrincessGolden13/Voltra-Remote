@@ -36,7 +36,7 @@ Read the dated [application flow](docs/APP_FLOW.md) and
 [validation record](docs/TESTING.md) for the distinction between implementation,
 simulator behavior and actual hardware observations. Physical Twin topology and
 combined setting readback are supported through a validated pair report. Twin
-resistance control remains unavailable until host, peer safety and the reported
+resistance control remains unavailable until current master, both units' safety and the reported
 motor variants are established; use the VOLTRAs' controls for the pair.
 
 Turn the dial to edit weight. Tap the main number to load/unload. When unloaded,
@@ -46,8 +46,9 @@ cancels it. Auto Load shows pull/hold guidance and the device's countdown when
 available; tap the weight to cancel. An unloaded number is darker;
 confirmed loaded weight is bright. Pending intent stays distinct from device
 confirmation. Boot, reconnect, presets and updates never load resistance.
-The Live screen uses fresh device-reported whole-pound wire load rather than
-reconstructing resistance from the selected base/modifiers. Unavailable or stale
+The Live screen uses fresh separately reported target resistance, displayed in
+whole pounds, without reconstructing it from the selected base/modifiers.
+Runtime wire tension is not a substitute. Unavailable or stale
 readings show `--`; the selected BASE remains separately labeled. Physical Twin
 live-load scope still needs validation and is not doubled speculatively.
 
@@ -65,7 +66,11 @@ Choose Settings -> Send debug log, or hold anywhere on an awake screen for six
 seconds, then tap SEND to send the last 20 diagnostic events. The notice explains
 that SEND disconnects Bluetooth for Wi-Fi delivery; no separate disconnect prompt
 or manual navigation is needed. Unload remains available in the dialog.
-Load refusals also offer this button.
+Load refusals and unresolved connection checks also offer this button.
+The published [v0.4.10 diagnostic update](docs/TWIN_STATUS_REPORT_2026_11_21.md)
+captures sanitized Twin rejection details missing from v0.4.9; physical Twin
+resistance controls remain unavailable. It also removes redundant screen wording
+and adds the remote-battery warning deferred until after Live/active sets.
 See [debug reports](docs/DEBUG_REPORTS.md) and the
 [November 14 fixes and remaining limitations](docs/BUG_FIXES_2026_11_14.md).
 
