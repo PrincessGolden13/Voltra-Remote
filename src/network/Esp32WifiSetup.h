@@ -16,6 +16,7 @@ public:
     bool start() override;
     void stop() override;
     void tick(bool radioAvailable) override;
+    bool reconnectSaved() override;
     bool prepareForUpdate() override;
     void requestConnectionCheck() override;
     void cancelConnectionCheck() override;

@@ -442,6 +442,7 @@ void UiController::readTouch() {
 }
 void UiController::navigate(Screen page) {
     weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=false;
+    if(page!=Screen::Updates) {updateCheckPending_=false;updateCheckMessage_.clear();}
     if(page==Screen::Live && batteryAlertDialog_) closeBatteryAlert(false);
     const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
     if(trainingPage && !app_.selectionReady()) page=Screen::Devices;
@@ -484,6 +485,11 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     activityAt_ = hardware_.nowMs();
     if(action==DismissConnection) {app_.leave();navigate(Screen::Devices);return;}
+    if(action==RetryConnection && !held) {
+        if(app_.retrySelection()) navigate(app_.selectionReady() ? Screen::Main : Screen::Devices);
+        else navigate(Screen::ConnectionNotice);
+        return;
+    }
     if(action==DismissControl) {navigate(app_.connected() ? Screen::Main : Screen::Devices);return;}
     rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
@@ -544,8 +550,9 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
     if (action == SendDebugLog) { debugPending_=true; return; }
-    if(action==CheckUpdates) {if(updates_) updates_->check();return;}
+    if(action==CheckUpdates) {requestUpdateCheck();return;}
     if(action==InstallUpdate) {
+        updateCheckPending_=false;updateCheckMessage_.clear();
         if(updates_ && !app_.connected() && !app_.connecting() && !app_.pending()) {
             if(!saveConfiguration()) return;
             if(!wifi_ || !wifi_->prepareForUpdate()) {value(message_,"Wi-Fi not safely saved; update blocked");return;}
@@ -559,6 +566,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         navigate(page_ == Screen::Settings ? Screen::Devices : Screen::Settings); return;
     }
     if(action==WifiSetupToggle) {
+        updateCheckPending_=false;updateCheckMessage_.clear();
         if(wifi_) {
             const auto w=wifi_->status();
             if((wifiConfiguring_ && w.setupComplete) || !w.storageReady || w.setupActive) {
@@ -568,6 +576,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         return;
     }
     if(action==ResetWifi) {
+        updateCheckPending_=false;updateCheckMessage_.clear();
         if(wifi_ && !app_.connected() && !app_.connecting() && wifi_->start()) wifiConfiguring_=true;
         return;
     }
@@ -1291,6 +1300,58 @@ void UiController::edited() {
     editedAt_ = hardware_.nowMs(); editDirty_ = true;
     activePreset_ = pendingPreset_ = -1;
 }
+void UiController::requestUpdateCheck() {
+    if(!updates_ || updateCheckPending_ || updates_->status().busy()) return;
+    updateCheckMessage_.clear();
+    if(app_.connected() || app_.connecting() || app_.pending()) {
+        updateCheckMessage_="Leave VOLTRA before checking updates";return;
+    }
+    if(debugDisconnectPending_ || (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy()))) {
+        updateCheckMessage_="Wait for the debug report to finish";return;
+    }
+    const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
+    if(!wifi_ || !w.storageReady) {updateCheckMessage_="Saved Wi-Fi unavailable. Settings kept.";return;}
+    if(w.setupActive) {updateCheckMessage_="Finish Wi-Fi setup first";return;}
+    if(!w.connected && !w.saved) {updateCheckMessage_="Set up Wi-Fi in Settings first";return;}
+    updateCheckPending_=true;updateWifiRequested_=w.connecting;updateCheckAt_=hardware_.nowMs();
+    updateCheckMessage_=w.connected ? "Starting update check…" : "Connecting to saved Wi-Fi…";
+}
+void UiController::tickUpdateCheck(uint64_t now) {
+    if(!updateCheckPending_) return;
+    auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
+    const auto phase=updates_ ? updates_->status().phase : UpdatePhase::Idle;
+    const bool interrupted=page_!=Screen::Updates || (rebuild_ && next_!=Screen::Updates) ||
+        app_.connected() || app_.connecting() || app_.pending() || w.setupActive ||
+        debugDisconnectPending_ || (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())) ||
+        phase==UpdatePhase::Installing || phase==UpdatePhase::Ready;
+    if(interrupted) {
+        updateCheckPending_=false;updateCheckMessage_="Update check cancelled";return;
+    }
+    // A deferred startup check may have started on this same connected tick.
+    if(phase==UpdatePhase::Checking) {updateCheckPending_=false;updateCheckMessage_.clear();return;}
+    if(!w.storageReady || !w.saved) {
+        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi unavailable. Settings kept.";return;
+    }
+    if(now-updateCheckAt_>=updateWifiWaitMs) {
+        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi did not connect. Try again.";return;
+    }
+    // A paused discovery policy stops new scans; let its existing async window
+    // finish before asking the shared radio to join the network.
+    if(app_.discoveryInProgress()) return;
+    if(w.connected) {
+        updateCheckPending_=false;updateCheckMessage_.clear();updates_->check();return;
+    }
+    if(!updateWifiRequested_) {
+        updateWifiRequested_=true;
+        if(!wifi_->reconnectSaved()) {
+            updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi could not reconnect. Try again.";return;
+        }
+        w=wifi_->status();
+    }
+    if(!w.connecting) {
+        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi did not connect. Try again.";
+    }
+}
 void UiController::tick() {
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     EventLog::instance().clock(now);
@@ -1300,7 +1361,7 @@ void UiController::tick() {
         // Saved Wi-Fi gets the shared radio first at boot. Discovery resumes
         // after the bounded startup attempt/check; manual selection still works.
         const bool savedWifi=wifi_ && wifi_->status().saved;
-        app_.setDiscoveryPaused((savedWifi && updates_->startupPending()) || updates_->status().busy() ||
+        app_.setDiscoveryPaused(updateCheckPending_ || (savedWifi && updates_->startupPending()) || updates_->status().busy() ||
             (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())));
     }
     app_.tick(now);
@@ -1316,7 +1377,11 @@ void UiController::tick() {
     if(app_.loadRefusalRevision()!=loadRefusalRevision_ && !debugDialog_ && !debugPending_) {
         loadRefusalRevision_=app_.loadRefusalRevision();navigate(Screen::ControlNotice);
     }
-    if(wifi_) wifi_->tick(!app_.connected() && !app_.connecting());
+    if(wifi_) {
+        const auto w=wifi_->status();
+        wifi_->tick(!app_.connected() && !app_.connecting() &&
+            (!updateCheckPending_ || !app_.discoveryInProgress() || w.connecting || w.connected));
+    }
     if(reports_) reports_->tick(wifi_ && wifi_->status().connected && !wifi_->status().setupActive,
         !app_.connected() && !app_.connecting() && !app_.pending() && (!updates_ || !updates_->status().busy()));
     app_.setMaintenance(debugDisconnectPending_ || (reports_ && reports_->status().busy()) || (updates_ &&
@@ -1324,6 +1389,7 @@ void UiController::tick() {
     if(updates_) {
         const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
         updates_->tick(now,w.connected && !w.setupActive,!app_.connected() && !app_.connecting() && !app_.pending() && (!reports_ || !reports_->status().busy()));
+        tickUpdateCheck(now);
         if(updates_->status().phase==UpdatePhase::Available && !updatePromptShown_ &&
            !batteryAlertDialog_ && !debugDialog_ && !debugPending_ && !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
             updatePromptShown_=true;navigate(Screen::Updates);

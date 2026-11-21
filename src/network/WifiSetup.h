@@ -3,7 +3,7 @@
 namespace voltra {
 enum class WifiConnectionCheck { Idle, Waiting, Checking, Reachable, NoReply, Error, Unavailable };
 struct WifiSetupStatus {
-    bool setupActive=false, connected=false, saved=false;
+    bool setupActive=false, connected=false, saved=false, connecting=false;
     bool setupComplete=false, storageReady=true;
     std::string network, address, setupNetwork, message;
     WifiConnectionCheck connectionCheck=WifiConnectionCheck::Idle;
@@ -18,6 +18,8 @@ public:
     virtual bool start()=0;
     virtual void stop()=0;
     virtual void tick(bool radioAvailable)=0;
+    // Explicit retry of the existing saved profile; never opens setup or saves.
+    virtual bool reconnectSaved() { return false; }
     // Installation must not restart with credentials that only exist in RAM.
     virtual bool prepareForUpdate() { return false; }
     // Explicit screen-open check; implementations must not block UI/control work.

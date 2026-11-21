@@ -56,6 +56,13 @@ private:
     void openBatteryAlert();
     void closeBatteryAlert(bool acknowledged);
     bool updatePromptShown_=false;
+    // The Wi-Fi join has a 20-second deadline; allow a bounded UI handoff too.
+    static constexpr uint64_t updateWifiWaitMs=25000;
+    bool updateCheckPending_=false,updateWifiRequested_=false;
+    uint64_t updateCheckAt_=0;
+    std::string updateCheckMessage_;
+    void requestUpdateCheck();
+    void tickUpdateCheck(uint64_t now);
     uint64_t modeGestureUntil_ = 0;
     int modeGestureClicks_ = 0;
     DeviceId forgetId_;

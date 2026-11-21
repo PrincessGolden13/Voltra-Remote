@@ -225,7 +225,15 @@ bool Esp32WifiSetup::prepareForUpdate() {
 }
 WifiSetupStatus Esp32WifiSetup::status() const {
     if(!mutex_) {WifiSetupStatus result;result.storageReady=false;result.message="Wi-Fi unavailable";return result;}
-    Lock lock(mutex_);return view_;
+    Lock lock(mutex_);auto result=view_;result.connecting=connecting_;return result;
+}
+bool Esp32WifiSetup::reconnectSaved() {
+    if(!mutex_ || !radioAvailable_) return false;
+    const auto w=status();
+    if(!w.storageReady || !w.saved || w.setupActive || submitted_ || candidateActive_) return false;
+    // Preserve the deadline of an automatic join already in progress.
+    if(w.connected || w.connecting) return true;
+    connect(saved_,false);return true;
 }
 void Esp32WifiSetup::connect(const Credentials& c,bool candidate) {
     bool requested;{Lock lock(mutex_);requested=pingRequested_;}

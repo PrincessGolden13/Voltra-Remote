@@ -38,7 +38,8 @@ DeviceId TrainingApplication::selectionDevice(const DeviceId& id) const {
     return device!=devices_.end() && !device->twinSelectionId.empty() ? device->twinSelectionId : id;
 }
 bool TrainingApplication::selectionReady() const {
-    if(selectionPhase_!=SelectionPhase::Ready || !connected() || !session_.accepted() || session_.readOnlyProbe()) return false;
+    if(selectionPhase_!=SelectionPhase::Ready || !connected() || !session_.accepted() ||
+       session_.readOnlyProbe()!=selectionReadOnlyView_) return false;
     const auto r=report();
     // A previously resolved standalone endpoint retains its navigation and
     // unconditional unload route while ordinary readback is stale. All load/
@@ -49,8 +50,13 @@ bool TrainingApplication::selectionReady() const {
         r.currentTwinRole==CurrentTwinRole::Master && r.twinRoleAtMs!=0 &&
         now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
 }
-bool TrainingApplication::retainSelectionControl() {
-    if(selectionReady()) return true;
+bool TrainingApplication::retainSelectionControl(bool requireControl) {
+    if(selectionReady()) {
+        if(requireControl && selectionReadOnlyView_) {
+            message_="Use VOLTRA controls";recordControlFailure(message_);return false;
+        }
+        return true;
+    }
     session_.setReadOnlyProbe(true);
     session_.cancelTraining();
     pending_=requestedLoad_=autoLoadRequested_=false;
@@ -58,6 +64,14 @@ bool TrainingApplication::retainSelectionControl() {
     resetDrops();
     if(selectionPhase_==SelectionPhase::Ready) failSelection("VOLTRA connection changed; reconnect");
     return false;
+}
+bool TrainingApplication::canRetrySelection() const {
+    if(maintenance_ || resolvingSelection() || connected() || controller_.connecting() || retrySelectionCandidate_.empty()) return false;
+    const auto endpoint=selectionDevice(retrySelectionCandidate_);
+    return std::any_of(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==endpoint && (d.online || remembered(d.id));});
+}
+bool TrainingApplication::retrySelection() {
+    return canRetrySelection() && select(retrySelectionCandidate_);
 }
 TrainingReport TrainingApplication::report() const {
     auto r=session_.trainingReport();
@@ -113,6 +127,13 @@ void TrainingApplication::observeTwin(const TrainingReport& r) {
             selection=old->second.selection;
         else if(peer!=twinLinks_.end() && peer->second.peer==selected_ && !peer->second.selection.empty())
             selection=peer->second.selection;
+        // A fresh backend role can improve the next read-only discovery start
+        // even when motor/limit readiness cannot yet promote the session. The
+        // saved candidate remains a hint: every new connection rechecks role.
+        const bool currentRole=r.twin && r.twinKnown && r.twinLinkState==0x12 && r.twinRoleAtMs!=0 &&
+            now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+        if(currentRole && r.currentTwinRole==CurrentTwinRole::Master) selection=selected_;
+        else if(currentRole && r.currentTwinRole==CurrentTwinRole::Follower) selection=r.twinPeerId;
         const bool replaceOwn=old!=twinLinks_.end() && old->second.peer!=r.twinPeerId;
         const bool replacePeer=peer!=twinLinks_.end() && peer->second.peer!=selected_;
         const bool paired=r.twinLinkState==0x12;
@@ -301,7 +322,8 @@ bool TrainingApplication::select(const DeviceId& id) {
     leave();
     selectionPhase_=SelectionPhase::Resolving;selectionStartedAt_=now_;
     selectionFirstEndpoint_=endpoint;
-    selectionTrace_.clear();
+    retrySelectionCandidate_=id;
+    selectionTrace_.clear();selectionFirstFailure_.clear();
     const auto link=twinLinks_.find(endpoint);
     if(link!=twinLinks_.end()) selectionPeerCandidate_=link->second.peer;
     if(!beginSelectionEndpoint(endpoint)) {failSelection(message_);return false;}
@@ -314,17 +336,20 @@ bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id) {
     if(it==devices_.end() && saved==recent_.end()) {message_="Paired VOLTRA is unavailable";return false;}
     const DeviceEntry chosen=it!=devices_.end() ? *it : *saved;
     if(!session_.setReadOnlyProbe(true)) {message_="Connection checking is unavailable";return false;}
-    selectionProbed_.push_back(id);selectionReading_=false;selectionReadAt_=0;
+    selectionProbed_.push_back(id);selectionEndpointStartedAt_=now_;selectionReading_=false;selectionReadAt_=0;
     connectingDevice_.reset();
+    selected_=chosen.id;name_=chosen.name;
     if(!controller_.connect(chosen.id)) {message_=controller_.feedback();return false;}
     session_.setSelectedAddress(transport_.deviceAddress(chosen.id));
-    selected_=chosen.id;name_=chosen.name;connectingDevice_=chosen;
+    connectingDevice_=chosen;
     message_="Checking "+name_+"...";
     return true;
 }
 void TrainingApplication::traceSelectionEndpoint() {
     if(selected_.empty()) return;
-    const auto snapshot="candidate"+std::to_string(selectionProbed_.size())+"={"+session_.diagnosticState().substr(0,700)+"}";
+    const auto elapsed=now_>=selectionEndpointStartedAt_ ? now_-selectionEndpointStartedAt_ : 0;
+    const auto snapshot="candidate"+std::to_string(selectionProbed_.size())+" elapsedMs="+std::to_string(elapsed)+
+        "={"+session_.diagnosticState().substr(0,700)+"}";
     if(!selectionTrace_.empty()) selectionTrace_+=' ';
     selectionTrace_+=snapshot;
     if(selectionTrace_.size()>1450) selectionTrace_.resize(1450);
@@ -332,21 +357,24 @@ void TrainingApplication::traceSelectionEndpoint() {
 void TrainingApplication::failSelection(const std::string& reason) {
     const auto failure=reason.empty() ? std::string("Could not identify the paired controller") : reason;
     traceSelectionEndpoint();
-    lastConnectionFailure_=("at="+std::to_string(now_)+" reason="+failure).substr(0,180);
+    const auto elapsed=now_>=selectionStartedAt_ ? now_-selectionStartedAt_ : 0;
+    lastConnectionFailure_=("at="+std::to_string(now_)+" elapsedMs="+std::to_string(elapsed)+" reason="+failure).substr(0,180);
     diagnostic("Connection selection failed: "+failure);
     leave();message_=failure;selectionPhase_=SelectionPhase::Failed;
 }
 bool TrainingApplication::runSelection() {
-    if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl();
+    if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl(false);
     if(selectionPhase_!=SelectionPhase::Resolving) return selectionPhase_==SelectionPhase::Failed;
     if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=selectionDeadlineMs) {
         failSelection("Could not identify the paired controller");return true;
     }
     if(controller_.connecting()) return true;
     if(!connected()) {
+        if(selectionFirstFailure_.empty()) selectionFirstFailure_=std::string(controller_.feedback()).substr(0,160);
         if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
+            failSelection(message_);return true;
         }
         failSelection(controller_.feedback());return true;
     }
@@ -371,8 +399,16 @@ bool TrainingApplication::runSelection() {
         now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
     const bool single=session_.accepted() && selectionProbed_.size()==1 && readbackFresh() &&
         r.twinKnown && !r.twin && !r.twinDetected;
-    if((roleFresh || single) && session_.setReadOnlyProbe(false) && !session_.readOnlyProbe()) {
+    bool promoted=false,readOnlyMaster=false;
+    if(roleFresh || single) {
+        promoted=session_.setReadOnlyProbe(false) && !session_.readOnlyProbe();
+        // A verified read-only route can show the pair while motor/limit
+        // authorization remains unavailable. Retain the backend probe gate.
+        readOnlyMaster=roleFresh && !promoted && session_.readOnlyProbe();
+    }
+    if(promoted || readOnlyMaster) {
         if(selectionProbed_.size()>1) traceSelectionEndpoint();
+        selectionReadOnlyView_=readOnlyMaster;
         selectionResolvedTwin_=roleFresh;selectionResolvedPeer_=roleFresh ? r.twinPeerId : DeviceId{};
         if(roleFresh) {
             const auto own=twinLinks_.find(selected_);
@@ -391,6 +427,7 @@ bool TrainingApplication::runSelection() {
         if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
+            failSelection(message_);return true;
         }
         failSelection(paired ? "Could not identify the paired controller" : "Could not read VOLTRA state");return true;
     }
@@ -413,10 +450,11 @@ void TrainingApplication::leave(bool preserveFailure) {
     if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
     automaticSelection_ = false;
-    selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionReadAt_=0;selectionReading_=false;
+    selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionEndpointStartedAt_=selectionReadAt_=0;selectionReading_=false;
     selectionProbed_.clear();selectionPeerCandidate_.clear();
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
     selectionFirstPeerObserved_=selectionResolvedTwin_=false;
+    selectionReadOnlyView_=false;
     scanned_ = scanPending_ = false;
     connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
@@ -434,7 +472,7 @@ bool TrainingApplication::fresh() const {
 }
 bool TrainingApplication::settingsAllowed() const {
     const auto r = report();
-    return selectionReady() && fresh() && r.twinKnown && session_.readiness().validated &&
+    return selectionReady() && !selectionReadOnlyView_ && fresh() && r.twinKnown && session_.readiness().validated &&
         r.minWeight > 0 && weightTicksDown(r,r.maxWeight) >= weightTicksUp(r,r.minWeight) && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
@@ -873,7 +911,7 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 void TrainingApplication::tick(uint64_t now) {
     now_ = now;
     // Revoke a resolved Twin route before polling can dispatch a queued intent.
-    if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl()) return;
+    if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl(false)) return;
     controller_.tick(now);
     refreshTwinDevices();
     if(runSelection()) return;
@@ -903,6 +941,9 @@ void TrainingApplication::tick(uint64_t now) {
     if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();
     observeTwin(r);refreshTwinDevices();
+    // A physical pair may be identified for presentation while commands remain
+    // quarantined. No automatic recipe/restore executor runs in that view.
+    if(selectionReadOnlyView_) return;
     if(!fresh()) restSince_.reset();
     else {
         const bool wasDropActive=dropProgress_.active;

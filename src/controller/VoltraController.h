@@ -26,7 +26,7 @@ public:
     const RequestedState& requested() const { return requested_; }
     bool weightFresh() const;
     LoadState loadState() const;
-    const char* feedback() const { return feedback_; }
+    const char* feedback() const { return feedback_.c_str(); }
     bool controlPending() const { return pendingLoad_.has_value() || requested_.status == CommandStatus::Pending; }
     bool loadRequested() const { return pendingLoad_ == true; }
 private:
@@ -39,10 +39,12 @@ private:
     ControlSession* controls_ = nullptr;
     std::optional<bool> pendingLoad_;
     bool connecting_ = false, linkUp_ = false;
+    bool disconnecting_=false;
     bool finishConnection();
     uint64_t sentAt_ = 0;
     static constexpr uint64_t commandTimeoutMs = 3000;
-    const char* feedback_ = "Turn wheel to adjust weight";
-    const char* report(const char* text) { feedback_ = text; return text; }
+    std::string feedback_ = "Turn wheel to adjust weight";
+    const char* report(const char* text) { feedback_ = text; return feedback_.c_str(); }
+    bool failConnection(const char* fallback);
 };
 }

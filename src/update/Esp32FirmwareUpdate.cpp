@@ -145,7 +145,7 @@ void Esp32FirmwareUpdate::check() {
     if(!mutex_ || workerActive_ || status().phase==UpdatePhase::Ready) return;
     bootCheckDone_=true;startupPending_=false;
     if(!controlIdle_) {set(UpdatePhase::Error,"Return to Devices before updating");return;}
-    if(!networkReady_) {set(UpdatePhase::Error,"Connect Wi-Fi in Settings first");return;}
+    if(!networkReady_) {set(UpdatePhase::Error,"Wi-Fi is disconnected. Try checking again.");return;}
     launch(false);
 }
 bool Esp32FirmwareUpdate::install() {

@@ -2,6 +2,12 @@
 #include "BleTypes.h"
 #include <functional>
 namespace voltra {
+enum class BleConnectionStage { None, Setup, Teardown, Radio, Services, Characteristics, Subscription, Link, Notifications };
+struct BleConnectionFailure {
+    BleConnectionStage stage=BleConnectionStage::None;
+    int reason=0; // A reported host/controller code; zero means unavailable.
+    bool timedOut=false;
+};
 // One transport session per controller. Callbacks execute on the application loop;
 // future radio adapters must marshal stack callbacks before delivery.
 class BleTransport {
@@ -16,6 +22,7 @@ public:
     // Optional canonical radio address for matching observed device metadata.
     // Only the adapter interprets its opaque DeviceId format.
     virtual std::string deviceAddress(const DeviceId&) const { return {}; }
+    virtual BleConnectionFailure connectionFailure() const { return {}; }
     // Accepted may mean queued. onConnection(true/false) delivers link outcome;
     // neither acceptance nor a link establishes a VOLTRA protocol session.
     virtual TransportResult connect(const DeviceId&) = 0;

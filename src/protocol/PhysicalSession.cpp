@@ -114,9 +114,9 @@ void PhysicalSession::setSelectedAddress(std::string address) {
 }
 bool PhysicalSession::setReadOnlyProbe(bool enabled) {
     if(enabled==readOnlyProbe_) return true;
-    // Current Twin role has no verified physical decoder yet. A connected
-    // probe may become the existing standalone control profile only after its
-    // fresh relationship evidence is established; selection order is no proof.
+    // Read-only Twin role resolution does not establish resistance-control
+    // support. A connected probe can enter only the existing standalone control
+    // profile, after its fresh relationship evidence is established.
     if(!enabled && connected_ && (!accepted_ || !standalone())) return false;
     cancelWrites("");runtimeTarget_.reset();
     readOnlyProbe_=enabled;
@@ -250,6 +250,25 @@ bool PhysicalSession::twinStatusFresh() const {
     return connected_ && accepted_ && twinStatus_ && twinReplyAccepted_ &&
         now_>=twinStatusAt_ && now_-twinStatusAt_<=stateFreshMs;
 }
+CurrentTwinRole PhysicalSession::currentTwinRole() const {
+    // Navigation evidence only. Neither historical role nor remote-status bit
+    // packing, motor flags, cached selection or names establish a live role.
+    // The relationship fields must belong to the current topology epoch; their
+    // refresh cannot extend the A7 role's own freshness/timestamp.
+    if(!twinStatusFresh() || !selectedAddress_ || !twinReplyOwnMatch_ ||
+       twinStatus_->own!=*selectedAddress_ || twinStatus_->state!=twinStatusPaired ||
+       !twinStatus_->peerPresent || fresh(twin)!=2 || !fresh(remoteCoworker) ||
+       fresh(remoteCoworker)==0) return CurrentTwinRole::Unknown;
+    const auto link=values_.find(twin),remote=values_.find(remoteCoworker);
+    if(link==values_.end() || remote==values_.end() ||
+       link->second.at<twinTopologyAt_ || remote->second.at<twinTopologyAt_) return CurrentTwinRole::Unknown;
+    if(twinStatus_->role==TwinStatusRole::Master) return CurrentTwinRole::Master;
+    if(twinStatus_->role==TwinStatusRole::Follower) return CurrentTwinRole::Follower;
+    return CurrentTwinRole::Unknown;
+}
+const char* PhysicalSession::readOnlyControlReason() const {
+    return twinObserved_ ? "Use VOLTRA controls" : "Checking VOLTRA connection";
+}
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
     if(!connected_) return false;
     if(readOnlyProbe_) {
@@ -380,7 +399,9 @@ void PhysicalSession::apply(const Frame& f) {
             twinObserved_=true;
         }
         if(twinReplyAccepted_) {
-            const bool changed=!previousFresh || !twinStatus_ || decoded->state!=twinStatus_->state || decoded->peer!=twinStatus_->peer;
+            const bool changed=!previousFresh || !twinStatus_ || decoded->state!=twinStatus_->state ||
+                decoded->rawState!=twinStatus_->rawState || decoded->marker!=twinStatus_->marker ||
+                decoded->peer!=twinStatus_->peer;
             if(changed) {
                 twinTopologyAt_=now_;
                 runtimeTarget_.reset();
@@ -587,6 +608,8 @@ void PhysicalSession::updateReadback() {
     }
     report_.twin=paired;
     report_.twinKnown=paired || single;
+    report_.currentTwinRole=currentTwinRole();
+    if(report_.currentTwinRole!=CurrentTwinRole::Unknown) report_.twinRoleAtMs=twinStatusAt_;
     report_.firmwareVersion=firmware_;
     const auto w=fresh(base),u=fresh(unit);
     if(!connected_ || !accepted_ || !w || !u || (*u!=0 && *u!=1)) return;
@@ -736,7 +759,12 @@ void PhysicalSession::updateReport() {
         !updateAllowsControls() ? updateBlockReason() : freshDirectMotorMode()==5 ? "Active-set weight change unsupported; send debug log" :
         report_.loaded || report_.autoLoadArmed ? "Unload to adjust" : "Reading control state";
 }
-TrainingReport PhysicalSession::trainingReport() const { return report_; }
+TrainingReport PhysicalSession::trainingReport() const {
+    auto result=report_;
+    result.currentTwinRole=currentTwinRole();
+    result.twinRoleAtMs=result.currentTwinRole==CurrentTwinRole::Unknown ? 0 : twinStatusAt_;
+    return result;
+}
 bool PhysicalSession::unloading() const {
     return waitingWrite_ && waitingWrite_->first==motor && waitingWrite_->second==4;
 }
@@ -749,7 +777,7 @@ SessionReadiness PhysicalSession::readiness() const {
     r.twinSafe=standalone();r.minWeightLbs=5;
     r.ready=!readOnlyProbe_ && accepted_ && activated_ && !unloading() && settingsReady() && freshMotorMode()==0 && freshDirectMotorMode()==0 && cable && zero &&
         fresh(mountLock)==securedMount && loadSafetyStatusSupported() && fresh(autoLoadStatus)==0;
-    if(readOnlyProbe_) r.reason="Checking VOLTRA connection";
+    if(readOnlyProbe_) r.reason=readOnlyControlReason();
     else if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!activated_) r.reason="Waiting for VOLTRA activation status";
     else if(twinObserved_) r.reason="Use VOLTRA controls";
@@ -772,8 +800,10 @@ SessionReadiness PhysicalSession::readiness() const {
     return r;
 }
 std::string PhysicalSession::diagnosticState() const {
+    const auto role=currentTwinRole();
     std::string text="accepted="+std::to_string(accepted_)+" activated="+std::to_string(activated_)+
-        " readOnlyProbe="+std::to_string(readOnlyProbe_)+" currentTwinRole=unknown";
+        " readOnlyProbe="+std::to_string(readOnlyProbe_)+" currentTwinRole="+
+        (role==CurrentTwinRole::Master ? "master" : role==CurrentTwinRole::Follower ? "follower" : "unknown");
     text+=" directMotor="+(directMotor_ ? std::to_string(directMotor_->value)+"@"+std::to_string(now_>=directMotor_->at ? now_-directMotor_->at : 0)+"ms" : "missing");
     text+=" twinLatch="+std::to_string(twinObserved_)+" A7={seen="+std::to_string(twinReplySeen_)+
         " bytes="+std::to_string(twinReplyBytes_)+" accepted="+std::to_string(twinReplyAccepted_)+
@@ -806,7 +836,7 @@ TransportResult PhysicalSession::setWeight(uint16_t pounds) {
     return setTraining(settings);
 }
 TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
-    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
+    if(readOnlyProbe_) {status_=readOnlyControlReason();return TransportResult::Unsupported;}
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if(twinObserved_) {status_="Use VOLTRA controls";return TransportResult::Unsupported;}
     if((!settingsReady() && !liveWeightReady()) || (waitingWrite_ && waitingWrite_->first==motor)) {
@@ -849,7 +879,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     return TransportResult::Accepted;
 }
 TransportResult PhysicalSession::setLiveWeight(int ticks) {
-    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
+    if(readOnlyProbe_) {status_=readOnlyControlReason();return TransportResult::Unsupported;}
     if(twinObserved_) {status_="Use VOLTRA controls";return TransportResult::Unsupported;}
     if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) {
         status_=freshDirectMotorMode()==5 ? "Active-set drop unsupported; send debug log" : "Drop blocked: fresh loaded state required";
@@ -894,7 +924,7 @@ void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     modifiers(false);
 }
 TransportResult PhysicalSession::setLoaded(bool loaded) {
-    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
+    if(readOnlyProbe_) {status_=readOnlyControlReason();return TransportResult::Unsupported;}
     if(!connected_) return TransportResult::Disconnected;
     if(loaded) {
         const auto ready=readiness();
@@ -920,7 +950,7 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
     return writeParameter(motor,4,2) ? TransportResult::Accepted : TransportResult::Failed;
 }
 TransportResult PhysicalSession::triggerAutoLoad() {
-    if(readOnlyProbe_) {status_="Checking VOLTRA connection";return TransportResult::Unsupported;}
+    if(readOnlyProbe_) {status_=readOnlyControlReason();return TransportResult::Unsupported;}
     const auto ready=readiness();
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if(busy() || !ready.ready || !ready.twinSafe || !settingsReady() || !activated_ ||

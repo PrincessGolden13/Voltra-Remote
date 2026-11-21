@@ -1,3 +1,12 @@
+> November 21 v0.4.11: use the bounded fresh A7 role profile for read-only master
+> discovery, hand off immediately from a known follower, and remember only the next
+> navigation candidate. Revalidate each endpoint; cached roles never authorize
+> controls. A fresh master can open Main read-only with the backend probe retained.
+> Replace the unsupported Bluetooth-occupied guess with stage/code and Retry.
+> Manual update checks reconnect saved Wi-Fi with a bounded wait before HTTPS;
+> disconnected status alone never implies deleted settings. No reset or auto install.
+> See TWIN_HANDOFF_2026_11_21.md. Physical Twin commands remain unavailable.
+>
 > November 21: v0.4.10 is an explicitly diagnostic update for report357833b6.
 > Retain Twin identity independently of optional metadata, record sanitized
 > rejection details and offer Send debug log after an unresolved connection.
