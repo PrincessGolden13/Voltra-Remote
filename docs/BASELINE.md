@@ -13,11 +13,22 @@
   occupied-device guess. No physical operation; hardware behavior unverified.
 - Existing core/inspector and real LVGL360/466/480 pointer checks pass, including
   zero control calls from read-only inputs. See TWIN_HANDOFF_2026_11_21.md.
-  Public firmware and publication receipts follow after execution.
+  Wi-Fi previews pass pending/checking/failure/cancel/duplicate/scan-wait and fast
+  completion paths, with no extra joins/checks, setup calls or installs.
 - The v0.4.10 update did not change Wi-Fi storage/networking. The offline Updates
   message tested connection only, even while the saved profile was reconnecting.
   Manual Check now retries that profile before checking GitHub, without reset,
   credential writes or automatic installation. Board profile presence is unverified.
+- CONFIRMED CI44956073824 at674e6da passes public Normal/Simulator, core and package.
+  Artifact14727611985 passes digest, image/manifest/USB/partition/backend/NVS and
+  rollback checks; hashes are in TESTING.md. Merge7128705 has the checked tree.
+  No physical operation performed.
+- CONFIRMED publication: tag CI44956593104 passes at7128705; Normal/Simulator
+  images exactly match the reviewed PR build, and all four assets and notes pass
+  review. [v0.4.11](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.11)
+  is published as latest at22:30:00UTC on November21. Public latest manifest and
+  pinned image match identity, length, SHA-256 and the reviewed tag. Physical
+  reconnection remains unverified; Twin resistance controls remain unsupported.
 
 ## November 21 Twin diagnostic update
 

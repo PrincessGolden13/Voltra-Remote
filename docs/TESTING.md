@@ -11,14 +11,44 @@ PASS existing core/packet-inspector builds and PhysicalSession native syntax che
 PASS real LVGL360/466/480 pointer flows: generic renamed follower->master, direct
 master, Retry after stage/code error, Back and explicit Send debug log consent.
 Master view remains probe1/readOnlyView1; dial/tap preserves base/load and produces
-zero backend control calls. No new test source or physical operation. Firmware,
-package and publication results follow after execution; physical radio improvement
-and Twin resistance control remain unverified/unsupported respectively.
+zero backend control calls. No new test source or physical operation. Physical radio
+improvement and Twin resistance control remain unverified/unsupported respectively.
 PASS independent Wi-Fi source review: queue the manual check before reconnect,
 wait the existing discovery window, issue one saved join, preserve an ongoing join's
 deadline and adopt a running startup check. Cancel pending work on navigation,
 VOLTRA use, setup, upload or install. No credential writes/reset, portal or
 automatic installation; existing install save/readback checks remain in place.
+PASS real LVGL Wi-Fi pointer previews at360/466/480: pending/checking/join failure,
+bounded25s wait, duplicate taps, leave/control cancellation, async scan wait and
+fast Current/Error completion. One join/check as appropriate, no join overlapping
+the previous scan and no hidden deferred check after cancellation. No setup/install
+calls. Final ASCII status and full cleanup/restart advice fit all three displays.
+PASS [CI44956073824](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44956073824)
+at674e6da91c8428a1aeba8f90eed7b39d28596759: public Normal/isolated Simulator,
+offline core/inspector and packaging. Artifact14727611985 digest matches
+`9ae31f177e940aad0e5c0da9155c5ab5dd63c876c664be7d4b23a4b5d8389ec3`.
+Normal2,011,296bytes SHA-256
+`03febdd2e33008f04999ee66e2237deeacd8caa5bda498f8242f52b6acab262e`;
+Simulator1,032,352bytes SHA-256
+`dfbf2f0f3bc68e68dabffd97e240dc992bc0d759519071820cdba16cefff9b5d`.
+Both descriptors, manifest, all USB hashes/offsets/partition map and USB/OTA equality
+pass. Defined-symbol checks confirm physical backend only in Normal, mock only in
+Simulator and strong GLOBAL __wrap_esp_partition_erase_range and verifyRollbackLater
+in both. Merge712870549e84f1c10fd99b9b082d76c7e075cc31 has the exact checked tree.
+Receipt: ignored build/review-v0411/validation.json.
+PASS [tag CI44956593104](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44956593104)
+atv0.4.11/712870549e84f1c10fd99b9b082d76c7e075cc31 builds, packages and creates
+the draft. Artifact14727717702 digest matches
+`3b43b37e4bf4afd48574418f9a9bd71ce04cedb0e95527314b84427ec2c69b67`.
+Both firmware images are byte-identical to the PR images above. Full descriptor,
+manifest, USB/hash/partition, backend and strong NVS/rollback checks pass; all four
+draft assets' sizes/digests and release notes match the tagged files. Receipt:
+ignored build/review-v0411-tag/validation.json.
+PASS publication: release454028353 published as latest ordinary v0.4.11 at
+2026-11-21T22:30:00Z. Downloaded public latest-feed manifest and pinned Normal image
+pass schema/board/channel/layout/version, descriptor, length and SHA-256; bytes
+match the reviewed tag image. Receipt: ignored build/published-v0411/verification.json.
+No physical installation, network-profile reset or motor operation was performed.
 
 November21 v0.4.10 diagnostic update: [report357833b6](TWIN_STATUS_REPORT_2026_11_21.md).
 PASS existing core/packet-inspector builds and five full published A7 payloads;
