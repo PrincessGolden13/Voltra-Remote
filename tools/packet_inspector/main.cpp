@@ -1,5 +1,6 @@
 #include "protocol/FrameParser.h"
 #include "protocol/TwinStatus.h"
+#include "protocol/RuntimeTarget.h"
 #include <iostream>
 #include <string>
 #include <cctype>
@@ -21,7 +22,14 @@ int main(int argc, char** argv) {
         const auto twin=voltra::decodeTwinStatus(*frame);
         if(!twin) {std::cerr << "Unsupported Twin status shape/state/identity consistency\n";return 1;}
         std::cout << "Twin status=" << twin->state << " peer_present=" << twin->peerPresent
-            << " own_battery=" << twin->ownBattery << " peer_battery=" << twin->peerBattery.value_or(-1)
+            << " own_battery=" << twin->ownBattery.value_or(-1) << " peer_battery=" << twin->peerBattery.value_or(-1)
             << "\nRole and peer safety remain unknown; addresses omitted.\n";
+    }
+    if(frame->command==0xb4) {
+        const auto sample=voltra::decodeRuntimeTarget(*frame);
+        if(!sample) {std::cerr << "Unsupported independent B4 shape/source\n";return 1;}
+        std::cout << "Independent target_tenths_lb=" <<
+            (sample->targetTenthsLb ? std::to_string(*sample->targetTenthsLb) : "unavailable") <<
+            "\nThis is a device target, not measured cable force or a verified LCD match.\n";
     }
 }

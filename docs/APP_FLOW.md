@@ -1,3 +1,31 @@
+> November 21: v0.4.10 is an explicitly diagnostic update for report357833b6.
+> Retain Twin identity independently of optional metadata, record sanitized
+> rejection details and offer Send debug log after an unresolved connection.
+> Physical Twin controls remain unavailable. Earlier publication-hold notes
+> describe the incomplete full-control candidate, not a completed Twin fix.
+> See TWIN_STATUS_REPORT_2026_11_21.md. Remove "peer" and redundant Twin status
+> words from ordinary screens; use known device names only.
+>
+> November 20 battery follow-up: warn when the remote's valid battery estimate
+> reaches 10% or below. Queue the warning throughout Live or a known active set;
+> show it after the set on an idle screen. OK acknowledges once for that low
+> episode; a known recovery to 15% rearms it. Preserve explicit UNLOAD and block
+> underlying gestures while the alert is open. Missing/USB-range readings cannot
+> trigger a warning. See REMOTE_BATTERY_2026_11_20.md for the board profile.
+>
+> November 20 Twin follow-up: paired overlapping named circles are one selection
+> with consistent availability across both rings. Save pair navigation metadata
+> across restarts, resetting live freshness/readiness. Weight Training shows only
+> the paired names at the top: no Twin caption, TOTAL label, extra dial glyph or
+> technical host/peer banner. Absolute combined-LB settings use a two-pound grid.
+> See TWIN_PRESENTATION_2026_11_20.md. Live uses separate reported target resistance,
+> superseding the v0.4.9 runtime-wire source; see LIVE_TARGET_SOURCE_2026_11_20.md.
+> The owner subsequently requires actual-master resolution for any pair. Saved
+> endpoint/scan order/names cannot choose that role. Keep selection read-only and
+> defer training until fresh master or standalone evidence; unknown must not enter
+> a follower's settings. Physical master discovery is unresolved and v0.4.10
+> remains unpublished until that requirement is met.
+>
 > November 18 hold/load follow-up: ordinary hold actions use capture-time press
 > duration on release, preserving the six-second debug-only gesture. Show no
 > debug hint before three seconds, then "Keep holding to send a debug log".

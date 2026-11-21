@@ -1,5 +1,17 @@
 # Existing Twin pairs
 
+November21: [report357833b6 and diagnostic update](TWIN_STATUS_REPORT_2026_11_21.md)
+separates identity from optional metadata and captures sanitized rejection fields.
+Diagnostic publication does not establish a physical current-master decoder or
+enable Twin resistance commands. Earlier release-hold notes describe the
+unfinished full-control candidate.
+
+November20 follow-up: [paired navigation/presentation](TWIN_PRESENTATION_2026_11_20.md)
+treats the circles as one saved navigation group, removes redundant labels and
+uses the source-backed two-pound combined-LB setting grid. Persisted pair
+metadata does not authorize commands. The owner identifies Black as host and Red
+as follower; A003, peer safety and combined limits remain unresolved.
+
 November20: [Twin/readback and Live update](TWIN_LIVE_READBACK_2026_11_20.md)
 adds strict read-only A7 topology, peer identity matching, Venn device/main
 presentation and confirmed combined setting scope. Motor/control validity remains

@@ -20,6 +20,8 @@ public:
     void onNotification(Notification callback) override { notification_ = std::move(callback); }
     void onConnection(Connection callback) override { connection_ = std::move(callback); }
     void setProfile(SimulatorProfile profile);
+    bool setReadOnlyProbe(bool) override;
+    bool readOnlyProbe() const override { return readOnlyProbe_; }
     SessionReadiness readiness() const override;
     TransportResult setWeight(uint16_t pounds) override;
     TransportResult setLoaded(bool loaded) override;
@@ -41,7 +43,10 @@ public:
     void setHeld(bool held);
     void ignoreNextRequest() { ignoreNext_ = true; }
 private:
-    struct SimDevice { DeviceId id; std::string name; bool online = true; TrainingReport state; WeightLimitEvidence limits; };
+    struct SimDevice {
+        DeviceId id; std::string name; bool online = true; TrainingReport state; WeightLimitEvidence limits;
+        CurrentTwinRole role=CurrentTwinRole::Unknown; // Explicit synthetic fixture, never inferred from names.
+    };
     std::vector<SimDevice> devices_;
     size_t active_ = 0;
     TrainingReport reported_;
@@ -53,11 +58,14 @@ private:
     uint64_t heldSince_ = 0;
     uint64_t restSince_ = 0;
     bool consumeIgnored();
+    bool currentTwinControlReady() const;
+    bool retainControlRoute();
     MockVoltra device_;
     Notification notification_;
     Connection connection_;
     SimulatorProfile profile_ = SimulatorProfile::Unloaded;
     bool connected_ = false, subscribed_ = false, sent_ = false;
+    bool readOnlyProbe_=false;
     uint64_t lastMs_ = 0;
     uint64_t nowMs_ = 0, dueMs_ = 0;
     std::optional<uint16_t> pendingWeight_;

@@ -4,6 +4,7 @@
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <algorithm>
+#include <iterator>
 #include "diagnostics/EventLog.h"
 namespace voltra::guition {
 HardwareCapabilities Board::capabilities() const {
@@ -15,9 +16,16 @@ HardwareCapabilities Board::capabilities() const {
     c.wifiAvailable=true;
 #endif
     c.hapticsAvailable=hapticsReady_;
+    c.batteryAvailable=batteryPercent().has_value();
     return c;
 }
 uint64_t Board::nowMs() const { return uint64_t(esp_timer_get_time())/1000; }
+std::optional<uint8_t> Board::batteryPercent() const {
+    const auto now=nowMs();
+    if(!ready_ || !batteryAdcReady_ || !batteryPercent_ || now<batteryAt_ || now-batteryAt_>batteryFreshMs)
+        return std::nullopt;
+    return batteryPercent_;
+}
 bool Board::transfer(uint8_t reg,const void* data,size_t bytes,bool quad) {
     spi_transaction_t t{};t.cmd=quad ? 0x32 : 0x02;t.addr=uint32_t(reg)<<8;
     t.tx_buffer=data;t.length=bytes*8;t.flags=quad ? SPI_TRANS_MODE_QIO : 0;
@@ -66,6 +74,7 @@ bool Board::begin() {
         diagnostic("Touch config reg="+std::to_string(reg)+" ack="+std::to_string(written)+" read="+std::to_string(actual));
     }
     beginHaptics(); // Probe/configure with zero output; never buzz on boot.
+    beginBattery(); // Passive ADC input only; never configures charger/power rails.
     pinMode(encoderA,INPUT_PULLUP);pinMode(encoderB,INPUT_PULLUP);pinMode(pressPin,INPUT_PULLUP);
     encoderState_=(digitalRead(encoderA)<<1)|digitalRead(encoderB);
     attachInterruptArg(encoderA,encoderInterrupt,this,CHANGE);attachInterruptArg(encoderB,encoderInterrupt,this,CHANGE);
@@ -105,9 +114,65 @@ int Board::getDelta() {
     return delta*encoderDirection;
 }
 void Board::poll() {
+    pollBattery();
     const uint32_t now=millis();const bool down=digitalRead(pressPin)==LOW;
     if(down!=pressCandidate_) {pressCandidate_=down;pressChanged_=now;}
     if(now-pressChanged_>=30 && down!=pressStable_) {pressStable_=down;if(down) {pressed_=true;Serial.println("Press");}}
+}
+namespace {
+// Confirmed pin/divider in the pinned K518C sources and board schematic;
+// voltage-to-charge remains an inferred single-cell profile, not a fuel gauge.
+// See docs/REMOTE_BATTERY_2026_11_20.md for evidence and physical limits.
+constexpr unsigned batterySamples=32,batteryDivider=2;
+constexpr uint32_t minimumBatteryRailMv=3000,maximumBatteryRailMv=4300;
+struct BatteryPoint { uint32_t mv; uint8_t percent; };
+constexpr BatteryPoint batteryCurve[]={{3300,0},{3600,10},{3700,25},{3850,50},{4000,75},{4200,100}};
+uint8_t estimatedBatteryPercent(uint32_t mv) {
+    if(mv<=batteryCurve[0].mv) return 0;
+    for(size_t i=1;i<std::size(batteryCurve);++i) {
+        const auto lo=batteryCurve[i-1],hi=batteryCurve[i];
+        if(mv<=hi.mv) return uint8_t(lo.percent+(mv-lo.mv)*(hi.percent-lo.percent)/(hi.mv-lo.mv));
+    }
+    return 100;
+}
+}
+void Board::beginBattery() {
+    // ESP32-S3 GPIO1 is ADC1, so this read path remains available with Wi-Fi.
+    // Arduino 2.0.17 calls the attenuation ADC_11db (12 dB in newer cores).
+    pinMode(batteryAdcPin,INPUT);
+    analogReadResolution(12);
+    analogSetPinAttenuation(batteryAdcPin,ADC_11db);
+    batteryAdcReady_=true;
+    pollBattery();
+}
+void Board::pollBattery() {
+    if(!batteryAdcReady_) return;
+    const auto now=nowMs();
+    if(batteryPollAt_ && now>=batteryPollAt_ && now-batteryPollAt_<batteryPollMs) return;
+    batteryPollAt_=now;
+    uint32_t sum=0;bool readable=true;
+    for(unsigned i=0;i<batterySamples;++i) {
+        const auto mv=analogReadMilliVolts(batteryAdcPin);
+        // A zero/error sample is unavailable, never an empty-battery reading.
+        if(!mv || mv>3300) {readable=false;break;}
+        sum+=mv;
+    }
+    const uint32_t railMv=readable ? (sum*batteryDivider+batterySamples/2)/batterySamples : 0;
+    if(!readable || railMv<minimumBatteryRailMv || railMv>maximumBatteryRailMv) {
+        // USB normally raises this shared rail to about 5 V. Reject it before
+        // filtering so a plug/unplug cannot look like a charged battery.
+        batteryPercent_.reset();batteryFilteredMv_=0;
+    } else {
+        batteryFilteredMv_=batteryFilteredMv_ ? (batteryFilteredMv_*7+railMv+4)/8 : railMv;
+        batteryPercent_=estimatedBatteryPercent(batteryFilteredMv_);
+    }
+    batteryAt_=now;
+    const int percent=batteryPercent_ ? int(*batteryPercent_) : -1;
+    const auto change=railMv>batteryLoggedMv_ ? railMv-batteryLoggedMv_ : batteryLoggedMv_-railMv;
+    if(percent!=batteryLoggedPercent_ || change>=50) {
+        diagnostic("Remote battery railMv="+std::to_string(railMv)+" estimatePct="+std::to_string(percent));
+        batteryLoggedMv_=railMv;batteryLoggedPercent_=percent;
+    }
 }
 void Board::touchTask(void* context) {
     auto* board=static_cast<Board*>(context);

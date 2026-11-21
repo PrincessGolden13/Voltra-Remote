@@ -27,7 +27,8 @@ void UiController::separator(int y,int inset) {
     lv_obj_set_size(line,width_*(100-2*inset)/100,1); lv_obj_set_pos(line,width_*inset/100,height_*y/100);
     style::set_bg_color(line,lv_color_hex(accent()),0); style::set_bg_opa(line,90,0);
 }
-std::string UiController::presetSummary(const Preset& p,bool multiline) const {
+std::string UiController::presetSummary(const Preset& saved,bool multiline) const {
+    const auto p=app_.presetForCurrentDevice(saved);
     const std::string magicUnit = p.magic.percent ? "%" : unitName(p.unit), eoUnit = p.eccentric.percent ? "%" : unitName(p.unit), gap = multiline ? "\n\n" : " ";
     std::string s = std::string(magicName(p.mode))+(p.magic.enabled ? " "+(p.magic.percent ? std::to_string(p.magic.value) : weightText(p.magic.value,p.unit))+magicUnit : " OFF");
     s += gap+"EO"+(p.eccentric.enabled ? " "+(p.eccentric.percent ? std::to_string(p.eccentric.value) : weightText(p.eccentric.value,p.unit))+eoUnit : " OFF");
@@ -54,7 +55,10 @@ void UiController::buildExtra() {
     if(page_==Screen::ConnectionNotice) {
         label(face_,"CONNECTION ENDED",width_*76/100,height_*22/100,heading);
         label(face_,app_.message(),width_*74/100,height_*38/100,medium);
-        action("OK",33,72,34,12,DismissConnection);
+        if(app_.selectionFailed()) {
+            action("Send debug log",20,58,60,11,SendDebugLog);
+            action("OK",33,74,34,12,DismissConnection);
+        } else action("OK",33,72,34,12,DismissConnection);
         return;
     }
     if (page_ == Screen::ForgetDevice) {
@@ -247,16 +251,19 @@ void UiController::updateExtra() {
     }
     if(page_ == Screen::Live) {
         const auto d=app_.drops();
-        text(status_,r.twin ? (r.twinKnown ? "Twin: "+r.twinPeerName : "Twin status unavailable") : "");
+        text(status_,"");
         const bool known=app_.fresh() && r.telemetryValid;
         const auto now=hardware_.nowMs();
         constexpr uint64_t liveWeightFreshMs=500;
-        const bool liveWeightFresh=app_.fresh() && app_.readbackFresh() && r.liveWeightLbs && *r.liveWeightLbs>=0 &&
-            now>=r.liveWeightAtMs && now-r.liveWeightAtMs<=liveWeightFreshMs;
-        // The runtime wire-load register is a device report in whole pounds.
-        // Convert display units only: never reconstruct the changing load from
-        // base/curve/phase settings or substitute selected weight for missing data.
-        largeValue(liveWeightFresh ? weightText(convertWeightUnits(*r.liveWeightLbs,WeightUnit::Pounds,r.unit),r.unit) : "--");
+        const bool liveWeightFresh=app_.fresh() && app_.readbackFresh() && r.loadStateKnown &&
+            r.loaded && !r.autoLoadArmed && !r.twin && !r.twinDetected && r.twinKnown &&
+            r.liveTargetTenthsLb && *r.liveTargetTenthsLb>=0 && *r.liveTargetTenthsLb<=10000 &&
+            now>=r.liveTargetAtMs && now-r.liveTargetAtMs<=liveWeightFreshMs;
+        // Round the device-reported target for the user's whole-LB display.
+        // Do not substitute measured tension, 16003, base, curve or phase math.
+        const int targetTicks=liveWeightFresh ? int(std::lround(
+            convertedWeightTicks(*r.liveTargetTenthsLb,WeightUnit::Pounds,r.unit)/10.0)) : 0;
+        largeValue(liveWeightFresh ? weightText(targetTicks,r.unit) : "--");
         text(start_,app_.readbackFresh() ? d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) :
             "BASE "+weightText(r.settings.weight,r.unit)+" "+unitName(r.unit) : "");
         int next=d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : nextRestPauseWeight(r,d.percent);
