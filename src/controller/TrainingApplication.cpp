@@ -337,6 +337,7 @@ bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id) {
     const DeviceEntry chosen=it!=devices_.end() ? *it : *saved;
     if(!session_.setReadOnlyProbe(true)) {message_="Connection checking is unavailable";return false;}
     selectionProbed_.push_back(id);selectionEndpointStartedAt_=now_;selectionReading_=false;selectionReadAt_=0;
+    selectionEndpointAccepted_=false;
     connectingDevice_.reset();
     selected_=chosen.id;name_=chosen.name;
     if(!controller_.connect(chosen.id)) {message_=controller_.feedback();return false;}
@@ -348,8 +349,16 @@ bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id) {
 void TrainingApplication::traceSelectionEndpoint() {
     if(selected_.empty()) return;
     const auto elapsed=now_>=selectionEndpointStartedAt_ ? now_-selectionEndpointStartedAt_ : 0;
+    std::string detail;
+    if(!selectionEndpointAccepted_ && !session_.accepted()) {
+        const auto failure=transport_.connectionFailure();
+        detail="accepted=0 readOnlyProbe="+std::to_string(session_.readOnlyProbe())+
+            " transportStage="+std::to_string(static_cast<int>(failure.stage))+" code="+std::to_string(failure.reason)+
+            " timedOut="+std::to_string(failure.timedOut)+" attempts="+std::to_string(failure.attempts)+
+            " radioElapsedMs="+std::to_string(failure.elapsedMs);
+    } else detail=session_.diagnosticState().substr(0,700);
     const auto snapshot="candidate"+std::to_string(selectionProbed_.size())+" elapsedMs="+std::to_string(elapsed)+
-        "={"+session_.diagnosticState().substr(0,700)+"}";
+        "={"+detail+"}";
     if(!selectionTrace_.empty()) selectionTrace_+=' ';
     selectionTrace_+=snapshot;
     if(selectionTrace_.size()>1450) selectionTrace_.resize(1450);
@@ -366,11 +375,26 @@ bool TrainingApplication::runSelection() {
     if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl(false);
     if(selectionPhase_!=SelectionPhase::Resolving) return selectionPhase_==SelectionPhase::Failed;
     if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=selectionDeadlineMs) {
-        failSelection("Could not identify the paired controller");return true;
+        // An observed topology contradiction remains more specific than a
+        // timer or an earlier radio failure, including on the deadline tick.
+        const auto r=report();
+        const bool identityFresh=connected() && session_.accepted() && r.twinStatusFresh &&
+            now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && !r.twinPeerId.empty();
+        if(selectionProbed_.size()>1 && identityFresh && (r.twinPeerId!=selectionFirstEndpoint_ ||
+           (selectionFirstPeerObserved_ && selected_!=selectionExpectedPeer_))) {
+            failSelection("VOLTRA pair changed while connecting");return true;
+        }
+        failSelection(selectionFirstFailureTyped_ ? selectionFirstFailure_ : "Could not identify the paired controller");return true;
     }
     if(controller_.connecting()) return true;
     if(!connected()) {
-        if(selectionFirstFailure_.empty()) selectionFirstFailure_=std::string(controller_.feedback()).substr(0,160);
+        const auto failure=transport_.connectionFailure();
+        if(selectionFirstFailure_.empty()) {
+            selectionFirstFailure_=std::string(controller_.feedback()).substr(0,160);
+            selectionFirstFailureTyped_=failure.stage!=BleConnectionStage::None;
+        }
+        if(selectionProbed_.size()==1 && !selectionFirstAccepted_ && failure.stage!=BleConnectionStage::None)
+            selectionFirstFailedBeforeAcceptance_=true;
         if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
@@ -379,6 +403,10 @@ bool TrainingApplication::runSelection() {
         failSelection(controller_.feedback());return true;
     }
     if(!selectionReading_) {selectionReadAt_=now_;selectionReading_=true;}
+    if(session_.accepted()) {
+        selectionEndpointAccepted_=true;
+        if(selectionProbed_.size()==1) selectionFirstAccepted_=true;
+    }
     const auto r=report();
     // Full fresh identity can nominate a read-only candidate while link-state
     // semantics remain unknown. It cannot promote that candidate to controls.
@@ -423,6 +451,12 @@ bool TrainingApplication::runSelection() {
     }
     const bool follower=paired && r.currentTwinRole==CurrentTwinRole::Follower && r.twinRoleAtMs!=0 &&
         now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+    if(follower && selectionProbed_.size()==2 && selectionFirstFailedBeforeAcceptance_ && selectionFirstFailureTyped_ &&
+       r.twinPeerId==selectionFirstEndpoint_) {
+        // The peer is identified, but its earlier connection failed. Preserve
+        // that real failure; revisiting it here would stack another retry loop.
+        failSelection(selectionFirstFailure_);return true;
+    }
     if(follower || now_-selectionReadAt_>=selectionReadDeadlineMs) {
         if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
             traceSelectionEndpoint();
@@ -451,6 +485,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
     automaticSelection_ = false;
     selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionEndpointStartedAt_=selectionReadAt_=0;selectionReading_=false;
+    selectionEndpointAccepted_=selectionFirstAccepted_=selectionFirstFailedBeforeAcceptance_=selectionFirstFailureTyped_=false;
     selectionProbed_.clear();selectionPeerCandidate_.clear();
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
     selectionFirstPeerObserved_=selectionResolvedTwin_=false;

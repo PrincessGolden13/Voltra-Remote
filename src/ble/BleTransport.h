@@ -7,6 +7,8 @@ struct BleConnectionFailure {
     BleConnectionStage stage=BleConnectionStage::None;
     int reason=0; // A reported host/controller code; zero means unavailable.
     bool timedOut=false;
+    unsigned attempts=0;
+    uint64_t elapsedMs=0; // Radio budget elapsed at failure, before app handoff.
 };
 // One transport session per controller. Callbacks execute on the application loop;
 // future radio adapters must marshal stack callbacks before delivery.

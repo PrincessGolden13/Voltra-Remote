@@ -40,7 +40,7 @@ public:
         return (selectionTrace_.empty() ? std::string{} : "selectionProbes={"+selectionTrace_+"} ")+
             (selectionFirstFailure_.empty() ? std::string{} : "firstConnectionFailure={"+selectionFirstFailure_+"} ")+
             "lastConnectionFailure={"+lastConnectionFailure_+"} "+
-            (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+
+            (connected() ? session_.diagnosticState() : selectionTrace_.empty() ? "lastClosedSession={"+lastClosedSession_+"}" : std::string{})+
             " lastFailure={"+lastControlFailure_+"}";
     }
     uint64_t loadRefusalRevision() const { return loadRefusalRevision_; }
@@ -109,6 +109,8 @@ private:
     SelectionPhase selectionPhase_=SelectionPhase::Idle;
     uint64_t selectionStartedAt_=0,selectionEndpointStartedAt_=0,selectionReadAt_=0;
     bool selectionReading_=false;
+    bool selectionEndpointAccepted_=false,selectionFirstAccepted_=false;
+    bool selectionFirstFailedBeforeAcceptance_=false,selectionFirstFailureTyped_=false;
     std::vector<DeviceId> selectionProbed_;
     DeviceId selectionPeerCandidate_;
     DeviceId selectionFirstEndpoint_,selectionExpectedPeer_,selectionResolvedPeer_;

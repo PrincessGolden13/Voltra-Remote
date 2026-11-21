@@ -8,7 +8,9 @@
 namespace voltra {
 namespace {
 // Radio-link policy only: never retry a protocol or resistance command.
-constexpr uint32_t connectionTimeoutMs=10000, connectionRetryDelayMs=500, mtuWaitMs=1000;
+// One radio budget per requested connection, including retry delays. Splitting
+// it allows a timed-out GAP initiation one fresh attempt without longer waits.
+constexpr uint32_t connectionBudgetMs=10000, connectionAttemptMs=4500, connectionRetryDelayMs=500, mtuWaitMs=1000;
 // Allow the pinned stack's terminal callback to return before client reuse.
 // This is a radio handoff policy, not a VOLTRA command or readiness delay.
 constexpr uint32_t clientSettleMs=100;
@@ -61,12 +63,18 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     bool connecting=false, radioBusy=false, linkObserved=false, cancelling=false;
     NimBLEAddress target,radioTarget;
     unsigned attempts=0;
-    uint64_t now=0, retryAt=0, attemptAt=0, linkUpAt=0, handoffUntil=0;
+    uint64_t now=0, retryAt=0, attemptAt=0, radioStartedAt=0, linkUpAt=0, handoffUntil=0;
+    uint32_t attemptLimitMs=connectionAttemptMs;
+    bool timeoutRetryUsed=false;
     bool terminalObserved=true,mtuReady=false;
     BleConnectionFailure failure;
     void fail(BleConnectionStage stage,int reason=0,bool timedOut=false) {
-        failure={stage,reason,timedOut};
-        log("BLE failure stage="+std::to_string(int(stage))+" code="+std::to_string(reason)+" timeout="+std::to_string(timedOut));
+        const auto elapsed=attempts && now>=radioStartedAt ? now-radioStartedAt : 0;
+        failure={stage,reason,timedOut,attempts,elapsed};
+        log("BLE connect failure stage="+std::to_string(int(stage))+" code="+std::to_string(reason)+
+            " timeout="+std::to_string(timedOut)+" attempt="+std::to_string(attempts)+
+            " radioMs="+std::to_string(elapsed)+
+            "/"+std::to_string(connectionBudgetMs));
     }
     // Stack callbacks only publish events. Application callbacks run in poll().
     enum class LinkKind { Up, Failed, Down, Mtu };
@@ -101,7 +109,7 @@ bool NimBleTransport::begin() {
     impl_->scanner->setMaxResults(64);
     impl_->client=NimBLEDevice::createClient();
     if(impl_->client) {
-        impl_->client->setConnectTimeout(connectionTimeoutMs);
+        impl_->client->setConnectTimeout(connectionAttemptMs);
         // 15–30 ms connection interval, zero latency, 4 s supervision timeout.
         // Generic BLE timing; VOLTRA may negotiate a different interval.
         impl_->client->setConnectionParams(12,24,0,400);
@@ -144,7 +152,7 @@ TransportResult NimBleTransport::connect(const DeviceId& id) {
         if(it!=impl_->signals.end()) impl_->log("BLE target RSSI="+std::to_string(it->second.rssi)+" connectable="+std::to_string(it->second.connectable)+" addressType="+id.substr(18));
     }
     impl_->target=NimBLEAddress(id.substr(0,17),uint8_t(id[18]-'0'));
-    impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;
+    impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;impl_->timeoutRetryUsed=false;
     // Accepted means queued; onConnection reports completion/failure later.
     return TransportResult::Accepted;
 }
@@ -258,12 +266,18 @@ void NimBleTransport::poll(uint64_t now) {
         impl_->handoffUntil=now+clientSettleMs;
         impl_->log("BLE link ended: "+std::to_string(event.reason));
         if(teardown) {impl_->log("BLE previous connection closed");continue;}
-        impl_->fail(impl_->connected ? BleConnectionStage::Link : BleConnectionStage::Radio,event.reason);
+        const bool hostTimeout=event.kind==Impl::LinkKind::Failed && event.reason==BLE_HS_ETIMEOUT;
+        impl_->fail(impl_->connected ? BleConnectionStage::Link : BleConnectionStage::Radio,event.reason,hostTimeout);
         if(impl_->connected) {disconnect();return;}
         if(impl_->connecting && impl_->attempts) {
-            if(event.reason==establishmentFailure && impl_->attempts<connectionAttempts) {
+            const bool retryable=event.reason==establishmentFailure || (hostTimeout && !impl_->timeoutRetryUsed);
+            const auto radioElapsed=now>=impl_->radioStartedAt ? now-impl_->radioStartedAt : connectionBudgetMs;
+            if(retryable && impl_->attempts<connectionAttempts && radioElapsed+connectionRetryDelayMs<connectionBudgetMs) {
+                if(hostTimeout) impl_->timeoutRetryUsed=true;
                 impl_->retryAt=now+connectionRetryDelayMs;
-                impl_->log("BLE establishment retry scheduled");
+                impl_->log("BLE connect retry code="+std::to_string(event.reason)+" afterMs="+
+                    std::to_string(connectionRetryDelayMs)+" radioMs="+std::to_string(radioElapsed)+
+                    "/"+std::to_string(connectionBudgetMs));
             } else {
                 impl_->connecting=false;
                 if(impl_->connection) impl_->connection(false);
@@ -275,7 +289,7 @@ void NimBleTransport::poll(uint64_t now) {
     if(!impl_->terminalObserved && (impl_->cancelling || (!impl_->connecting && !impl_->connected)) &&
        impl_->client && impl_->client->isConnected()) impl_->client->disconnect();
     if(impl_->connecting) {
-        if(!impl_->attempts && now>=impl_->retryAt && now-impl_->retryAt>connectionTimeoutMs+mtuWaitMs) {
+        if(!impl_->attempts && now>=impl_->retryAt && now-impl_->retryAt>connectionBudgetMs+mtuWaitMs) {
             // An old cancellation can fail to deliver a callback. Bound the
             // queued request by the existing connect+MTU deadline, without
             // pretending the old radio procedure has ended or reusing it.
@@ -283,6 +297,15 @@ void NimBleTransport::poll(uint64_t now) {
             impl_->log("BLE previous connection did not close; reconnect stopped");
             impl_->connecting=false;
             if(impl_->connection) impl_->connection(false);
+        }
+        else if(impl_->attempts && !impl_->linkObserved && now-impl_->radioStartedAt>=connectionBudgetMs) {
+            // A missing terminal callback cannot authorize another attempt.
+            // Cancel while retaining the radio owner until its real teardown.
+            impl_->fail(BleConnectionStage::Radio,0,true);
+            impl_->log("BLE connect radio budget exhausted");
+            disconnect();
+            if(impl_->connection) impl_->connection(false);
+            return;
         }
         // NimBLE 2.3.6 invokes its disconnect/failure callback before clearing
         // the client's connection handle. Drain both the callback and handle
@@ -298,11 +321,17 @@ void NimBleTransport::poll(uint64_t now) {
                 if(impl_->linkEvents.empty() && !impl_->linkOverflow) {
                     ++impl_->radioGeneration;impl_->radioTarget=impl_->target;
                     impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;impl_->terminalObserved=false;
+                    if(!impl_->attempts) impl_->radioStartedAt=now;
+                    impl_->attemptLimitMs=std::min<uint32_t>(connectionAttemptMs,
+                        uint32_t(connectionBudgetMs-(now-impl_->radioStartedAt)));
                     impl_->attemptAt=now;++impl_->attempts;launch=true;
                 }
             }
             if(launch) {
-                impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts));
+                impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts)+
+                    " limitMs="+std::to_string(impl_->attemptLimitMs)+" radioMs="+
+                    std::to_string(now-impl_->radioStartedAt)+"/"+std::to_string(connectionBudgetMs));
+                impl_->client->setConnectTimeout(impl_->attemptLimitMs);
                 const auto previousError=impl_->client->getLastError();
                 if(!impl_->client->connect(impl_->target,true,true,true)) {
                     // Early failures can leave NimBLE's previous lastError intact.
@@ -317,7 +346,7 @@ void NimBleTransport::poll(uint64_t now) {
             impl_->failure={};
             impl_->log("BLE connected MTU="+std::to_string(impl_->client->getMTU()));
             if(impl_->connection) impl_->connection(true);
-        } else if(impl_->attempts && impl_->radioBusy && now-impl_->attemptAt>connectionTimeoutMs+mtuWaitMs) {
+        } else if(impl_->attempts && impl_->radioBusy && now-impl_->attemptAt>impl_->attemptLimitMs+mtuWaitMs) {
             impl_->fail(BleConnectionStage::Radio,0,true);
             impl_->log("BLE connection timed out");
             disconnect();
