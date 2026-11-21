@@ -1,5 +1,11 @@
 # Existing Twin pairs
 
+November21: [report357833b6 and diagnostic update](TWIN_STATUS_REPORT_2026_11_21.md)
+separates identity from optional metadata and captures sanitized rejection fields.
+Diagnostic publication does not establish a physical current-master decoder or
+enable Twin resistance commands. Earlier release-hold notes describe the
+unfinished full-control candidate.
+
 November20 follow-up: [paired navigation/presentation](TWIN_PRESENTATION_2026_11_20.md)
 treats the circles as one saved navigation group, removes redundant labels and
 uses the source-backed two-pound combined-LB setting grid. Persisted pair

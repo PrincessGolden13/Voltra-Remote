@@ -1,5 +1,20 @@
 # Foundation baseline
 
+## November 21 Twin diagnostic update
+
+- CONFIRMED report357833b6 runs v0.4.9 with successful BLE/authentication and
+  known unloaded motor0. Full-length A7 messages are rejected, but the old report
+  lacks the rejected fields. ownMatch0 follows shape failure and does not prove
+  an address mismatch. See TWIN_STATUS_REPORT_2026_11_21.md.
+- Separate full identity from optional battery/marker/state semantics; record
+  sanitized header/both-slot match detail and bound status logging. Unknown
+  role/state cannot authorize paired controls or totals. Screen text omits
+  "peer" and redundant Twin captions.
+- v0.4.10 is prepared for diagnostic publication to expose the missing fields
+  through the remote update workflow. This supersedes the earlier release hold
+  as a diagnostic step, not as proof of working Twin controls. Required build/
+  artifact checks follow; physical Twin commands remain blocked.
+
 ## November 20 remote battery alert addition
 
 - Implemented remote-battery warning at10% or below, queued through Live and

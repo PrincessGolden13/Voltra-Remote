@@ -13,6 +13,10 @@ constexpr uint32_t soft = 0x96a7bd, amber = 0xffc374;
 void color(lv_obj_t* obj, uint32_t c) { style::set_text_color(obj, lv_color_hex(c), 0); }
 void value(lv_obj_t* obj, const std::string& text) { if (obj && text != lv_label_get_text(obj)) lv_label_set_text(obj, text.c_str()); }
 int percentOf(int n, int max) { return max > 0 ? std::clamp(n*1000/max, 0, 1000) : 0; }
+std::string deviceNames(const std::string& first,const std::string& second) {
+    if(first.empty()) return second;
+    return second.empty() ? first : first+" + "+second;
+}
 }
 lv_obj_t* UiController::label(lv_obj_t* parent, const std::string& text, int w, int y, const lv_font_t* font) {
     auto* obj = lv_label_create(parent); value(obj, text); lv_obj_set_width(obj, w);
@@ -450,7 +454,7 @@ void UiController::navigate(Screen page) {
     if (page == Screen::ForgetDevice && forgetId_.empty()) {
         forgetId_=app_.selectedDevice();forgetName_=app_.name();
         const auto report=app_.report();
-        if((report.twinDetected || report.twin) && !report.twinPeerName.empty()) forgetName_+=" + "+report.twinPeerName;
+        if(report.twinDetected || report.twin) forgetName_=deviceNames(forgetName_,report.twinPeerName);
     }
     rotaryAdjustment_.reset();
     if (page == Screen::OverridePreset && presetIndex_ >= int(config_.presets.size())) page = Screen::SavePreset;
@@ -492,8 +496,7 @@ void UiController::act(int action, const std::string& id, bool held) {
         if (held && app_.remembered(id)) {
             forgetId_ = id;
             for (const auto& d : app_.devices()) if (d.id == id) {
-                forgetName_=d.name;
-                if(!d.twinPeer.empty()) forgetName_+=" + "+d.twinPeer;
+                forgetName_=deviceNames(d.name,d.twinPeer);
             }
             navigate(Screen::ForgetDevice);
         } else if (!held) {
@@ -693,7 +696,7 @@ void UiController::build() {
         for (size_t i=0; i<4 && devicePage_*4+i < choices.size(); ++i) {
             const auto& d = *choices[devicePage_*4+i];
             const int size = width_*32/100;
-            if(!d.twinPeerId.empty() || !d.twinPeer.empty()) {
+            if(!d.twinPeerId.empty() || !d.twinPeer.empty() || d.twinPeerAvailable) {
                 auto* group=lv_obj_create(face_);lv_obj_remove_style_all(group);
                 lv_obj_set_size(group,size,size);lv_obj_set_pos(group,width_*(17+int(i%2)*34)/100,height_*(14+int(i/2)*34)/100);
                 lv_obj_remove_flag(group,LV_OBJ_FLAG_CLICKABLE);lv_obj_remove_flag(group,LV_OBJ_FLAG_SCROLLABLE);
@@ -708,7 +711,7 @@ void UiController::build() {
                     (pairFresh && (d.twinPeerAvailable || (peer && peer->twinPeerAvailable)));
                 const auto selection=app_.selectionDevice(d.id);
                 if(active || app_.remembered(selection)) bind(group,Select,selection);
-                const std::string names[]={d.name,peer ? peer->name : d.twinPeer.empty() ? "Twin peer" : d.twinPeer};
+                const std::string names[]={d.name,peer && !peer->name.empty() ? peer->name : d.twinPeer};
                 for(int side=0;side<2;++side) {
                     const int diameter=size*64/100;
                     auto* circle=disc(group,side*size*36/100,size*13/100,diameter,accent(),active);
@@ -1027,7 +1030,7 @@ void UiController::update() {
         const uint32_t numberColor = r.loaded ? maximumColor : ((maximumColor & 0xfefefeu) >> 1);
         color(weight_, !readback || !loadKnown ? amber : preview ? muted : r.loaded ? bright : atMaximum ? numberColor : muted);
         value(unit_, "");
-        value(title_,detectedTwin ? app_.name()+" + "+(r.twinPeerName.empty() ? "Twin peer" : r.twinPeerName) : app_.name());
+        value(title_,detectedTwin ? deviceNames(app_.name(),r.twinPeerName) : app_.name());
         value(status_,"");
         updateScale(readback ? shownWeight : 0,readback ? r.maxWeight : 0,"",atMaximum ? maximumColor : accent());
         for(auto* mark:scaleLabels_) {

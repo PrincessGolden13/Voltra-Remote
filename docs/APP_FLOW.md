@@ -1,3 +1,11 @@
+> November 21: v0.4.10 is an explicitly diagnostic update for report357833b6.
+> Retain Twin identity independently of optional metadata, record sanitized
+> rejection details and offer Send debug log after an unresolved connection.
+> Physical Twin controls remain unavailable. Earlier publication-hold notes
+> describe the incomplete full-control candidate, not a completed Twin fix.
+> See TWIN_STATUS_REPORT_2026_11_21.md. Remove "peer" and redundant Twin status
+> words from ordinary screens; use known device names only.
+>
 > November 20 battery follow-up: warn when the remote's valid battery estimate
 > reaches 10% or below. Queue the warning throughout Live or a known active set;
 > show it after the set on an idle screen. OK acknowledges once for that low

@@ -363,6 +363,9 @@ void PhysicalSession::apply(const Frame& f) {
         const auto decoded=decodeTwinStatus(f);
         const bool previousAccepted=twinReplyAccepted_,previousSeen=twinReplySeen_;
         const bool previousFresh=twinStatusFresh();
+        // Pushes, replies and validity changes share one log budget.
+        constexpr uint64_t twinLogIntervalMs=30000;
+        const bool logDue=!previousSeen || now_<twinDiagnosticAt_ || now_-twinDiagnosticAt_>=twinLogIntervalMs;
         twinReplySeen_=true;
         twinReplyBytes_=p.size();
         twinReplyDiagnostic_=twinStatusDiagnostic(f,selectedAddress_);
@@ -383,7 +386,7 @@ void PhysicalSession::apply(const Frame& f) {
                 runtimeTarget_.reset();
             }
             twinStatus_=decoded;twinStatusAt_=now_;
-            if(changed || !previousAccepted) {
+            if((changed || !previousAccepted) && logDue) {
                 diagnostic("Twin status="+std::to_string(decoded->state)+" "+twinReplyDiagnostic_);
                 twinDiagnosticAt_=now_;
             }
@@ -395,8 +398,7 @@ void PhysicalSession::apply(const Frame& f) {
             // Alternating 22-byte pushes and 23-byte replies must not erase
             // every useful event with the same rejection. The latest detail
             // remains in every report, even between these bounded log entries.
-            constexpr uint64_t rejectionLogIntervalMs=30000;
-            if(!previousSeen || previousAccepted || now_<twinDiagnosticAt_ || now_-twinDiagnosticAt_>=rejectionLogIntervalMs) {
+            if(logDue) {
                 diagnostic("Twin status rejected "+twinReplyDiagnostic_);
                 twinDiagnosticAt_=now_;
             }

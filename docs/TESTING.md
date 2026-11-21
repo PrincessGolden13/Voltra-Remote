@@ -1,5 +1,23 @@
 # Validation status and pending tests
 
+November21 v0.4.10 diagnostic update: [report357833b6](TWIN_STATUS_REPORT_2026_11_21.md).
+PASS existing core/packet-inspector builds and five full published A7 payloads;
+the published short/truncated payload remains rejected. Identity/metadata
+separation does not supply role or authorize commands. No new test source.
+PASS static review: sanitized headers/both-slot comparisons contain no address
+bytes; latest detail is always reported while accepted/rejected transitions share
+a30-second log budget. Fresh own-matched identity can nominate a read-only
+candidate while semantic state remains unknown; final promotion still requires
+paired12/currentMaster/reciprocal identity. Physical role remains Unknown.
+PASS real LVGL previews360/466/480: known pair names and unknown second names
+show no placeholder/separator; no normal-screen "peer" wording remains. Failure
+screen Send debug log opens existing consent with zero automatic submissions.
+Fresh identity with unknown semantics probes both resolvable endpoints read-only,
+then fails without training entry, promotion or control calls. Slot1-only matches
+remain diagnostic-only, so two-endpoint inspection is not guaranteed.
+Required public build/artifact results follow. The release is now diagnostic,
+superseding the historical hold recorded below; Twin controls are still blocked.
+
 November 20 v0.4.10 addition: [remote battery alert/estimate](REMOTE_BATTERY_2026_11_20.md).
 PASS static review: source is the remote hardware's valid optional reading only,
 not VOLTRA/peer battery. Queue at <=10%, defer Live/pending-Live/known active sets,

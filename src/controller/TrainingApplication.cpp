@@ -197,7 +197,7 @@ void TrainingApplication::refreshTwinDevices() {
     if(connected() && r.twinDetected && r.twinPeerId.empty()) {
         const auto selected=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==selected_;});
         if(selected!=devices_.end()) {
-            selected->twinPeer=r.twinPeerName.empty() ? "Twin peer" : r.twinPeerName;
+            selected->twinPeer=r.twinPeerName;
             selected->twinFresh=twinFresh();selected->twinPeerAvailable=selected->twinFresh && r.twinLinkState==0x12;
         }
     }
@@ -352,9 +352,12 @@ bool TrainingApplication::runSelection() {
     }
     if(!selectionReading_) {selectionReadAt_=now_;selectionReading_=true;}
     const auto r=report();
-    const bool paired=session_.accepted() && r.twinDetected && r.twin && r.twinKnown && r.twinStatusFresh && r.twinLinkState==0x12 &&
+    // Full fresh identity can nominate a read-only candidate while link-state
+    // semantics remain unknown. It cannot promote that candidate to controls.
+    const bool identityFresh=session_.accepted() && r.twinStatusFresh &&
         now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && !r.twinPeerId.empty();
-    if(paired) {
+    const bool paired=identityFresh && r.twinDetected && r.twin && r.twinKnown && r.twinLinkState==0x12;
+    if(identityFresh) {
         if(selectionProbed_.size()==1) {
             selectionExpectedPeer_=r.twinPeerId;selectionFirstPeerObserved_=true;
             selectionPeerCandidate_=r.twinPeerId;

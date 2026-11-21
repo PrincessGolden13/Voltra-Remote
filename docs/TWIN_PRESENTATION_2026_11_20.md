@@ -1,5 +1,9 @@
 # November 20: one paired control and a quieter Twin screen
 
+November21 supersedes the publication hold below with an explicitly diagnostic
+v0.4.10 update to obtain fields missing from report357833b6. This does not claim
+working physical Twin controls; see TWIN_STATUS_REPORT_2026_11_21.md.
+
 The owner's physical v0.4.9 feedback supersedes its Twin presentation: a pair
 must appear and select as one logical VOLTRA. Overlapping named circles already
 convey the relationship. Do not add a Twin status caption, a TOTAL LB heading,

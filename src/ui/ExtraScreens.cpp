@@ -55,7 +55,10 @@ void UiController::buildExtra() {
     if(page_==Screen::ConnectionNotice) {
         label(face_,"CONNECTION ENDED",width_*76/100,height_*22/100,heading);
         label(face_,app_.message(),width_*74/100,height_*38/100,medium);
-        action("OK",33,72,34,12,DismissConnection);
+        if(app_.selectionFailed()) {
+            action("Send debug log",20,58,60,11,SendDebugLog);
+            action("OK",33,74,34,12,DismissConnection);
+        } else action("OK",33,72,34,12,DismissConnection);
         return;
     }
     if (page_ == Screen::ForgetDevice) {
