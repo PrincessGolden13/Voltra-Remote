@@ -1,3 +1,10 @@
+> November 21 v0.4.12: retry host connection timeout once within the previous radio
+> budget, using shorter attempts and real terminal evidence. Keep application
+> discovery to two endpoints. If a fresh follower points to the failed first
+> endpoint, display its actual connection failure and retain Retry; do not replace
+> it with unknown-role text. See TWIN_TIMEOUT_2026_11_21.md. Twin controls remain
+> unavailable; no additional resistance or automatic-load action is introduced.
+>
 > November 21 v0.4.11: use the bounded fresh A7 role profile for read-only master
 > discovery, hand off immediately from a known follower, and remember only the next
 > navigation candidate. Revalidate each endpoint; cached roles never authorize

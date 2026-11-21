@@ -1,5 +1,18 @@
 # Validation status and pending tests
 
+November21 v0.4.12: [host timeout retry](TWIN_TIMEOUT_2026_11_21.md).
+Report58926a2a confirms physical v0.4.11 follower recognition and preserves the
+previously hidden first-endpoint code13/10.14s timeout. PASS independent source
+review: exact Failed13 retry once,4500ms native attempts, shared10000ms radio
+budget plus existing1000ms MTU grace, terminal/queue/handle/GAP reuse barriers,
+and no application third visit. Typed first failure wins over generic role errors;
+fresh topology contradictions win over prior failures, including at the deadline.
+Read-only/role/Retry/command permissions are unchanged. Compact diagnostics retain
+stage/code/timeout/attempts/radio time without duplicate closed-session context.
+PASS existing core/packet-inspector build and diff checks. UI and public firmware/
+package checks follow after execution. Physical retry recovery remains unverified; Twin
+resistance controls remain unavailable. No new automated test source.
+
 November21 v0.4.11: [connection handoff and Retry](TWIN_HANDOFF_2026_11_21.md).
 PASS independent source review: bounded exact12/22 read-only role inference,
 own-match/current-field/epoch/freshness requirements, reciprocal second candidate,

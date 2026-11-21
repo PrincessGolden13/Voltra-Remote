@@ -1,5 +1,17 @@
 # Foundation baseline
 
+## November 21 connection timeout v0.4.12
+
+- CONFIRMED report58926a2a is installed v0.4.11: first endpoint connection times out
+  before protocol after10.14s(code13); second accepts fresh Follower after2.94s.
+  Follower recognition works. Generic role text hides the original timeout.
+- Pinned NimBLE code13 is terminal host timeout, not proof another app holds the
+  unit. Retry this failure within the previous radio budget, preserve terminal
+  handoff barriers and keep one retry layer/two application endpoints. Surface
+  the actual prior failure and compact duplicated diagnostics.
+- See TWIN_TIMEOUT_2026_11_21.md. Physical recovery remains unverified and Twin
+  resistance controls remain unavailable. Validation/publication receipts follow.
+
 ## November 21 connection handoff v0.4.11
 
 - CONFIRMED report2ab11a8e: the first endpoint connects and returns own-matched
