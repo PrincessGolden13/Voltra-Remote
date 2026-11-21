@@ -10,6 +10,7 @@ struct UpdateStatus {
     UpdatePhase phase=UpdatePhase::Idle;
     std::string version, message;
     int percent=0;
+    uint64_t revision=0; // Changes when a check/install publishes progress or a result.
     bool busy() const { return phase==UpdatePhase::Checking || phase==UpdatePhase::Installing || phase==UpdatePhase::Ready; }
 };
 // Platform service: no machine state, BLE commands, or board GPIOs here.

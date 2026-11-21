@@ -1314,12 +1314,14 @@ void UiController::requestUpdateCheck() {
     if(w.setupActive) {updateCheckMessage_="Finish Wi-Fi setup first";return;}
     if(!w.connected && !w.saved) {updateCheckMessage_="Set up Wi-Fi in Settings first";return;}
     updateCheckPending_=true;updateWifiRequested_=w.connecting;updateCheckAt_=hardware_.nowMs();
+    updateCheckRevision_=updates_->status().revision;
     updateCheckMessage_=w.connected ? "Starting update check…" : "Connecting to saved Wi-Fi…";
 }
 void UiController::tickUpdateCheck(uint64_t now) {
     if(!updateCheckPending_) return;
     auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
-    const auto phase=updates_ ? updates_->status().phase : UpdatePhase::Idle;
+    const auto u=updates_ ? updates_->status() : UpdateStatus{};
+    const auto phase=u.phase;
     const bool interrupted=page_!=Screen::Updates || (rebuild_ && next_!=Screen::Updates) ||
         app_.connected() || app_.connecting() || app_.pending() || w.setupActive ||
         debugDisconnectPending_ || (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())) ||
@@ -1327,8 +1329,11 @@ void UiController::tickUpdateCheck(uint64_t now) {
     if(interrupted) {
         updateCheckPending_=false;updateCheckMessage_="Update check cancelled";return;
     }
-    // A deferred startup check may have started on this same connected tick.
-    if(phase==UpdatePhase::Checking) {updateCheckPending_=false;updateCheckMessage_.clear();return;}
+    // Adopt a deferred startup check, including one that finished between
+    // service ticks. Its result already fulfills this read-only request.
+    if(phase==UpdatePhase::Checking || u.revision!=updateCheckRevision_) {
+        updateCheckPending_=false;updateCheckMessage_.clear();return;
+    }
     if(!w.storageReady || !w.saved) {
         updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi unavailable. Settings kept.";return;
     }

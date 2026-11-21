@@ -60,6 +60,7 @@ private:
     static constexpr uint64_t updateWifiWaitMs=25000;
     bool updateCheckPending_=false,updateWifiRequested_=false;
     uint64_t updateCheckAt_=0;
+    uint64_t updateCheckRevision_=0;
     std::string updateCheckMessage_;
     void requestUpdateCheck();
     void tickUpdateCheck(uint64_t now);
