@@ -51,8 +51,8 @@ one-pound combined write is inferred here.
 CONFIRMED within the reviewed source scope: host control is different from
 follower control. Captured host load/unload are 0101/0100, and its Auto Load mode
 is 2003 with completed status 15. No reviewed source defines Black's A003 or its
-additional 8000 flag. Both members can report paired and the same remote word;
-that word and connection status 2 cannot prove current role. The source's host
+additional 8000 flag. The reviewed controller captures do not establish a role
+decoder for the remote word or connection status 2. The source's host
 guess based on a nonzero high byte is deliberately not adopted.
 [Official Cortex Twin documentation](https://cortex.beyond-power.com/docs/cortex/twin)
 supports host-owned control but does not publish these raw BLE flags.

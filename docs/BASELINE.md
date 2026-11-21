@@ -12,8 +12,11 @@
   "peer" and redundant Twin captions.
 - v0.4.10 is prepared for diagnostic publication to expose the missing fields
   through the remote update workflow. This supersedes the earlier release hold
-  as a diagnostic step, not as proof of working Twin controls. Required build/
-  artifact checks follow; physical Twin commands remain blocked.
+  as a diagnostic step, not as proof of working Twin controls.
+- CONFIRMED: CI44952181058 at55c5139 passes Normal/Simulator, offline core and
+  packaging. Downloaded image/manifest/USB/partition/backend/NVS/rollback checks
+  pass; exact hashes are in TESTING.md. Mergea238b7f has the checked tree.
+  Tagged publication checks follow; physical Twin commands remain blocked.
 
 ## November 20 remote battery alert addition
 

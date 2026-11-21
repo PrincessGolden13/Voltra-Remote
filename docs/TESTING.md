@@ -17,6 +17,19 @@ then fails without training entry, promotion or control calls. Slot1-only matche
 remain diagnostic-only, so two-endpoint inspection is not guaranteed.
 Required public build/artifact results follow. The release is now diagnostic,
 superseding the historical hold recorded below; Twin controls are still blocked.
+PASS diagnostic release source: [CI44952181058](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44952181058)
+at55c513968fb3da5d687f069359eea9f1b14d5589 builds public Normal, isolated
+Simulator, offline core and packaging. Artifact14725878221 digest matches
+`33cd62076a5823336f751889a3a9b8b933286d1988b1e10f2b1859396671fae5`.
+Normal2,001,824bytes SHA-256
+`79581c62b3682b065f95f0be769e4509d193636e57ea5c4ab314f05739e597e9`;
+Simulator1,027,248bytes SHA-256
+`26cecb7a1483a27bf31a8cd5d0a5d2358cd57a6c9043b8eda91bacd5a264a2f4`.
+Descriptors, manifest, USB hashes/offsets/partition map and USB/OTA equality pass.
+Defined-symbol checks confirm physical backend only in Normal, mock only in
+Simulator and both strong GLOBAL __wrap_esp_partition_erase_range and
+verifyRollbackLater hooks. Mergea238b7f has the exact checked tree. Receipt:
+ignored build/review-v0410-nov21. Tagged publication checks follow separately.
 
 November 20 v0.4.10 addition: [remote battery alert/estimate](REMOTE_BATTERY_2026_11_20.md).
 PASS static review: source is the remote hardware's valid optional reading only,
