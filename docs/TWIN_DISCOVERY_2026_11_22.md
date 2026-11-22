@@ -2,7 +2,7 @@
 
 ## New physical evidence
 
-The owner reports that a fresh Beyond+ iPhone visit showed only Red. Connecting
+The owner reports that the Beyond+ iPhone list showed only Red. Connecting
 to Red discovered its existing relationship with Black and allowed Twin operation.
 This is evidence that the official app can reach the pair through that entry;
 it does not reveal whether it retains Red, opens Black, or uses another route.
@@ -98,6 +98,9 @@ External actual-controller/PhysicalSession offline MOCK checks pass 11 scenarios
 111 assertions and all 31 existing PhysicalSession regressions. These verify
 early-hello order, exact wire bytes, failure/reconnect cleanup, fresh timers,
 unaccepted isolation and existing control guards. See TESTING.md for receipts.
+Actual LVGL/application checks pass 72 cases / 1566 assertions at 360/466/480,
+including pending async scans, periodic membership changes, Retry, cancellation
+and radio handoffs. These are synthetic observations, not physical BLE trials.
 Physical authentication compatibility, current roles and the actual Red-to-pair
 route remain unverified. No pairing, physical connection or resistance operation
 was performed during development.

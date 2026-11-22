@@ -15,6 +15,18 @@
 - PASS independent source review, core/inspector and 11/111 early-hello plus 31
   existing PhysicalSession offline MOCK cases. Physical authentication and the
   app's actual current Red-to-pair control route remain unverified.
+- PASS actual LVGL/application matrix: 72 cases / 1566 assertions across
+  360/466/480, including async scan completion and actual Retry after changed
+  visibility. Zero resistance intents or Wi-Fi/GAP overlaps in these mock cases.
+- CONFIRMED CI45071575628 at31ab87dc builds both public images, core and package.
+  Artifact14772873798 passes descriptor/manifest/USB/hash/map, backend isolation
+  and strong NVS/rollback-hook checks. Merge fcf39ba has the exact reviewed tree.
+- CONFIRMED tag CI45072079593 at fcf39ba passes; both images exactly match the
+  reviewed PR and all four assets/notes pass inspection. Published
+  [v0.4.15](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.15)
+  as latest ordinary release at 21:31:21 UTC. Public latest manifest and pinned
+  Normal image pass identity/length/SHA-256 and exact tag comparison. Physical
+  authentication recovery and the current Red-to-pair route remain unverified.
 
 ## November 22 v0.4.14 physical follow-up: primary still times out
 

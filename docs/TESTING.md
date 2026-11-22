@@ -14,6 +14,46 @@ Receipt: /workspace/preview-tools/early-hello-v0415/validation.json. Both execut
 were rebuilt with the final generic transport navigation API/header.
 No new tracked automated test source or physical radio/motor operation. These
 checks do not establish error 531's cause, current roles or physical recovery.
+PASS actual LVGL/TrainingApplication matrix: 72 cases / 1566 assertions, 24 scenes
+at 360/466/480 on UI SHA697ab492cbb1d5766b169b38684a12e38268f07221cdbf9173ed3869366f12c1
+and app SHA30015e91aa4ca3f5532769449fae1defbddf4bd8d38cd292d138c50c225e09d3.
+Periodic paired/Alone/partner changes over five scan windows, old catalog Alone,
+unknown invisible partner/bare identity, both icon halves selecting only the
+visible entry, automatic interruption, pre/post-GATT budgets, pending native-style
+async scan completion and actual LVGL Retry after changed visibility all pass.
+Settings, Updates, debug SEND, first-idle report handoff, battery alert, pending/
+held touch and Wi-Fi pause-before-GAP pass. Zero resistance intents or Wi-Fi/GAP
+overlaps, including a 37 ms simulated shutdown clock. Visual samples at all three
+sizes fit the round display with no redundant Twin labels. Receipt:
+/workspace/preview-tools/twin-discovery-v0415/validation.json. Synthetic MOCK I/O
+and real LVGL, not physical Bluetooth compatibility or trainer-role proof.
+PASS [CI45071575628](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45071575628)
+at31ab87dc696c253110ebd98c685da1357fc2de31: public Normal/isolated Simulator,
+offline core/packet inspector and release packaging. Artifact14772873798 digest
+matches `8d10dd855226086be7344072ef6db945b4ec39e6c2474adb3cf87211aa167c96`.
+Normal 2,034,976 bytes SHA-256
+`f9dd1b1129af6c62c18c3b5bd79a6b2aea82f2574757f81a2de8e73765936bb2`;
+Simulator 1,046,304 bytes SHA-256
+`3a4c48f5141958f9f8d6699203b977743bfa0db57d0ae445869793707e6832ff`.
+Explicit0.4.15 descriptors, manifest, every USB hash/offset/partition map and USB
+Normal=OTA pass. Defined-symbol isolation confirms physical-only Normal/mock-only
+Simulator and strong GLOBAL erase-protection/verifyRollbackLater hooks in both.
+Merge fcf39ba1c142d74bd79c496012d97b6d75d28977 has the exact reviewed tree.
+Receipt: ignored build/review-v0415/validation.json.
+PASS [tag CI45072079593](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45072079593)
+at v0.4.15/fcf39ba1c142d74bd79c496012d97b6d75d28977: build, package and draft
+creation. Artifact14773947135 digest matches
+`ea1e45a4fc4ac6f01cab3414c1ae7b5bdf018dfe8d6f4207aca994dec3738bab`.
+Normal and Simulator exactly match the reviewed PR bytes. Full descriptor,
+manifest, USB hash/offset/map, backend isolation and strong protection-hook checks
+pass. All four draft asset sizes/digests and notes match tagged files. Receipts:
+ignored build/review-v0415-tag/validation.json and draft-validation.json.
+PASS publication: release454764162 published as latest ordinary v0.4.15 at
+2026-11-22T21:31:21Z. Public latest manifest and pinned Normal image pass schema,
+board/channel/layout/version, descriptor, length and SHA-256, matching tag bytes.
+Receipt: ignored build/published-v0415/verification.json. No physical installation,
+radio connection, pairing or resistance operation was performed. Error531 recovery
+and the official app's actual current Red-to-pair route remain unverified.
 
 November 22 v0.4.14: [primary timeout and Wi-Fi ordering](TWIN_CONNECTION_REPORT_2026_11_22.md).
 PASS independent source review and external offline MOCK differential validation
