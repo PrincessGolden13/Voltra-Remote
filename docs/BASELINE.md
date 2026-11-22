@@ -14,7 +14,21 @@
 - Source-backed manual loaded base edits have a separate both-channel stationary
   capability and no motor reassertion. Paired Live target, loaded modifier edits
   and automatic drops remain unsupported. Physical compatibility is unverified;
-  no motor operation. Validation/publication receipts follow.
+  no motor operation.
+- PASS independent source review,31 actual-PhysicalSession offline MOCK scenarios,
+  real capture/scoped conversion checks, app/canonical route checks and three-size
+  LVGL matrix plus final recovery/feedback checks. These do not prove physical
+  compatibility; exact scopes/receipts are in TESTING.md.
+- CONFIRMED CI44965504418 at fd2ad585 builds both public images, core and package.
+  Artifact14730718768 passes all descriptor/manifest/USB/hash/partition, backend
+  isolation and strong NVS/rollback checks. Merge127c8fb has the reviewed tree.
+- CONFIRMED publication: tag CI44965962167 passes at127c8fb; both images exactly
+  match the reviewed PR, and all four assets/release notes pass verification.
+  [v0.4.13](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.13)
+  is latest ordinary release, published November22 at00:23:59UTC. Public latest
+  manifest and pinned image pass identity/length/SHA-256 and exact tag comparison.
+  No physical installation or motor operation was performed; compatibility and
+  remaining paired target/automatic-feature limitations are explicit above.
 
 ## November 21 connection timeout v0.4.12
 

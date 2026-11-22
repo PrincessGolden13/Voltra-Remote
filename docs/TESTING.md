@@ -7,10 +7,10 @@ arithmetic:93,357 bounded cases plus published179LB→163KG paired and duplicate
 max16 inverse safety. PASS existing core/inspector with new Twin B4 decoder and
 manual external decode of all seven published real Twin captures; strict envelope,
 length/source and signed velocity/count checks pass, no target inference. Full
-integration, UI, firmware/package and publication receipts follow after execution.
+integration, UI, firmware/package and publication receipts follow below.
 No new tracked test source or physical motor operation. Unknown/secondary loading,
 unproven paired target, loaded modifier edits and automatic drops remain unsupported.
-PASS actual PhysicalSession public-API offline MOCK I/O:30 scenarios,0 failures on
+PASS actual PhysicalSession public-API offline MOCK I/O:31 scenarios,0 failures on
 frozen cppSHA51a02321c35a045bf77735ddcdb0a2dbc82231bd9b88dbe9d7d89347b913f079.
 Checks include Primary promotion/Secondary refusal, native/legacy motor words,
 one AA12 trigger with2003/status14armed/15complete, unknownA003 unload-only,
@@ -24,12 +24,51 @@ Foreign-source acceptance/activation/parameter/unload-ACK frames are rejected.
 Manual loaded base uses both stationary channels, one base write/no motor or
 accessory reassertion; moving/stale/Auto/accessory/curve/unit/FFFF-field cases refuse,
 while legitimate signed velocity-1 remains valid. Native radio timing is not exercised.
+Standalone regression keeps130LB as130 wire and preserves its5/4 load/unload profile.
 PASS app/Mock native observations: canonical typed aliases preserve stable identity,
 names and pair references; same-name different addresses stay distinct. Stale and
 transitional routes retain Main/probe-off and explicit unload without edit/load/Auto
 calls or intent replay. Fresh contradictions revoke. Manual50→52 uses one settings
 call with no load/Auto/automatic-live calls; new motion or stale data cancels pending
 intent. Receipts remain external under /workspace/preview-tools, not tracked tests.
+PASS LVGL implementation matrix:28 scenes at360/466/480, covering canonical aliases/
+Retry, primary control admission, LB/KG combined step and reported limits, pending/
+confirmed load/unload, hold/Auto11/12/14/15, Live entry with target unavailable,
+stale/transitional unload retention, explicit contradiction revocation and guarded
+manual loaded base edits. The observed stale Waiting footer was fixed in fd2ad585.
+PASS final focused recovery/feedback matrix:24 combinations across all three sizes
+on fd2ad5852514bd6a803bd0565b7c84ae2422bb3b. Own Waiting text clears without intent
+replay, unload feedback is preserved and Auto13 Engaging fits. The eight actual
+protocol source hashes still match the31/31 receipt. External receipts:
+/workspace/preview-tools/physical-integration-v0413/validation.json and
+/workspace/preview-tools/final-focused-v0413/validation.json. All are offline MOCK
+checks, not physical compatibility evidence. Working tree was clean at final head.
+PASS [CI44965504418](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44965504418)
+at fd2ad5852514bd6a803bd0565b7c84ae2422bb3b: Normal/isolated Simulator, offline
+core/inspector and packaging. Artifact14730718768 digest matches
+`385859a385b49e43f8314995a06e644f3d4d4e81679c03bdb35c5af482377565`.
+Normal2,027,072bytes SHA-256
+`a273ca75439f14e74922b5f2db416c551c17854056752c9c64d1f1d0e5c54ccc`;
+Simulator1,040,800bytes SHA-256
+`65ca08d1ef7ab3e73304e44f2a326acffeba6b42ec4df5bb93806c6fa54cb77e`.
+Both explicit0.4.13 descriptors, manifest, all USB hashes/offsets/partition map and
+USB Normal=OTA pass. Defined-symbol isolation confirms no mock backend in Normal
+and no PhysicalSession/NimBLE/updater/reports functions in Simulator. Both images
+have strong GLOBAL erase-protection and verifyRollbackLater hooks. Merge127c8fb
+has the exact reviewed tree. Receipt: ignored build/review-v0413/validation.json.
+PASS [tag CI44965962167](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/44965962167)
+at v0.4.13/127c8fb7bfb85d1ee2c23d7a8f9631bb423738fd: build/package and draft
+creation. Artifact14731925608 digest matches
+`c966189f790aa51d32ed8bfc90cee60abba0aac5177144551d541906cc351485`.
+Normal and Simulator bytes exactly match the reviewed PR above. Full descriptor,
+manifest, USB hashes/offsets/map, backend isolation and strong NVS/rollback hooks
+pass. All four draft assets' sizes/digests and release notes match tagged files.
+Receipt: ignored build/review-v0413-tag/validation.json.
+PASS publication: release454082364 published as latest ordinary v0.4.13 at
+2026-11-22T00:23:59Z. Downloaded public latest manifest and pinned Normal image pass
+schema/board/channel/layout/version, descriptor, length and SHA-256; bytes match
+the checked tag. Receipt: ignored build/published-v0413/verification.json.
+No physical installation, radio connection or motor operation was performed.
 
 November21 v0.4.12: [host timeout retry](TWIN_TIMEOUT_2026_11_21.md).
 Report58926a2a confirms physical v0.4.11 follower recognition and preserves the
