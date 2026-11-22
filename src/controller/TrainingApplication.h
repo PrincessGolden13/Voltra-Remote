@@ -116,6 +116,7 @@ private:
     DeviceId selectionFirstEndpoint_,selectionExpectedPeer_,selectionResolvedPeer_;
     bool selectionFirstPeerObserved_=false,selectionResolvedTwin_=false;
     bool selectionReadOnlyView_=false;
+    bool waitingForControlFreshness_=false;
     DeviceId retrySelectionCandidate_;
     std::string selectionTrace_,selectionFirstFailure_;
     bool beginSelectionEndpoint(const DeviceId&);

@@ -118,9 +118,13 @@ bool TrainingApplication::retainSelectionControl(bool requireControl) {
         if(!controlsFresh) {
             cancelControlIntents();
             if(requireControl) {
+                waitingForControlFreshness_=!selectionReadOnlyView_;
                 message_=selectionReadOnlyView_ ? "Use VOLTRA controls" : "Waiting for VOLTRA";
                 recordControlFailure(message_);return false;
             }
+        } else if(waitingForControlFreshness_) {
+            if(message_=="Waiting for VOLTRA") message_.clear();
+            waitingForControlFreshness_=false;
         }
         return true;
     }
@@ -578,6 +582,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
     selectionFirstPeerObserved_=selectionResolvedTwin_=false;
     selectionReadOnlyView_=false;
+    waitingForControlFreshness_=false;
     scanned_ = scanPending_ = false;
     connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
@@ -600,6 +605,7 @@ bool TrainingApplication::settingsAllowed() const {
         r.minWeight > 0 && weightTicksDown(r,r.maxWeight) >= weightTicksUp(r,r.minWeight) && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
+    waitingForControlFreshness_=false; // New request feedback owns the message now.
     if (result != TransportResult::Accepted) { message_ = session_.status().empty() ? "Request not accepted" : session_.status(); return; }
     pending_ = true; sentAt_ = now_; sentRevision_ = report().revision;
     message_.clear(); // Brief requests do not flash a warning on every input.
