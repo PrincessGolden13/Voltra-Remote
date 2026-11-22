@@ -68,14 +68,14 @@ bool VoltraController::finishConnection() {
     if (!transport_.discoverService(VoltraGattProfile::service)) {
         return failConnection("VOLTRA service unavailable");
     }
-    const auto chars = transport_.discoverCharacteristics(VoltraGattProfile::service);
-    const auto found = std::find_if(chars.begin(), chars.end(), [](const Characteristic& c) {
-        return c.uuid == VoltraGattProfile::notify && c.canNotify;
-    });
-    const auto writable = std::find_if(chars.begin(), chars.end(), [](const Characteristic& c) {
-        return c.uuid == VoltraGattProfile::write && c.canWrite;
-    });
-    if (found == chars.end() || writable == chars.end() || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
+    const auto writable=transport_.discoverCharacteristic(VoltraGattProfile::service,VoltraGattProfile::write);
+    if(!writable || !writable->canWrite) return failConnection("VOLTRA write channel unavailable");
+    // The native reference sends hello before descriptor/subscription work:
+    // the peripheral accepts it only briefly after link establishment. The
+    // protocol hook cannot mark this connection ready or send a control.
+    if(controls_ && !controls_->prepareConnection()) return failConnection("VOLTRA hello failed");
+    const auto found=transport_.discoverCharacteristic(VoltraGattProfile::service,VoltraGattProfile::notify);
+    if (!found || !found->canNotify || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
         return failConnection("VOLTRA subscription failed");
     }
     // The pinned SDK and ESP32 reference receive replies on both channels.
@@ -83,10 +83,8 @@ bool VoltraController::finishConnection() {
     if (writable->canNotify && transport_.subscribe(writable->uuid) != TransportResult::Accepted) {
         return failConnection("VOLTRA response subscription failed");
     }
-    const auto telemetry=std::find_if(chars.begin(),chars.end(),[](const Characteristic& c) {
-        return c.uuid==VoltraGattProfile::telemetry && c.canNotify;
-    });
-    if(telemetry!=chars.end() && transport_.subscribe(telemetry->uuid)!=TransportResult::Accepted) {
+    const auto telemetry=transport_.discoverCharacteristic(VoltraGattProfile::service,VoltraGattProfile::telemetry);
+    if(telemetry && telemetry->canNotify && transport_.subscribe(telemetry->uuid)!=TransportResult::Accepted) {
         return failConnection("VOLTRA telemetry subscription failed");
     }
     // Subscription is not handshake success. The protocol session owns bootstrap
@@ -111,7 +109,8 @@ void VoltraController::disconnect() {
 void VoltraController::tick(uint64_t now) {
     now_ = now;
     transport_.poll(now);
-    // Discovery can block: bootstrap must start on a new loop with a fresh clock.
+    // Discovery can block: continue bootstrap timing on a fresh loop after the
+    // initial hello, rather than backdating deadlines to the discovery tick.
     if (connecting_ && linkUp_) {finishConnection();return;}
     if (controls_) controls_->tick(now);
     if (controls_ && confirmed_.connected) {

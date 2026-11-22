@@ -1,3 +1,13 @@
+> November 22 v0.4.15: Devices periodically refreshes machine-reported Twin
+> membership through short read-only sessions while keeping the icons visible.
+> A fresh Alone response splits a group; a fresh paired response joins/updates it.
+> Manual selection cancels the background session. Start discovery at a currently
+> advertising member before an absent remembered primary, then resolve the live
+> control route. Use only "Connecting...", without per-device Checking screens.
+> Send the protocol hello immediately after locating its write channel, before
+> notification descriptor work. See TWIN_DISCOVERY_2026_11_22.md. This does not
+> authorize a presumed secondary relay or treat saved roles as control permission.
+>
 > November 21–22 v0.4.13 supersedes the physical Twin read-only policy below:
 > fresh own-matched primary A7 supports the coordinated pair profile. Send settings
 > once in per-unit wire values with combined display/steps/reported limits. Use exact

@@ -446,6 +446,7 @@ void UiController::navigate(Screen page) {
     if(page==Screen::Live && batteryAlertDialog_) closeBatteryAlert(false);
     const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
     if(trainingPage && !app_.selectionReady()) page=Screen::Devices;
+    if(page!=Screen::Devices) app_.setTopologyDiscoveryEnabled(false);
     // Choosing another screen cancels a read-only connection probe. A late
     // response must not reopen training after the user has left selection.
     if(app_.resolvingSelection() && page!=Screen::Devices) app_.leave();
@@ -553,7 +554,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     if(action==CheckUpdates) {requestUpdateCheck();return;}
     if(action==InstallUpdate) {
         updateCheckPending_=false;updateCheckMessage_.clear();
-        if(updates_ && !app_.connected() && !app_.connecting() && !app_.pending()) {
+        if(updates_ && !app_.radioInUse() && !app_.pending()) {
             if(!saveConfiguration()) return;
             if(!wifi_ || !wifi_->prepareForUpdate()) {value(message_,"Wi-Fi not safely saved; update blocked");return;}
             if(updates_->install()) app_.setMaintenance(true);
@@ -571,13 +572,13 @@ void UiController::act(int action, const std::string& id, bool held) {
             const auto w=wifi_->status();
             if((wifiConfiguring_ && w.setupComplete) || !w.storageReady || w.setupActive) {
                 wifi_->cancelConnectionCheck();wifi_->stop();navigate(Screen::Settings);
-            } else if(!app_.connected() && !app_.connecting() && wifi_->start()) wifiConfiguring_=true;
+            } else if(!app_.radioInUse() && wifi_->start()) wifiConfiguring_=true;
         }
         return;
     }
     if(action==ResetWifi) {
         updateCheckPending_=false;updateCheckMessage_.clear();
-        if(wifi_ && !app_.connected() && !app_.connecting() && wifi_->start()) wifiConfiguring_=true;
+        if(wifi_ && !app_.radioInUse() && wifi_->start()) wifiConfiguring_=true;
         return;
     }
     if (action >= ThemeField && action <= SleepField) { settingsField_ = action-ThemeField; return; }
@@ -587,7 +588,7 @@ void UiController::act(int action, const std::string& id, bool held) {
             wifiConfiguring_=false;
             const auto w=wifi_->status();
             if(w.saved || w.connected) wifi_->requestConnectionCheck();
-            else if(!app_.connected() && !app_.connecting() && w.storageReady && wifi_->start()) wifiConfiguring_=true;
+            else if(!app_.radioInUse() && w.storageReady && wifi_->start()) wifiConfiguring_=true;
         }
         return;
     }
@@ -1303,7 +1304,7 @@ void UiController::edited() {
 void UiController::requestUpdateCheck() {
     if(!updates_ || updateCheckPending_ || updates_->status().busy()) return;
     updateCheckMessage_.clear();
-    if(app_.connected() || app_.connecting() || app_.pending()) {
+    if(app_.radioInUse() || app_.pending()) {
         updateCheckMessage_="Leave VOLTRA before checking updates";return;
     }
     if(debugDisconnectPending_ || (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy()))) {
@@ -1323,7 +1324,7 @@ void UiController::tickUpdateCheck(uint64_t now) {
     const auto u=updates_ ? updates_->status() : UpdateStatus{};
     const auto phase=u.phase;
     const bool interrupted=page_!=Screen::Updates || (rebuild_ && next_!=Screen::Updates) ||
-        app_.connected() || app_.connecting() || app_.pending() || w.setupActive ||
+        app_.radioInUse() || app_.pending() || w.setupActive ||
         debugDisconnectPending_ || (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())) ||
         phase==UpdatePhase::Installing || phase==UpdatePhase::Ready;
     if(interrupted) {
@@ -1358,6 +1359,14 @@ void UiController::tickUpdateCheck(uint64_t now) {
     }
 }
 void UiController::tick() {
+    const auto reportPhase=reports_ ? reports_->status().phase : ReportPhase::Idle;
+    const bool reportWaiting=reports_ && (reportPhase==ReportPhase::Queued || reports_->status().busy());
+    const bool updateWaiting=updates_ && (updates_->startupPending() || updates_->status().busy() ||
+        (updates_->status().phase==UpdatePhase::Available && !updatePromptShown_));
+    app_.setTopologyDiscoveryEnabled(page_==Screen::Devices && (!rebuild_ || next_==Screen::Devices) &&
+        !sleeping_ && !touchDown_ && !hardware_.touch().hasPending() && !debugDialog_ && !debugPending_ && !debugDisconnectPending_ &&
+        !batteryAlertDialog_ && !restNotice_ && !reportWaiting && !updateWaiting && !updateCheckPending_ &&
+        (!wifi_ || !wifi_->status().setupActive));
     if(updates_) {
         const auto phase=updates_->status().phase;
         app_.setMaintenance(debugDisconnectPending_ || phase==UpdatePhase::Installing || phase==UpdatePhase::Ready || (reports_ && reports_->status().busy()));
@@ -1369,7 +1378,7 @@ void UiController::tick() {
     }
     // A queued selection starts GAP in app_.tick(). Pause Wi-Fi before that
     // first attempt, and sample time after the synchronous radio shutdown.
-    const bool wifiPausedBeforeApp=wifi_ && (app_.connected() || app_.connecting());
+    const bool wifiPausedBeforeApp=wifi_ && app_.radioInUse();
     if(wifiPausedBeforeApp) wifi_->tick(false);
     const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
     EventLog::instance().clock(now);
@@ -1386,21 +1395,21 @@ void UiController::tick() {
     if(app_.loadRefusalRevision()!=loadRefusalRevision_ && !debugDialog_ && !debugPending_) {
         loadRefusalRevision_=app_.loadRefusalRevision();navigate(Screen::ControlNotice);
     }
-    if(wifi_ && (!wifiPausedBeforeApp || (!app_.connected() && !app_.connecting()))) {
+    if(wifi_ && (!wifiPausedBeforeApp || !app_.radioInUse())) {
         const auto w=wifi_->status();
-        wifi_->tick(!app_.connected() && !app_.connecting() &&
+        wifi_->tick(!app_.radioInUse() &&
             (!updateCheckPending_ || !app_.discoveryInProgress() || w.connecting || w.connected));
     }
     if(reports_) reports_->tick(wifi_ && wifi_->status().connected && !wifi_->status().setupActive,
-        !app_.connected() && !app_.connecting() && !app_.pending() && (!updates_ || !updates_->status().busy()));
+        !app_.radioInUse() && !app_.pending() && (!updates_ || !updates_->status().busy()));
     app_.setMaintenance(debugDisconnectPending_ || (reports_ && reports_->status().busy()) || (updates_ &&
         (updates_->status().phase==UpdatePhase::Installing || updates_->status().phase==UpdatePhase::Ready)));
     if(updates_) {
         const auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
-        updates_->tick(now,w.connected && !w.setupActive,!app_.connected() && !app_.connecting() && !app_.pending() && (!reports_ || !reports_->status().busy()));
+        updates_->tick(now,w.connected && !w.setupActive,!app_.radioInUse() && !app_.pending() && (!reports_ || !reports_->status().busy()));
         tickUpdateCheck(now);
         if(updates_->status().phase==UpdatePhase::Available && !updatePromptShown_ &&
-           !batteryAlertDialog_ && !debugDialog_ && !debugPending_ && !app_.connected() && !app_.connecting() && page_==Screen::Devices && !touchDown_) {
+           !batteryAlertDialog_ && !debugDialog_ && !debugPending_ && !app_.radioInUse() && page_==Screen::Devices && !touchDown_) {
             updatePromptShown_=true;navigate(Screen::Updates);
         }
     }

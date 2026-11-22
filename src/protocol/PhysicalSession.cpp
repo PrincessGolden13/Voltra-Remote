@@ -134,9 +134,19 @@ bool PhysicalSession::setReadOnlyProbe(bool enabled) {
     updateReport();
     return true;
 }
+bool PhysicalSession::prepareConnection() {
+    if(helloPrepared_) return true; // Repeated preparation never repeats hello.
+    if(connected_ || accepted_ || bootstrap_!=0) return false;
+    helloPrepared_=sendHello(true);
+    if(helloPrepared_) diagnostic("VOLTRA hello prepared before subscriptions");
+    return helloPrepared_;
+}
 void PhysicalSession::connectionChanged(bool connected) {
+    const bool prepared=connected && helloPrepared_;
+    helloPrepared_=false;
     if(!connected) selectedAddress_.reset();
-    connected_=connected;accepted_=activated_=false; bootstrap_=backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
+    connected_=connected;accepted_=activated_=false; bootstrap_=prepared ? 1 : 0;backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
+    connectionClockPending_=connected;
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
@@ -161,7 +171,9 @@ void PhysicalSession::connectionChanged(bool connected) {
     peerMotionVelocity_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
     workoutStatus_.reset();telemetryHeaders_=telemetrySetup_=0;
     telemetryTypes_={};rawTelemetryHeaders_=0;
-    bootstrapWriteJustCompleted_=false;
+    // Preparation can precede blocking descriptor operations. Start its pacing
+    // on the next fresh loop, never from the discovery loop's old timestamp.
+    bootstrapWriteJustCompleted_=prepared;
     if(connected) {connectionFailure_=false;status_="Opening VOLTRA session...";}
     else if(!connectionFailure_) status_="Connection lost";
 }
@@ -339,8 +351,15 @@ std::optional<int> PhysicalSession::encodedWeight(int ticks,bool baseWeight) con
 const char* PhysicalSession::readOnlyControlReason() const {
     return twinObserved_ ? "Use VOLTRA controls" : "Checking VOLTRA connection";
 }
-bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type) {
-    if(!connected_) return false;
+bool PhysicalSession::sendHello(bool preparing) {
+    Bytes hello(21,0);const std::string name="VOLTRA Remote";std::copy(name.begin(),name.end(),hello.begin());
+    hello.insert(hello.end(),helloIdentity_.begin(),helloIdentity_.end());hello.push_back(1);
+    return send(0x4f,hello,1,0x10,0x04,preparing);
+}
+bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type,bool preparingHello) {
+    // Before notification setup, permit only the first session hello. Normal
+    // readiness and every command path still require the complete connection.
+    if(!connected_ && !(preparingHello && command==0x4f && bootstrap_==0 && !accepted_ && !helloPrepared_)) return false;
     if(readOnlyProbe_) {
         // Only session authentication and documented read queries can leave a
         // discovery connection. In particular no parameter/telemetry setup,
@@ -1186,6 +1205,7 @@ bool PhysicalSession::enterTrainingOnConnect() {
 }
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
+    if(connectionClockPending_) {connectedAt_=now_;connectionClockPending_=false;}
     if(!readOnlyProbe_ && twinObserved_ && !primaryTwinFresh() && busy() && !unloading())
         cancelWrites("Waiting for VOLTRA connection state");
     // A fault/manual exit can end Weight Training without dropping the GATT
@@ -1210,9 +1230,7 @@ void PhysicalSession::tick(uint64_t now) {
     const auto pacing=bootstrap_==1 ? helloSettleMs : bootstrap_==2 ? initPacingMs : readPacingMs;
     if(now_-lastWrite_<pacing) return;
     if(bootstrap_==0) {
-        Bytes hello(21,0);const std::string name="VOLTRA Remote";std::copy(name.begin(),name.end(),hello.begin());
-        hello.insert(hello.end(),helloIdentity_.begin(),helloIdentity_.end());hello.push_back(1);
-        if(send(0x4f,hello,1)) ++bootstrap_;
+        if(sendHello()) ++bootstrap_;
     } else if(bootstrap_==1) {if(send(0xff,{0,0xaa},0xaa,0xd2,0x08)) ++bootstrap_;}
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {

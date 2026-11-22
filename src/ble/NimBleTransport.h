@@ -12,15 +12,18 @@ public:
     ~NimBleTransport() override;
     bool begin();
     void onDiagnostic(std::function<void(const std::string&)>);
+    void setScanServices(const std::vector<std::string>&) override;
     std::vector<Advertisement> scan() override;
     bool scanInProgress() const override;
     std::vector<Advertisement> discovered() const override;
     std::string deviceAddress(const DeviceId&) const override;
+    DeviceId deviceIdForAddress(const std::string&) const override;
     BleConnectionFailure connectionFailure() const override;
     TransportResult connect(const DeviceId&) override;
     void disconnect() override;
     std::vector<std::string> discoverServices() override;
     bool discoverService(const std::string&) override;
+    std::optional<Characteristic> discoverCharacteristic(const std::string&,const std::string&) override;
     std::vector<Characteristic> discoverCharacteristics(const std::string&) override;
     TransportResult subscribe(const std::string&) override;
     TransportResult write(const std::string&, const Bytes&) override;

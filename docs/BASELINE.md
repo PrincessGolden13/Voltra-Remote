@@ -1,5 +1,21 @@
 # Foundation baseline
 
+## November 22 device-screen Twin refresh v0.4.15
+
+- Owner reports Beyond+ sees Red alone, discovers Black's existing relationship
+  after selection and works in Twin. Latest 27aee9ac on v0.4.14 shows first-member
+  code 13 then second-member usable link terminated with 531 before acceptance.
+  See TWIN_DISCOVERY_2026_11_22.md for exact evidence and limits.
+- Start read-only discovery at an advertising pair member, refresh topology on
+  idle Devices, keep tiles visible and revalidate controls only after explicit
+  selection. Fresh Alone detaches; stale/failed probes never assert unpaired.
+- Send one protocol hello before notification setup with targeted GATT lookup,
+  fresh bootstrap timing and failure cleanup. Continue discovery on failed
+  selection; use generic Connecting text and bounded service-filtered callbacks.
+- PASS independent source review, core/inspector and 11/111 early-hello plus 31
+  existing PhysicalSession offline MOCK cases. Physical authentication and the
+  app's actual current Red-to-pair control route remain unverified.
+
 ## November 22 v0.4.14 physical follow-up: primary still times out
 
 - CONFIRMED latest report fc71b3c6, received 19:24:21 UTC on v0.4.14, retains

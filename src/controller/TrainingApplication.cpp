@@ -8,6 +8,11 @@ constexpr uint64_t discoveryIntervalMs=5000;
 // Three scan intervals tolerate missed radio packets; never machine readiness.
 constexpr uint64_t discoveryGraceMs=15000;
 constexpr size_t maximumDiscoveredDevices=64;
+// Device-screen discovery policy, not control/readiness freshness. Probe only
+// the latest scan's advertisers, one endpoint per window. Existing short radio
+// retries fit inside that window; discovery adds no retry layer of its own.
+constexpr uint64_t topologyProbeIntervalMs=15000,topologyPresentationMs=30000;
+constexpr uint64_t topologyConnectDeadlineMs=4500,topologyReadDeadlineMs=3000;
 constexpr uint64_t motionFreshMs=500;
 constexpr uint64_t restPauseBarDelayMs=250; // User-requested visual threshold.
 // Read-only endpoint discovery is bounded and never retries an endpoint. Allow
@@ -17,6 +22,7 @@ const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 }
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
     : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
+    transport_.setScanServices({VoltraGattProfile::service});
     if (memory_) recent_ = memory_->load();
     // Address type belongs to the current radio observation, not the logical
     // device. Keep the existing saved key and remap old aliases/relationships.
@@ -73,6 +79,82 @@ DeviceId TrainingApplication::selectionDevice(const DeviceId& id) const {
     if(link!=twinLinks_.end() && !link->second.selection.empty()) return logicalDeviceId(link->second.selection);
     const auto device=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==logical;});
     return device!=devices_.end() && !device->twinSelectionId.empty() ? logicalDeviceId(device->twinSelectionId) : logical;
+}
+DeviceId TrainingApplication::reachableSelectionEndpoint(const DeviceId& id) const {
+    const auto preferred=selectionDevice(id);
+    const auto visible=[&](const DeviceId& candidate) {
+        return now_>=latestAdvertisedAt_ && now_-latestAdvertisedAt_<=discoveryGraceMs &&
+            std::find(latestAdvertised_.begin(),latestAdvertised_.end(),candidate)!=latestAdvertised_.end();
+    };
+    if(visible(preferred)) return preferred;
+    const auto link=twinLinks_.find(preferred);
+    if(link!=twinLinks_.end() && visible(link->second.peer)) return link->second.peer;
+    // A saved pair is navigation only. Starting at its advertising member does
+    // not authorize it as the primary; normal selection rechecks live evidence.
+    return preferred;
+}
+void TrainingApplication::setTopologyDiscoveryEnabled(bool enabled) {
+    topologyDiscoveryEnabled_=enabled;
+    if(!enabled && topologyProbeActive_) stopTopologyProbe();
+}
+void TrainingApplication::stopTopologyProbe() {
+    if(!topologyProbeActive_) return;
+    controller_.disconnect();
+    topologyProbeActive_=false;topologyProbeStartedAt_=0;topologyReadAt_.reset();
+    selected_.clear();name_.clear();
+    refreshTwinDevices();
+}
+void TrainingApplication::startTopologyProbe() {
+    if(!topologyDiscoveryEnabled_ || !topologyProbeDue_ || maintenance_ || discoveryPaused_ ||
+       topologyProbeActive_ || selectionPhase_!=SelectionPhase::Idle || radioInUse() || scanPending_ ||
+       !selected_.empty()) return;
+    topologyProbeDue_=false;
+    if(now_<latestAdvertisedAt_ || now_-latestAdvertisedAt_>discoveryIntervalMs) return;
+    const DeviceEntry* candidate=nullptr;
+    uint64_t oldest=0;
+    for(const auto& id:latestAdvertised_) {
+        const auto found=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id;});
+        if(found==devices_.end()) continue;
+        const auto previous=topologyProbedAt_.find(id);
+        if(previous!=topologyProbedAt_.end() && now_>=previous->second && now_-previous->second<topologyProbeIntervalMs) continue;
+        const uint64_t at=previous==topologyProbedAt_.end() ? 0 : previous->second;
+        if(!candidate || at<oldest) {candidate=&*found;oldest=at;}
+    }
+    if(!candidate || !session_.setReadOnlyProbe(true)) return;
+    markTopologyProbed(candidate->id);
+    selected_=candidate->id;name_=candidate->name;
+    topologyProbeActive_=true;topologyProbeStartedAt_=now_;topologyReadAt_.reset();
+    diagnostic("Device topology probe started");
+    if(!controller_.connect(selected_)) {stopTopologyProbe();return;}
+    session_.setSelectedAddress(transport_.deviceAddress(selected_));
+}
+void TrainingApplication::markTopologyProbed(const DeviceId& id) {
+    if(topologyProbedAt_.size()>=maximumDiscoveredDevices && !topologyProbedAt_.count(id)) {
+        const auto oldestEntry=std::min_element(topologyProbedAt_.begin(),topologyProbedAt_.end(),
+            [](const auto& a,const auto& b){return a.second<b.second;});
+        topologyProbedAt_.erase(oldestEntry);
+    }
+    topologyProbedAt_[id]=now_;
+}
+void TrainingApplication::tickTopologyProbe() {
+    if(!topologyDiscoveryEnabled_ || maintenance_ || discoveryPaused_ || !session_.readOnlyProbe()) {
+        stopTopologyProbe();return;
+    }
+    if(controller_.connecting()) return;
+    if(!controller_.confirmed().connected) {stopTopologyProbe();return;}
+    if(!topologyReadAt_) topologyReadAt_=now_;
+    const auto r=selectedReport();
+    const bool current=session_.accepted() && r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000;
+    const bool known=current && (r.twinLinkState==0 || (r.twinLinkState==0x12 && !r.twinPeerId.empty()));
+    if(known) {
+        observeTwin(r);
+        // One current pair response describes both members, so don't connect
+        // to the second member merely to repeat the same topology query.
+        if(r.twinLinkState==0x12 && !r.twinPeerId.empty()) markTopologyProbed(r.twinPeerId);
+        diagnostic("Device topology probe refreshed");
+        stopTopologyProbe();return;
+    }
+    if(now_<*topologyReadAt_ || now_-*topologyReadAt_>=topologyReadDeadlineMs) stopTopologyProbe();
 }
 bool TrainingApplication::selectionReady() const {
     if(selectionPhase_!=SelectionPhase::Ready || !connected() || !session_.accepted() ||
@@ -142,6 +224,11 @@ bool TrainingApplication::retrySelection() {
     return canRetrySelection() && select(retrySelectionCandidate_);
 }
 TrainingReport TrainingApplication::report() const {
+    // A topology probe never supplies training, load or set state to the UI.
+    // Only the private discovery path may inspect this read-only session.
+    return topologyProbeActive_ ? TrainingReport{} : selectedReport();
+}
+TrainingReport TrainingApplication::selectedReport() const {
     auto r=session_.trainingReport();
     if(!r.twinPeerId.empty()) r.twinPeerId=logicalDeviceId(r.twinPeerId);
     if(!r.twinPeerAddress.empty()) {
@@ -164,7 +251,16 @@ TrainingReport TrainingApplication::report() const {
         if(!found) {
             const auto cached=twinLinks_.find(selected_);
             if(cached!=twinLinks_.end() && transport_.deviceAddress(cached->second.peer)==r.twinPeerAddress) {
-                r.twinPeerId=cached->second.peer;r.twinPeerName=cached->second.peerName;
+                r.twinPeerId=cached->second.peer;r.twinPeerName=cached->second.peerName;found=true;
+            }
+        }
+        if(!found) {
+            // The adapter can supply a navigation-only identity without
+            // inventing a Bluetooth address type for an invisible partner.
+            const auto peer=transport_.deviceIdForAddress(r.twinPeerAddress);
+            if(!peer.empty() && !sameDeviceIdentity(peer,selected_)) {
+                r.twinPeerId=logicalDeviceId(peer);
+                if(r.twinPeerName.empty()) r.twinPeerName="VOLTRA";
             }
         }
     }
@@ -183,11 +279,22 @@ void TrainingApplication::observeTwin(const TrainingReport& r) {
     if(selected_.empty() || !r.twinStatusFresh || now_<r.twinAtMs || now_-r.twinAtMs>2000) return;
     const auto detach=[&](const DeviceId& id) {
         const auto old=twinLinks_.find(id);
-        if(old==twinLinks_.end()) return false;
-        const auto peer=twinLinks_.find(old->second.peer);
-        if(peer!=twinLinks_.end() && peer->second.peer==id) twinLinks_.erase(peer);
-        twinLinks_.erase(old);
-        return true;
+        DeviceId peerId=old==twinLinks_.end() ? DeviceId{} : old->second.peer;
+        if(peerId.empty()) for(const auto& known:knownDevices_) if(known.id==id) {peerId=known.twinPeerId;break;}
+        bool changed=old!=twinLinks_.end();
+        if(old!=twinLinks_.end()) {
+            const auto peer=twinLinks_.find(old->second.peer);
+            if(peer!=twinLinks_.end() && peer->second.peer==id) twinLinks_.erase(peer);
+            twinLinks_.erase(old);
+        }
+        // Fresh machine topology supersedes synthetic/bootstrap navigation too.
+        // Otherwise a catalog's old pair would reappear after an Alone reply.
+        for(auto& known:knownDevices_) if(known.id==id || (known.id==peerId && known.twinPeerId==id)) {
+            changed=changed || !known.twinPeerId.empty() || !known.twinPeer.empty();
+            known.twinPeer.clear();known.twinPeerId.clear();known.twinSelectionId.clear();
+            known.twinFresh=known.twinPeerAvailable=false;
+        }
+        return changed;
     };
     if(r.twinLinkState==0) {
         if(detach(selected_)) saveTwinNavigation();
@@ -286,8 +393,9 @@ void TrainingApplication::refreshTwinDevices() {
         d.twinSelectionId=it->second.selection;
         const bool currentPeer=(selected_==d.id && r.twinPeerId==it->second.peer) ||
             (selected_==it->second.peer && r.twinPeerId==d.id);
-        d.twinFresh=currentTwin && currentPeer && now_>=it->second.at && now_-it->second.at<=2000;
-        d.twinPeerAvailable=d.twinFresh && it->second.available && r.twinLinkState==0x12;
+        const bool discoveredFresh=it->second.at && now_>=it->second.at && now_-it->second.at<=topologyPresentationMs;
+        d.twinFresh=(currentTwin && currentPeer && now_>=it->second.at && now_-it->second.at<=2000) || discoveredFresh;
+        d.twinPeerAvailable=d.twinFresh && it->second.available;
     }
     if(connected() && r.twinDetected && r.twinPeerId.empty()) {
         const auto selected=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==selected_;});
@@ -353,21 +461,24 @@ bool TrainingApplication::tryAutomaticSelection() {
         automaticSelection_ = false; // Multiple logical choices require a tap.
         return false;
     }
-    // Automatic connection still needs an advertisement for the chosen endpoint,
-    // rather than substituting the peer's radio presence for that endpoint.
-    const auto endpoint=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==available.front() && d.online;});
+    // Start the read-only check at the currently advertising member. A cached
+    // primary identity alone must not impose a failed radio attempt first.
+    const auto reachable=reachableSelectionEndpoint(available.front());
+    const auto endpoint=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==reachable && d.online;});
     if(endpoint==devices_.end()) return false;
     automaticSelection_ = false; // One startup attempt; never fight manual navigation.
     return select(endpoint->id);
 }
 void TrainingApplication::scan() {
-    if (maintenance_ || discoveryPaused_ || connected() || connecting() || scanPending_) return;
+    if (maintenance_ || discoveryPaused_ || radioInUse() || resolvingSelection() || scanPending_) return;
     const auto found=transport_.scan();
     scanPending_=transport_.scanInProgress();
     if (!scanPending_) refreshDiscovery(found);
     scannedAt_ = now_; scanned_ = true;
 }
 void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& found) {
+    latestAdvertised_.clear();
+    latestAdvertisedAt_=now_;
     for(auto it=seenDevices_.begin();it!=seenDevices_.end();) {
         if(now_-it->second.at>=discoveryGraceMs) it=seenDevices_.erase(it);else ++it;
     }
@@ -376,6 +487,7 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
         const auto id=logicalDeviceId(a.id);
         if(seenDevices_.size()>=maximumDiscoveredDevices && !seenDevices_.count(id)) continue;
         auto& seen=seenDevices_[id];seen.device.id=id;seen.device.online=true;seen.at=now_;
+        if(std::find(latestAdvertised_.begin(),latestAdvertised_.end(),id)==latestAdvertised_.end()) latestAdvertised_.push_back(id);
         if(seen.device.name.empty() || seen.device.name=="VOLTRA") {
             const auto saved=std::find_if(recent_.begin(),recent_.end(),[&](const auto& d){return d.id==id;});
             const auto known=std::find_if(knownDevices_.begin(),knownDevices_.end(),[&](const auto& d){return d.id==id;});
@@ -404,10 +516,11 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
         else { if(it->name.empty() || it->name=="VOLTRA") it->name = a.name; it->online = true; }
     }
     refreshTwinDevices();
+    topologyProbeDue_=true;
 }
 bool TrainingApplication::select(const DeviceId& id) {
     if(maintenance_) return false;
-    const auto endpoint=selectionDevice(id);
+    const auto endpoint=reachableSelectionEndpoint(id);
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == endpoint && (d.online || remembered(d.id)); });
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
     leave();
@@ -434,7 +547,7 @@ bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id) {
     if(!controller_.connect(chosen.id)) {message_=controller_.feedback();return false;}
     session_.setSelectedAddress(transport_.deviceAddress(chosen.id));
     connectingDevice_=chosen;
-    message_="Checking "+name_+"...";
+    message_="Connecting...";
     return true;
 }
 void TrainingApplication::traceSelectionEndpoint() {
@@ -465,7 +578,7 @@ void TrainingApplication::failSelection(const std::string& reason) {
 }
 bool TrainingApplication::runSelection() {
     if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl(false);
-    if(selectionPhase_!=SelectionPhase::Resolving) return selectionPhase_==SelectionPhase::Failed;
+    if(selectionPhase_!=SelectionPhase::Resolving) return false;
     if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=selectionDeadlineMs) {
         // An observed topology contradiction remains more specific than a
         // timer or an earlier radio failure, including on the deadline tick.
@@ -573,6 +686,7 @@ void TrainingApplication::rememberConnection() {
     scan();
 }
 void TrainingApplication::leave(bool preserveFailure) {
+    if(topologyProbeActive_) stopTopologyProbe();
     if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
     automaticSelection_ = false;
@@ -584,6 +698,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     selectionReadOnlyView_=false;
     waitingForControlFreshness_=false;
     scanned_ = scanPending_ = false;
+    topologyProbeDue_=false;
     connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
     restSince_.reset();restSetRevision_=0;
@@ -1062,10 +1177,15 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now;
+    // Bound background radio work before polling can launch an internal retry.
+    // A user selection has its own existing connection/retry policy.
+    if(topologyProbeActive_ && !controller_.confirmed().connected &&
+       (now_<topologyProbeStartedAt_ || now_-topologyProbeStartedAt_>=topologyConnectDeadlineMs)) stopTopologyProbe();
     // Cancel stale permissions before polling can dispatch a queued intent;
     // retain an established unload route while polling renews its live state.
     if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl(false)) return;
     controller_.tick(now);
+    if(topologyProbeActive_) {tickTopologyProbe();return;}
     refreshTwinDevices();
     if(runSelection()) return;
     if(connecting()) return;
@@ -1089,7 +1209,8 @@ void TrainingApplication::tick(uint64_t now) {
         confirmedDropWeight_.reset();
         dropStart_.reset();dropRestore_.reset();
         if(!selected_.empty()) dropSettings_[selected_].enabled=false;
-        connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset(); resetDrops(); return;
+        connectingDevice_.reset(); presetIntent_.reset(); settingsIntent_.reset(); observedLoaded_ = false; pending_ = requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset(); resetDrops();
+        startTopologyProbe();return;
     }
     if (connectingDevice_ && session_.accepted()) rememberConnection();
     const auto r = report();
