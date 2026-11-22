@@ -1,5 +1,38 @@
 # Validation status and pending tests
 
+November 22 v0.4.16: [ten-repo GATT review](TWIN_GATT_REVIEW_2026_11_22.md).
+PASS independent current-head/source comparison, actual HELLO byte comparison
+against Steven and literal official capture, existing core/packet-inspector build
+and diff whitespace check. The HELLO payload/header/CRC is unchanged.
+PASS actual Native adapter compiled against a synthetic SDK: 16 scenarios /
+126 assertions on cpp SHAcf4b96ef12a4578cfd5cfed502a24eaba4a2c87facabc77f68a229fea87e0357.
+One full snapshot, callback/pointer lifetime, reconnect invalidation, absent/empty
+channels, queued531 during discovery/subscription/write, no recursive callback
+delivery or queue consumption, stale-owner/wrong-peer/cancelled events, overflow
+and live-only failure clearing pass. UUID case/short/base aliases share one
+snapshot/callback lifetime, including first-use SDK-prefixed short UUIDs;
+invalid-length UUIDs fail without a query. ASan/UBSan pass; LeakSanitizer was disabled
+because this environment cannot run it under ptrace. This is the actual adapter
+with mocked SDK behavior, not a real NimBLE host/ATT or physical-radio check.
+Receipt: /workspace/preview-tools/native-gatt-v0416/validation.json.
+PASS actual-controller/PhysicalSession offline MOCK validation: 20 scenarios /
+1301 assertions, plus31/31 existing PhysicalSession regressions. Authentication,
+readback and fresh-primary readiness work through each documented response route.
+Missing/non-notifiable/failed55CA can use notify-capableA010; failedA010 can retain
+55CA. No response or telemetry alone refuses before HELLO. Dead query/subscription/
+clear cannot complete; real531 is retained. Optional telemetry, separate fragment
+parsers, no preaccept controls, reconnect cleanup and original sequence0 HELLO pass.
+Controller cpp SHA241e225b9f142bb6da9171400b8fb80968e61bf743050912de262d93fd4279ef.
+Receipt: /workspace/preview-tools/response-routes-v0416/validation.json.
+PASS unchanged LVGL/application regression:72 cases /1566 assertions across
+360/466/480. Discovery, membership changes, visible-member selection, both icon
+halves, automatic/manual Retry, async scans, cancellation and Wi-Fi/report/update
+handoffs pass with zero resistance intents/GAP overlaps in these MOCK cases.
+69 renders match v0.4.15 byte-for-byte; three Updates renders differ only in the
+version fixture. Receipt: /workspace/preview-tools/twin-discovery-v0416/validation.json.
+No new tracked automated test source or physical radio/pairing/motor operation.
+These checks do not prove error531's cause or physical Twin recovery.
+
 November 22 v0.4.15: [Twin refresh and connection setup](TWIN_DISCOVERY_2026_11_22.md).
 PASS independent source review and existing core/packet-inspector build.
 PASS external actual-controller/PhysicalSession offline MOCK validation: 11

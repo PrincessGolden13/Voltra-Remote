@@ -13,7 +13,8 @@ struct SessionReadiness {
 class ControlSession {
 public:
     virtual ~ControlSession() = default;
-    // The write channel is available, but notification setup is incomplete.
+    // The write channel and a protocol response subscription are available;
+    // optional notification setup and connection completion may still remain.
     // A protocol may send its initial hello only. This cannot accept the
     // session, establish readiness, restore intent or send a training command.
     virtual bool prepareConnection() { return true; }

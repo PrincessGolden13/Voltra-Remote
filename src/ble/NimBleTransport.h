@@ -19,6 +19,8 @@ public:
     std::string deviceAddress(const DeviceId&) const override;
     DeviceId deviceIdForAddress(const std::string&) const override;
     BleConnectionFailure connectionFailure() const override;
+    bool linkAlive() const override;
+    void clearConnectionFailure() override;
     TransportResult connect(const DeviceId&) override;
     void disconnect() override;
     std::vector<std::string> discoverServices() override;

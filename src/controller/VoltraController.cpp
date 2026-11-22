@@ -1,6 +1,7 @@
 #include "VoltraController.h"
 #include "protocol/VoltraGattProfile.h"
 #include "protocol/Parameters.h"
+#include "diagnostics/EventLog.h"
 #include <algorithm>
 namespace voltra {
 namespace {
@@ -31,7 +32,8 @@ VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlS
         const bool failed = connecting_;
         connecting_ = false;
         if (controls_) controls_->connectionChanged(false);
-        confirmed_ = {}; requested_ = {}; parser_.reset();
+        confirmed_ = {}; requested_ = {}; responseSubscribed_={};
+        for(auto& parser:responseParsers_) parser.reset();
         confirmed_.connected = connected;
         pendingLoad_.reset();
         feedback_ = disconnecting_ ? "Disconnected" : connectionFailureText(transport_.connectionFailure(),
@@ -39,8 +41,11 @@ VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlS
     });
     transport_.onNotification([this](const std::string& characteristic, const Bytes& bytes) {
         if (controls_) controls_->notification(characteristic,bytes);
-        if (!confirmed_.connected || characteristic != VoltraGattProfile::notify) return;
-        for (const auto& frame : parser_.feed(bytes)) {
+        const auto response=std::find(VoltraGattProfile::responses.begin(),VoltraGattProfile::responses.end(),characteristic);
+        if(!confirmed_.connected || response==VoltraGattProfile::responses.end()) return;
+        const auto channel=size_t(response-VoltraGattProfile::responses.begin());
+        if(!responseSubscribed_[channel]) return;
+        for (const auto& frame : responseParsers_[channel].feed(bytes)) {
             if (!applyAsyncParameters(frame, now_, confirmed_) || now_ <= sentAt_) continue;
             if (requested_.status == CommandStatus::Pending && confirmed_.weightLbs.receivedAtMs == now_ &&
                 confirmed_.weightLbs.value == requested_.weightLbs) {
@@ -70,23 +75,42 @@ bool VoltraController::finishConnection() {
     }
     const auto writable=transport_.discoverCharacteristic(VoltraGattProfile::service,VoltraGattProfile::write);
     if(!writable || !writable->canWrite) return failConnection("VOLTRA write channel unavailable");
-    // The native reference sends hello before descriptor/subscription work:
-    // the peripheral accepts it only briefly after link establishment. The
-    // protocol hook cannot mark this connection ready or send a control.
-    if(controls_ && !controls_->prepareConnection()) return failConnection("VOLTRA hello failed");
-    const auto found=transport_.discoverCharacteristic(VoltraGattProfile::service,VoltraGattProfile::notify);
-    if (!found || !found->canNotify || transport_.subscribe(found->uuid) != TransportResult::Accepted) {
-        return failConnection("VOLTRA subscription failed");
+    if(!transport_.linkAlive()) return failConnection("Bluetooth connection ended");
+    std::array<const char*,VoltraGattProfile::responses.size()> responseStatus{};
+    bool responseAvailable=false,responseReady=false;
+    for(size_t i=0;i<VoltraGattProfile::responses.size();++i) {
+        const auto* uuid=VoltraGattProfile::responses[i];
+        const auto channel=std::string(uuid)==VoltraGattProfile::write ? writable :
+            transport_.discoverCharacteristic(VoltraGattProfile::service,uuid);
+        if(!transport_.linkAlive()) return failConnection("Bluetooth connection ended");
+        if(!channel) {responseStatus[i]="absent";continue;}
+        if(!channel->canNotify) {responseStatus[i]="not-notifiable";continue;}
+        responseAvailable=true;
+        responseSubscribed_[i]=transport_.subscribe(channel->uuid)==TransportResult::Accepted;
+        responseStatus[i]=responseSubscribed_[i] ? "subscribed" : "failed";
+        if(!transport_.linkAlive()) return failConnection("Bluetooth connection ended");
+        responseReady=responseReady || responseSubscribed_[i];
     }
-    // The pinned SDK and ESP32 reference receive replies on both channels.
-    // This is a profile decision, not a generic subscribe-to-everything policy.
-    if (writable->canNotify && transport_.subscribe(writable->uuid) != TransportResult::Accepted) {
-        return failConnection("VOLTRA response subscription failed");
+    diagnostic(std::string("VOLTRA response routes command=")+responseStatus[0]+" transport="+responseStatus[1]);
+    if(!responseReady) return failConnection(responseAvailable ? "VOLTRA response subscription failed" : "VOLTRA response channel unavailable");
+    // Official/Android captures subscribe response channels before application
+    // frames. Send hello immediately after that quorum, before optional stream
+    // setup; the protocol hook cannot accept the session or send a control.
+    if(controls_) {
+        if(!controls_->prepareConnection()) return failConnection("VOLTRA hello failed");
+        diagnostic("VOLTRA hello prepared after response subscription");
     }
     const auto telemetry=transport_.discoverCharacteristic(VoltraGattProfile::service,VoltraGattProfile::telemetry);
-    if(telemetry && telemetry->canNotify && transport_.subscribe(telemetry->uuid)!=TransportResult::Accepted) {
-        return failConnection("VOLTRA telemetry subscription failed");
+    if(!transport_.linkAlive()) return failConnection("Bluetooth connection ended");
+    if(telemetry && telemetry->canNotify) {
+        const bool subscribed=transport_.subscribe(telemetry->uuid)==TransportResult::Accepted;
+        if(!transport_.linkAlive()) return failConnection("Bluetooth connection ended");
+        // A failed optional stream cannot invalidate a working response route.
+        // It still cannot stand in for authentication or fresh machine state.
+        if(!subscribed) diagnostic("VOLTRA optional telemetry subscription unavailable");
     }
+    transport_.clearConnectionFailure();
+    if(!transport_.linkAlive()) return failConnection("Bluetooth connection ended");
     // Subscription is not handshake success. The protocol session owns bootstrap
     // and application acceptance; neither step may replay a load/settings intent.
     connecting_=false;confirmed_.connected=true;
@@ -102,7 +126,8 @@ void VoltraController::disconnect() {
     disconnecting_=true;
     connecting_=false;linkUp_=false;
     if (controls_) controls_->connectionChanged(false);
-    transport_.disconnect(); confirmed_ = {}; requested_ = {}; parser_.reset();
+    transport_.disconnect(); confirmed_ = {}; requested_ = {}; responseSubscribed_={};
+    for(auto& parser:responseParsers_) parser.reset();
     pendingLoad_.reset();
     disconnecting_=false;
 }

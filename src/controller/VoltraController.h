@@ -1,6 +1,7 @@
 #pragma once
 #include "ble/BleTransport.h"
 #include "protocol/FrameParser.h"
+#include "protocol/VoltraGattProfile.h"
 #include "state/VoltraState.h"
 #include "state/RequestedState.h"
 #include "ControlSession.h"
@@ -34,7 +35,10 @@ private:
     ControllerPolicy policy_;
     VoltraState confirmed_;
     RequestedState requested_;
-    FrameParser parser_;
+    // Response channels can deliver interleaved fragments. Never assemble a
+    // command-channel prefix with a transport-channel suffix.
+    std::array<FrameParser,VoltraGattProfile::responses.size()> responseParsers_;
+    std::array<bool,VoltraGattProfile::responses.size()> responseSubscribed_{};
     uint64_t now_ = 0;
     ControlSession* controls_ = nullptr;
     std::optional<bool> pendingLoad_;
