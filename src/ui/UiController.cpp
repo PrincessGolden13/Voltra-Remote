@@ -1358,8 +1358,6 @@ void UiController::tickUpdateCheck(uint64_t now) {
     }
 }
 void UiController::tick() {
-    const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
-    EventLog::instance().clock(now);
     if(updates_) {
         const auto phase=updates_->status().phase;
         app_.setMaintenance(debugDisconnectPending_ || phase==UpdatePhase::Installing || phase==UpdatePhase::Ready || (reports_ && reports_->status().busy()));
@@ -1369,6 +1367,12 @@ void UiController::tick() {
         app_.setDiscoveryPaused(updateCheckPending_ || (savedWifi && updates_->startupPending()) || updates_->status().busy() ||
             (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())));
     }
+    // A queued selection starts GAP in app_.tick(). Pause Wi-Fi before that
+    // first attempt, and sample time after the synchronous radio shutdown.
+    const bool wifiPausedBeforeApp=wifi_ && (app_.connected() || app_.connecting());
+    if(wifiPausedBeforeApp) wifi_->tick(false);
+    const auto now = hardware_.nowMs(); lv_tick_inc(uint32_t(now-lastTickMs_)); lastTickMs_ = now;
+    EventLog::instance().clock(now);
     app_.tick(now);
     // SEND authorizes this handoff only after the snapshot is safely queued.
     // Let an in-flight control (especially explicit unload) settle or time out
@@ -1382,7 +1386,7 @@ void UiController::tick() {
     if(app_.loadRefusalRevision()!=loadRefusalRevision_ && !debugDialog_ && !debugPending_) {
         loadRefusalRevision_=app_.loadRefusalRevision();navigate(Screen::ControlNotice);
     }
-    if(wifi_) {
+    if(wifi_ && (!wifiPausedBeforeApp || (!app_.connected() && !app_.connecting()))) {
         const auto w=wifi_->status();
         wifi_->tick(!app_.connected() && !app_.connecting() &&
             (!updateCheckPending_ || !app_.discoveryInProgress() || w.connecting || w.connected));

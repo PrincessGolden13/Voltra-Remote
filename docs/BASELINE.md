@@ -1,5 +1,21 @@
 # Foundation baseline
 
+## November 22 Wi-Fi/Bluetooth handoff v0.4.14
+
+- CONFIRMED report b47444b1 on v0.4.13: first candidate times out before usable
+  link/discovery/authentication, final host code 13 after two attempts; the second
+  connects as a fresh secondary. No evidence another app is using Bluetooth.
+  See TWIN_CONNECTION_REPORT_2026_11_22.md for exact attribution and source limits.
+- CONFIRMED source defect: queued GAP started before the same frame paused Wi-Fi.
+  Pause first and sample time after synchronous shutdown; retain the immediate
+  idle-frame Wi-Fi/report/update handoff. No timeout increase or Twin protocol change.
+- PASS independent offline MOCK differential checks: 8 scenarios / 83 assertions,
+  including manual, actual Retry, automatic selection and a 37 ms shutdown clock.
+  Pending explicit unload, first idle report handoff and saved-Wi-Fi update checks
+  pass. Existing update previews are identical in 39 size/scene combinations.
+- Physical effect on the reported primary timeout remains UNVERIFIED. No physical
+  connection, motor operation or settings reset was performed.
+
 ## November 21–22 native Twin comparison v0.4.13
 
 - Compared current native repos, their histories/captures and official Cortex.

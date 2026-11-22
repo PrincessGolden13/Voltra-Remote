@@ -1,5 +1,21 @@
 # Validation status and pending tests
 
+November 22 v0.4.14: [primary timeout and Wi-Fi ordering](TWIN_CONNECTION_REPORT_2026_11_22.md).
+PASS independent source review and external offline MOCK differential validation
+against 20b99e0. Eight scenarios / 83 assertions reproduce GAP starting with fake
+Wi-Fi powered in the old manual, actual Retry and automatic paths. Corrected UI
+SHA b030d84989c399b59bddc9dc95f1eec02766f83e62dea55ab80ce99976be6d70 pauses
+before all three, with fresh native-poll timestamps after a 37 ms fake shutdown.
+Active frames pause once. Failure -> idle resumes Wi-Fi in that frame. Pending
+explicit unload delays debug BLE release; the first released frame resumes
+Wi-Fi/report, with one unload and no load. Leave -> saved-Wi-Fi update check passes.
+Existing update-reconnect renderer: 13 scenes at 360/466/480; baseline/fixed
+stdout and pixels are byte-identical in all 39 cases (unchanged version fixture).
+Receipt: /workspace/preview-tools/wifi-ble-handoff-v0414/validation.json.
+PASS existing offline core/packet-inspector build and diff whitespace check.
+No new tracked automated test source, physical radio connection or motor operation.
+This verifies software ordering, not the cause of b47444b1 or physical recovery.
+
 November21–22 v0.4.13: [complete native Twin comparison](TWIN_COMPARISON_2026_11_21.md).
 Current public heads and source/capture scopes were checked, including the separate
 Albert Android implementation. PASS new scoped weight helper syntax and manual
