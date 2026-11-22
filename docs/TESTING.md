@@ -32,6 +32,36 @@ handoffs pass with zero resistance intents/GAP overlaps in these MOCK cases.
 version fixture. Receipt: /workspace/preview-tools/twin-discovery-v0416/validation.json.
 No new tracked automated test source or physical radio/pairing/motor operation.
 These checks do not prove error531's cause or physical Twin recovery.
+PASS [CI45078070078](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45078070078)
+at95cc2de7d42327a21ea73c926842664543755c65: public Normal/isolated Simulator,
+offline core/packet inspector and packaging. Artifact14776605308 digest matches
+`9a3439bc6f0ccf0b75d2dce5d86e7a17fa63892d3ea0fbaeefc1ce03f9ee45d4`.
+Normal2,038,912bytes SHA-256
+`05cabae14b360f58e29d7b376f5eba1ab3d6e7c7af5e3a324b50e16ce04e8654`;
+Simulator1,047,584bytes SHA-256
+`cefacc2830d52887a64649c393362c7f9aee21461fb7d4c8c2bb5fc04f252204`.
+Explicit0.4.16 descriptors, manifest, every USB hash/offset/partition map and USB
+Normal=OTA pass. Defined-symbol checks confirm physical-only Normal/mock-only
+Simulator and strong GLOBAL erase-protection/verifyRollbackLater hooks in both.
+Merge02aa9672d4cc940fc536bd55d7961a01ab0163ce has the exact reviewed tree.
+Receipt: ignored build/review-v0416/validation.json.
+PASS [tag CI45078626045](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45078626045)
+atv0.4.16/02aa9672d4cc940fc536bd55d7961a01ab0163ce: build/package/draft creation.
+Artifact14775914768 digest matches
+`1e190b8a43557b2fe4277527deb371195f8df546c20fe48e62339f6818405b4c`.
+Normal/Simulator exactly match the reviewed PR bytes. Full descriptor, manifest,
+USB hash/offset/map, backend isolation and strong protection-hook checks pass.
+All four draft asset sizes/digests and notes match the tag. Receipts: ignored
+build/review-v0416-tag/validation.json and draft-validation.json.
+PASS publication: release454802614 published as latest ordinaryv0.4.16 at
+2026-11-22T22:41:28Z. Initial bare latest redirect returned0.4.15 with an older
+Date, while APIlatest and the pinned0.4.16 manifest were current. Revalidation
+with no-cache headers returned0.4.16; the subsequent unchanged bare-URL verifier
+also passes. Public latest manifest and pinned Normal image pass schema, board,
+channel/layout/version, descriptor, length and SHA-256, matching tag bytes.
+Receipt: ignored build/published-v0416/verification.json. No physical installation,
+radio connection, pairing or motor operation was performed; recovery remains
+unverified. The transient response does not establish where it was cached.
 
 November 22 v0.4.15: [Twin refresh and connection setup](TWIN_DISCOVERY_2026_11_22.md).
 PASS independent source review and existing core/packet-inspector build.

@@ -16,6 +16,15 @@
 - PASS native-adapter/mock-SDK16/126 with ASan/UBSan, actual-controller/session
   20/1301 plus31 existing regressions, and unchanged LVGL72/1566 at three sizes.
   Independent HELLO bytes match Steven and official capture for identical inputs.
+- CONFIRMED CI45078070078 at95cc2de7 builds both public images, core and package.
+  Artifact14776605308 passes descriptors/manifest/USB/hash/map, backend isolation
+  and strong NVS/rollback hooks. Merge02aa967 has the exact reviewed tree.
+- CONFIRMED tag CI45078626045 at02aa967 passes; both images exactly match the
+  reviewed PR and all four assets/notes pass inspection. Published
+  [v0.4.16](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.16)
+  as latest ordinary release at22:41:28UTC. After a stale latest redirect was
+  revalidated, the bare public latest manifest and pinned Normal image pass
+  identity/length/SHA-256 and exact tag comparison. Physical recovery unverified.
 
 ## November 22 device-screen Twin refresh v0.4.15
 
