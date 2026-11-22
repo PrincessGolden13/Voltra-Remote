@@ -15,6 +15,33 @@ Receipt: /workspace/preview-tools/wifi-ble-handoff-v0414/validation.json.
 PASS existing offline core/packet-inspector build and diff whitespace check.
 No new tracked automated test source, physical radio connection or motor operation.
 This verifies software ordering, not the cause of b47444b1 or physical recovery.
+PASS [CI45058145716](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45058145716)
+at 0aa1fe4e8dfa88c0b0d70d4136b81d503dee5ccf: Normal/isolated Simulator, offline
+core/packet inspector and packaging. Artifact14767984048 digest matches
+`f8fa3490687fa806510aa238b767b2aafd1afe10ab9e83f44ff2843e743ca5d9`.
+Normal 2,027,120 bytes SHA-256
+`f6d869d397b9c00e27b9d53d36e88e0ffbe55f3293b4289563552182452f0fab`;
+Simulator 1,040,848 bytes SHA-256
+`0190f9dc353a3efb088f2b5cca8fb14c27a74e38cb96518abe1e12b4cc55a00f`.
+Both explicit 0.4.14 descriptors, manifest identity/size/hash, every USB file
+hash/offset/partition map and USB Normal=OTA pass. Defined-symbol checks confirm
+physical-only Normal/mock-only Simulator and strong GLOBAL erase-protection and
+verifyRollbackLater hooks in both images. Merge aa223a5a24518d4e86131fd32fe411e69fbfa4b2
+has the exact reviewed tree. Receipt: ignored build/review-v0414/validation.json.
+PASS [tag CI45058676409](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45058676409)
+at v0.4.14/aa223a5a24518d4e86131fd32fe411e69fbfa4b2: build, package and draft
+creation. Artifact14769125174 digest matches
+`ddf67052251db743de8c3286e7cc2e00a16bb7770de3dc4946ade4eebbf028f6`.
+Both firmware images exactly match the reviewed PR above. Full descriptor,
+manifest, USB hash/offset/map, backend isolation and strong protection-hook checks
+pass. All four draft asset sizes/digests and release notes match tagged files.
+Receipts: ignored build/review-v0414-tag/validation.json and draft-validation.json.
+PASS publication: release454681385 published as latest ordinary v0.4.14 at
+2026-11-22T19:09:48Z. Public latest manifest and pinned Normal image pass schema,
+board/channel/layout/version, descriptor, length and SHA-256, matching tag bytes.
+Receipt: ignored build/published-v0414/verification.json. No physical installation,
+radio connection or motor operation was performed; timeout causality and physical
+recovery remain unverified.
 
 November21–22 v0.4.13: [complete native Twin comparison](TWIN_COMPARISON_2026_11_21.md).
 Current public heads and source/capture scopes were checked, including the separate

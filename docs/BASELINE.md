@@ -15,6 +15,16 @@
   pass. Existing update previews are identical in 39 size/scene combinations.
 - Physical effect on the reported primary timeout remains UNVERIFIED. No physical
   connection, motor operation or settings reset was performed.
+- CONFIRMED CI45058145716 at 0aa1fe4 builds Normal/isolated Simulator, core and
+  release package. Artifact14767984048 passes archive/image/manifest/USB/hash/map,
+  backend isolation and strong NVS/rollback-hook checks. Merge aa223a5 has the
+  exact reviewed tree.
+- CONFIRMED tag CI45058676409 at aa223a5 passes; both images exactly match the
+  reviewed PR and all four assets/notes pass inspection. Published
+  [v0.4.14](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.14)
+  as latest ordinary release on November 22 at 19:09:48 UTC. Public latest
+  manifest and pinned Normal image pass identity/length/SHA-256 and exact tag
+  comparison. Physical installation and connection recovery remain unverified.
 
 ## November 21–22 native Twin comparison v0.4.13
 
