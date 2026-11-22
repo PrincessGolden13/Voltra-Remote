@@ -1,5 +1,25 @@
 # Device-screen Twin refresh and connection setup
 
+## Follow-up report version requires confirmation
+
+Report `049f991fb40fe58932000fcd24d55d72`, received 2026-11-22T21:50:23Z,
+identifies firmware 0.4.14 in both the JSON header and captured context. It shows
+the old first-member timeout followed by establishment retries and link error
+531 before acceptance on the second member. It does not establish a v0.4.15 trial.
+
+The currently published latest manifest and Normal image were rechecked as
+v0.4.15, matching the reviewed tag's length, descriptor and SHA-256. Report,
+context, Installed label and descriptor share one version macro; the checked
+Normal binary contains their 0.4.15 strings and none of the corresponding
+0.4.14 strings.
+
+A pending report is stored as complete JSON in NVS, restored unchanged after
+reboot/update, and reused by submit until successful delivery/clear. Thus this
+snapshot's version does not prove the currently running image. Receipt time is
+upload time. The current Settings -> Updates -> Installed value is required to
+distinguish an old running/rolled-back image from a queued old report before
+classifying this as a v0.4.15 connection regression. No new firmware change.
+
 ## New physical evidence
 
 The owner reports that the Beyond+ iPhone list showed only Red. Connecting
