@@ -15,6 +15,13 @@ constexpr uint32_t connectionBudgetMs=10000, connectionAttemptMs=4500, connectio
 // This is a radio handoff policy, not a VOLTRA command or readiness delay.
 constexpr uint32_t clientSettleMs=100;
 constexpr unsigned connectionAttempts=3;
+// Type knowledge is retained for this boot, independently of radio presence.
+// RSSI/connectable observations stop being current after the app's 15 s grace.
+constexpr uint64_t observationFreshMs=15000;
+constexpr size_t maximumObservedRadios=64;
+// NimBLE units are 10 ms. A Twin controller also serves its other VOLTRA;
+// stevenpoint/voltra_remote 1c14860 uses 10 s to tolerate those quiet intervals.
+constexpr uint16_t supervisionTimeoutUnits=1000;
 constexpr int transmitPowerDbm=9;
 constexpr int establishmentFailure=BLE_HS_HCI_ERR(BLE_ERR_CONN_ESTABLISHMENT);
 bool validDeviceId(const DeviceId& id) {
@@ -36,21 +43,38 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     std::map<std::string,NimBLERemoteCharacteristic*> characteristics;
     struct Received { uint32_t generation; std::string uuid; Bytes bytes; };
     std::mutex mutex;
-    std::map<DeviceId,Advertisement> advertisements;
-    struct Signal { int rssi=0; bool connectable=false; };
-    std::map<DeviceId,Signal> signals;
+    std::map<std::string,Advertisement> advertisements;
+    struct ObservedRadio {
+        NimBLEAddress address;
+        int rssi=0;
+        bool connectable=false;
+        uint64_t at=0,order=0;
+    };
+    std::map<std::string,ObservedRadio> observedRadios;
+    uint64_t observationOrder=0;
     void onDiscovered(const NimBLEAdvertisedDevice* d) override { onResult(d); }
     void onResult(const NimBLEAdvertisedDevice* d) override {
         // NimBLE can replace a previous scan response with a later advertisement.
         // Retain the union observed within this scan, not just its final packet.
+        // Address type is a current radio attribute, not a second logical device.
+        const auto address=d->getAddress();
+        const auto canonical=address.toString();
         Advertisement a;
-        a.id=d->getAddress().toString()+"/"+std::to_string(d->getAddressType());
+        a.id=canonical+"/"+std::to_string(address.getType());
         a.name=d->getName();
         for(unsigned n=0;n<d->getServiceUUIDCount();++n) a.services.push_back(d->getServiceUUID(n).toString());
         std::lock_guard<std::mutex> lock(mutex);
-        if(advertisements.size()>=64 && !advertisements.count(a.id)) return;
-        auto& saved=advertisements[a.id];saved.id=a.id;
-        signals[a.id]={d->getRSSI(),d->isConnectable()};
+        if(observedRadios.size()>=maximumObservedRadios && !observedRadios.count(canonical)) {
+            // Old neighbours cannot prevent learning a newer target/type.
+            const auto oldest=std::min_element(observedRadios.begin(),observedRadios.end(),
+                [](const auto& a,const auto& b){return a.second.order<b.second.order;});
+            observedRadios.erase(oldest);
+        }
+        // The callback uses the last poll's monotonic clock under this mutex.
+        // A stalled application makes the observation older, never falsely fresh.
+        observedRadios[canonical]={address,d->getRSSI(),d->isConnectable(),now,++observationOrder};
+        if(advertisements.size()>=maximumObservedRadios && !advertisements.count(canonical)) return;
+        auto& saved=advertisements[canonical];saved.id=a.id;
         if(!a.name.empty()) saved.name=a.name;
         for(const auto& uuid:a.services)
             if(std::find(saved.services.begin(),saved.services.end(),uuid)==saved.services.end()) saved.services.push_back(uuid);
@@ -62,19 +86,51 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     unsigned diagnosticRx=0,diagnosticTx=0;
     bool connecting=false, radioBusy=false, linkObserved=false, cancelling=false;
     NimBLEAddress target,radioTarget;
+    bool radioTypeObserved=false,radioConnectable=false;
+    int radioRssi=0;
+    uint64_t radioObservedAt=0;
     unsigned attempts=0;
     uint64_t now=0, retryAt=0, attemptAt=0, radioStartedAt=0, linkUpAt=0, handoffUntil=0;
     uint32_t attemptLimitMs=connectionAttemptMs;
     bool timeoutRetryUsed=false;
     bool terminalObserved=true,mtuReady=false;
     BleConnectionFailure failure;
+    void resolveRadioTarget() {
+        // Called under mutex only when a physical attempt may start. Keep the
+        // original logical target unchanged; late events retain their old owner.
+        radioTarget=target;radioTypeObserved=false;
+        const auto observed=observedRadios.find(target.toString());
+        if(observed==observedRadios.end()) return;
+        radioTarget=observed->second.address;radioTypeObserved=true;
+        radioRssi=observed->second.rssi;radioConnectable=observed->second.connectable;
+        radioObservedAt=observed->second.at;
+    }
+    std::string radioDetail() const {
+        const bool validAge=radioTypeObserved && now>=radioObservedAt;
+        const auto age=validAge ? now-radioObservedAt : 0;
+        const bool signalFresh=validAge && age<=observationFreshMs;
+        return " radioType="+std::to_string(radioTarget.getType())+
+            " typeObserved="+std::to_string(radioTypeObserved)+
+            " observationAgeMs="+(validAge ? std::to_string(age) : "unknown")+
+            " rssi="+(signalFresh ? std::to_string(radioRssi) : "unknown")+
+            " connectable="+(signalFresh ? std::to_string(radioConnectable) : "unknown");
+    }
     void fail(BleConnectionStage stage,int reason=0,bool timedOut=false) {
-        const auto elapsed=attempts && now>=radioStartedAt ? now-radioStartedAt : 0;
-        failure={stage,reason,timedOut,attempts,elapsed};
+        const auto failedAttempts=stage==BleConnectionStage::Setup ? 0u : attempts;
+        const auto elapsed=failedAttempts && now>=radioStartedAt ? now-radioStartedAt : 0;
+        failure={stage,reason,timedOut,failedAttempts,elapsed};
+        // Setup can fail before a new logical request starts; never report the
+        // previous physical owner's type as that invalid request's metadata.
+        if(failedAttempts) {
+            failure.logicalAddressType=target.getType();
+            failure.radioAddressType=radioTarget.getType();
+            failure.observedRadioType=radioTypeObserved;
+        }
         log("BLE connect failure stage="+std::to_string(int(stage))+" code="+std::to_string(reason)+
-            " timeout="+std::to_string(timedOut)+" attempt="+std::to_string(attempts)+
+            " timeout="+std::to_string(timedOut)+" attempt="+std::to_string(failedAttempts)+
             " radioMs="+std::to_string(elapsed)+
-            "/"+std::to_string(connectionBudgetMs));
+            "/"+std::to_string(connectionBudgetMs)+
+            (failedAttempts && stage!=BleConnectionStage::Teardown ? radioDetail() : ""));
     }
     // Stack callbacks only publish events. Application callbacks run in poll().
     enum class LinkKind { Up, Failed, Down, Mtu };
@@ -110,9 +166,9 @@ bool NimBleTransport::begin() {
     impl_->client=NimBLEDevice::createClient();
     if(impl_->client) {
         impl_->client->setConnectTimeout(connectionAttemptMs);
-        // 15–30 ms connection interval, zero latency, 4 s supervision timeout.
+        // 15–30 ms connection interval, zero latency, 10 s supervision timeout.
         // Generic BLE timing; VOLTRA may negotiate a different interval.
-        impl_->client->setConnectionParams(12,24,0,400);
+        impl_->client->setConnectionParams(12,24,0,supervisionTimeoutUnits);
         impl_->client->setClientCallbacks(impl_.get(),false);
     }
     return impl_->client!=nullptr;
@@ -120,7 +176,7 @@ bool NimBleTransport::begin() {
 std::vector<Advertisement> NimBleTransport::scan() {
     if(!impl_->scanner || impl_->connected || impl_->connecting || impl_->radioBusy || impl_->scanner->isScanning()) return {};
     impl_->scanner->clearResults();
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->advertisements.clear();impl_->signals.clear();}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->advertisements.clear();}
     const bool started=impl_->scanner->start(2000,false,true); // Async: complete window before auto-selection.
     if(!started) impl_->log("BLE scan could not start");
     return {};
@@ -146,11 +202,6 @@ TransportResult NimBleTransport::connect(const DeviceId& id) {
     if(!validDeviceId(id)) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        const auto it=impl_->signals.find(id);
-        if(it!=impl_->signals.end()) impl_->log("BLE target RSSI="+std::to_string(it->second.rssi)+" connectable="+std::to_string(it->second.connectable)+" addressType="+id.substr(18));
-    }
     impl_->target=NimBLEAddress(id.substr(0,17),uint8_t(id[18]-'0'));
     impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;impl_->timeoutRetryUsed=false;
     // Accepted means queued; onConnection reports completion/failure later.
@@ -186,6 +237,15 @@ std::vector<std::string> NimBleTransport::discoverServices() {
         impl_->fail(BleConnectionStage::Services,error!=previousError ? error : 0);
     }
     return result;
+}
+bool NimBleTransport::discoverService(const std::string& uuid) {
+    const auto previousError=impl_->client ? impl_->client->getLastError() : 0;
+    const bool found=impl_->client && impl_->client->isConnected() && impl_->client->getService(uuid.c_str());
+    if(!found) {
+        const auto error=impl_->client ? impl_->client->getLastError() : 0;
+        impl_->fail(BleConnectionStage::Services,error!=previousError ? error : 0);
+    }
+    return found;
 }
 std::vector<Characteristic> NimBleTransport::discoverCharacteristics(const std::string& service) {
     std::vector<Characteristic> result;
@@ -235,7 +295,7 @@ TransportResult NimBleTransport::write(const std::string& uuid,const Bytes& byte
     return ok ? TransportResult::Accepted : TransportResult::Failed;
 }
 void NimBleTransport::poll(uint64_t now) {
-    impl_->now=now;
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->now=now;}
     if(impl_->linkOverflow.exchange(false)) {
         const bool pending=impl_->connecting;
         impl_->fail(BleConnectionStage::Radio);impl_->log("BLE callback queue overflow");
@@ -319,7 +379,7 @@ void NimBleTransport::poll(uint64_t now) {
                 // before publishing a new owner. A queued logical selection
                 // alone can never retag an old terminal event.
                 if(impl_->linkEvents.empty() && !impl_->linkOverflow) {
-                    ++impl_->radioGeneration;impl_->radioTarget=impl_->target;
+                    ++impl_->radioGeneration;impl_->resolveRadioTarget();
                     impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;impl_->terminalObserved=false;
                     if(!impl_->attempts) impl_->radioStartedAt=now;
                     impl_->attemptLimitMs=std::min<uint32_t>(connectionAttemptMs,
@@ -330,10 +390,10 @@ void NimBleTransport::poll(uint64_t now) {
             if(launch) {
                 impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts)+
                     " limitMs="+std::to_string(impl_->attemptLimitMs)+" radioMs="+
-                    std::to_string(now-impl_->radioStartedAt)+"/"+std::to_string(connectionBudgetMs));
+                    std::to_string(now-impl_->radioStartedAt)+"/"+std::to_string(connectionBudgetMs)+impl_->radioDetail());
                 impl_->client->setConnectTimeout(impl_->attemptLimitMs);
                 const auto previousError=impl_->client->getLastError();
-                if(!impl_->client->connect(impl_->target,true,true,true)) {
+                if(!impl_->client->connect(impl_->radioTarget,true,true,true)) {
                     // Early failures can leave NimBLE's previous lastError intact.
                     // Do not attribute a stale code to this attempt.
                     const auto error=impl_->client->getLastError();

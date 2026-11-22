@@ -126,6 +126,10 @@ private:
     uint64_t loadRefusalRevision_=0;
     void recordControlFailure(const std::string&);
     void recordLoadRefusal();
+    DeviceId logicalDeviceId(const DeviceId&) const;
+    bool sameDeviceIdentity(const DeviceId&,const DeviceId&) const;
+    bool twinPermissionFresh() const;
+    void cancelControlIntents();
     uint64_t now_ = 0, scannedAt_ = 0, sentAt_ = 0, sentRevision_ = 0;
     uint64_t restSetRevision_ = 0;
     std::optional<uint64_t> restSince_;
@@ -159,7 +163,7 @@ private:
     void runDropRestore();
     void sent(TransportResult);
     bool settingsAllowed() const;
-    bool sendSettings(TrainingSettings);
+    bool sendSettings(TrainingSettings,bool explicitBaseEdit=false);
     void resetDrops();
     void stopDrops(const char*);
     void runDrops(const TrainingReport&);

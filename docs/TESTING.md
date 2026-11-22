@@ -1,5 +1,36 @@
 # Validation status and pending tests
 
+November21–22 v0.4.13: [complete native Twin comparison](TWIN_COMPARISON_2026_11_21.md).
+Current public heads and source/capture scopes were checked, including the separate
+Albert Android implementation. PASS new scoped weight helper syntax and manual
+arithmetic:93,357 bounded cases plus published179LB→163KG paired and duplicate-bucket
+max16 inverse safety. PASS existing core/inspector with new Twin B4 decoder and
+manual external decode of all seven published real Twin captures; strict envelope,
+length/source and signed velocity/count checks pass, no target inference. Full
+integration, UI, firmware/package and publication receipts follow after execution.
+No new tracked test source or physical motor operation. Unknown/secondary loading,
+unproven paired target, loaded modifier edits and automatic drops remain unsupported.
+PASS actual PhysicalSession public-API offline MOCK I/O:30 scenarios,0 failures on
+frozen cppSHA51a02321c35a045bf77735ddcdb0a2dbc82231bd9b88dbe9d7d89347b913f079.
+Checks include Primary promotion/Secondary refusal, native/legacy motor words,
+one AA12 trigger with2003/status14armed/15complete, unknownA003 unload-only,
+130total→65one-wire-write and settled confirmation, modifier/percent scope,
+fresh reported460/500 limits, minimum/grid/envelope and changed-cap cancellation.
+TTL/unknown-same-pair retains GATT/unload while cancelling intent; explicit changed
+peer/role/alone permanently revokes that connection's control route. Reused-sequence
+A7 observations renew or revoke correctly. Sparse counters from real source12 B4
+persist across actual source10/11 samples; no target/held/completion phase is added.
+Foreign-source acceptance/activation/parameter/unload-ACK frames are rejected.
+Manual loaded base uses both stationary channels, one base write/no motor or
+accessory reassertion; moving/stale/Auto/accessory/curve/unit/FFFF-field cases refuse,
+while legitimate signed velocity-1 remains valid. Native radio timing is not exercised.
+PASS app/Mock native observations: canonical typed aliases preserve stable identity,
+names and pair references; same-name different addresses stay distinct. Stale and
+transitional routes retain Main/probe-off and explicit unload without edit/load/Auto
+calls or intent replay. Fresh contradictions revoke. Manual50→52 uses one settings
+call with no load/Auto/automatic-live calls; new motion or stale data cancels pending
+intent. Receipts remain external under /workspace/preview-tools, not tracked tests.
+
 November21 v0.4.12: [host timeout retry](TWIN_TIMEOUT_2026_11_21.md).
 Report58926a2a confirms physical v0.4.11 follower recognition and preserves the
 previously hidden first-endpoint code13/10.14s timeout. PASS independent source
