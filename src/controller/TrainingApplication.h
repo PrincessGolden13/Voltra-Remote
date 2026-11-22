@@ -14,6 +14,11 @@ public:
     // Never disconnects, unloads, or changes any confirmed machine state.
     void setMaintenance(bool active) { maintenance_=active; }
     void setDiscoveryPaused(bool paused) { discoveryPaused_=paused; }
+    // Device-screen discovery may briefly open a strictly read-only session.
+    // Its radio ownership is distinct from a selected training connection.
+    void setTopologyDiscoveryEnabled(bool enabled);
+    bool topologyProbeActive() const { return topologyProbeActive_; }
+    bool radioInUse() const { return topologyProbeActive_ || controller_.confirmed().connected || controller_.connecting(); }
     bool discoveryInProgress() const { return transport_.scanInProgress(); }
     bool select(const DeviceId&);
     // Both members share one discovery candidate. Only fresh current-role
@@ -30,10 +35,10 @@ public:
     bool remembered(const DeviceId&) const;
     bool forget(const DeviceId&);
     void leave(bool preserveFailure = false);
-    bool connected() const { return controller_.confirmed().connected; }
-    bool connecting() const { return controller_.connecting() || resolvingSelection(); }
+    bool connected() const { return !topologyProbeActive_ && controller_.confirmed().connected; }
+    bool connecting() const { return !topologyProbeActive_ && (controller_.connecting() || resolvingSelection()); }
     const std::vector<DeviceEntry>& devices() const { return devices_; }
-    const std::string& name() const { return name_; }
+    const std::string& name() const { static const std::string empty; return topologyProbeActive_ ? empty : name_; }
     std::string diagnosticState() const {
         // The debug uploader bounds this context to 2048 bytes. Keep both
         // read-only candidate snapshots first, before long previous failures.
@@ -81,7 +86,7 @@ public:
     Preset currentPreset() const;
     Preset presetForCurrentDevice(Preset) const;
     const std::string& presetCompatibilityError() const { return presetError_; }
-    const DeviceId& selectedDevice() const { return selected_; }
+    const DeviceId& selectedDevice() const { static const DeviceId empty; return topologyProbeActive_ ? empty : selected_; }
     bool applyPreset(const Preset&);
     int startingWeight() const { return startingWeight_; }
 private:
@@ -128,6 +133,7 @@ private:
     void recordControlFailure(const std::string&);
     void recordLoadRefusal();
     DeviceId logicalDeviceId(const DeviceId&) const;
+    TrainingReport selectedReport() const;
     bool sameDeviceIdentity(const DeviceId&,const DeviceId&) const;
     bool twinPermissionFresh() const;
     void cancelControlIntents();
@@ -140,6 +146,16 @@ private:
     bool maintenance_ = false;
     bool discoveryPaused_ = false;
     bool scanPending_ = false;
+    bool topologyDiscoveryEnabled_=false,topologyProbeActive_=false,topologyProbeDue_=false;
+    uint64_t topologyProbeStartedAt_=0,latestAdvertisedAt_=0;
+    std::optional<uint64_t> topologyReadAt_;
+    std::vector<DeviceId> latestAdvertised_;
+    std::map<DeviceId,uint64_t> topologyProbedAt_;
+    DeviceId reachableSelectionEndpoint(const DeviceId&) const;
+    void startTopologyProbe();
+    void tickTopologyProbe();
+    void stopTopologyProbe();
+    void markTopologyProbed(const DeviceId&);
     std::optional<DeviceEntry> connectingDevice_;
     std::optional<int> weightIntent_, dropTarget_;
     WeightUnit weightIntentUnit_=WeightUnit::Pounds;

@@ -1,5 +1,20 @@
 # Validation status and pending tests
 
+November 22 v0.4.15: [Twin refresh and connection setup](TWIN_DISCOVERY_2026_11_22.md).
+PASS independent source review and existing core/packet-inspector build.
+PASS external actual-controller/PhysicalSession offline MOCK validation: 11
+scenarios / 111 assertions, plus all 31 existing PhysicalSession regressions.
+Targeted write -> exactly one original HELLO -> notification setup; no early
+acceptance, readiness, load or unload. Fresh post-GATT pacing/deadline, every
+service/write/query/subscription failure, explicit reconnect, idempotent prepare,
+discarded premature acceptance, optional telemetry and legacy fallback pass.
+PhysicalSession cpp SHA aee111b3feb04dd8ce76f967fa5e58ac0778b07f3313f0c0757f83c135cb02bb;
+controller cpp SHA ba4bc43236a07b364a4d831922e7773533cb218cd877fd192634ff9f927e1d23.
+Receipt: /workspace/preview-tools/early-hello-v0415/validation.json. Both executables
+were rebuilt with the final generic transport navigation API/header.
+No new tracked automated test source or physical radio/motor operation. These
+checks do not establish error 531's cause, current roles or physical recovery.
+
 November 22 v0.4.14: [primary timeout and Wi-Fi ordering](TWIN_CONNECTION_REPORT_2026_11_22.md).
 PASS independent source review and external offline MOCK differential validation
 against 20b99e0. Eight scenarios / 83 assertions reproduce GAP starting with fake

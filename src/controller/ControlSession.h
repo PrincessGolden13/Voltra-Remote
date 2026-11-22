@@ -13,6 +13,10 @@ struct SessionReadiness {
 class ControlSession {
 public:
     virtual ~ControlSession() = default;
+    // The write channel is available, but notification setup is incomplete.
+    // A protocol may send its initial hello only. This cannot accept the
+    // session, establish readiness, restore intent or send a training command.
+    virtual bool prepareConnection() { return true; }
     virtual void connectionChanged(bool) {}
     virtual void setSelectedAddress(std::string) {} // Selected identity for protocol reply matching only.
     // Explicit discovery connections must not change training/device settings

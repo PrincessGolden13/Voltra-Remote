@@ -24,13 +24,16 @@ constexpr size_t maximumObservedRadios=64;
 constexpr uint16_t supervisionTimeoutUnits=1000;
 constexpr int transmitPowerDbm=9;
 constexpr int establishmentFailure=BLE_HS_HCI_ERR(BLE_ERR_CONN_ESTABLISHMENT);
-bool validDeviceId(const DeviceId& id) {
-    if(id.size()!=19 || id[17]!='/' || id[18]<'0' || id[18]>'3') return false;
+bool validAddress(const std::string& id) {
+    if(id.size()!=17) return false;
     for(size_t i=0;i<17;++i) {
         if(i%3==2) {if(id[i]!=':') return false;}
         else if(!((id[i]>='0' && id[i]<='9') || (id[i]>='a' && id[i]<='f') || (id[i]>='A' && id[i]<='F'))) return false;
     }
     return true;
+}
+bool validDeviceId(const DeviceId& id) {
+    return id.size()==19 && id[17]=='/' && id[18]>='0' && id[18]<='3' && validAddress(id.substr(0,17));
 }
 }
 struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
@@ -44,6 +47,7 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     struct Received { uint32_t generation; std::string uuid; Bytes bytes; };
     std::mutex mutex;
     std::map<std::string,Advertisement> advertisements;
+    std::vector<std::string> scanServices;
     struct ObservedRadio {
         NimBLEAddress address;
         int rssi=0;
@@ -64,16 +68,22 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         a.name=d->getName();
         for(unsigned n=0;n<d->getServiceUUIDCount();++n) a.services.push_back(d->getServiceUUID(n).toString());
         std::lock_guard<std::mutex> lock(mutex);
+        // The profile configures service discovery. Unrelated gym advertisers
+        // must not fill the bounded result/type caches before a target arrives.
+        const bool matches=scanServices.empty() || std::any_of(a.services.begin(),a.services.end(),[&](const auto& uuid) {
+            return std::find(scanServices.begin(),scanServices.end(),uuid)!=scanServices.end();
+        });
+        if(!matches && !observedRadios.count(canonical)) return;
         if(observedRadios.size()>=maximumObservedRadios && !observedRadios.count(canonical)) {
             // Old neighbours cannot prevent learning a newer target/type.
             const auto oldest=std::min_element(observedRadios.begin(),observedRadios.end(),
                 [](const auto& a,const auto& b){return a.second.order<b.second.order;});
+            advertisements.erase(oldest->first);
             observedRadios.erase(oldest);
         }
         // The callback uses the last poll's monotonic clock under this mutex.
         // A stalled application makes the observation older, never falsely fresh.
         observedRadios[canonical]={address,d->getRSSI(),d->isConnectable(),now,++observationOrder};
-        if(advertisements.size()>=maximumObservedRadios && !advertisements.count(canonical)) return;
         auto& saved=advertisements[canonical];saved.id=a.id;
         if(!a.name.empty()) saved.name=a.name;
         for(const auto& uuid:a.services)
@@ -162,7 +172,9 @@ bool NimBleTransport::begin() {
     impl_->scanner->setScanCallbacks(impl_.get());
     impl_->scanner->setActiveScan(true);
     impl_->scanner->setInterval(100); impl_->scanner->setWindow(80);
-    impl_->scanner->setMaxResults(64);
+    // Callback-only mode: the SDK's bounded stored-results list otherwise
+    // discards later advertisers before our service filter can inspect them.
+    impl_->scanner->setMaxResults(0);
     impl_->client=NimBLEDevice::createClient();
     if(impl_->client) {
         impl_->client->setConnectTimeout(connectionAttemptMs);
@@ -172,6 +184,12 @@ bool NimBleTransport::begin() {
         impl_->client->setClientCallbacks(impl_.get(),false);
     }
     return impl_->client!=nullptr;
+}
+void NimBleTransport::setScanServices(const std::vector<std::string>& services) {
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    if(impl_->scanServices==services) return;
+    impl_->scanServices=services;
+    impl_->advertisements.clear();impl_->observedRadios.clear();
 }
 std::vector<Advertisement> NimBleTransport::scan() {
     if(!impl_->scanner || impl_->connected || impl_->connecting || impl_->radioBusy || impl_->scanner->isScanning()) return {};
@@ -191,18 +209,38 @@ std::vector<Advertisement> NimBleTransport::discovered() const {
     return found;
 }
 std::string NimBleTransport::deviceAddress(const DeviceId& id) const {
-    if(!validDeviceId(id)) return {};
-    const NimBLEAddress address(id.substr(0,17),uint8_t(id[18]-'0'));
+    if(!validDeviceId(id) && !validAddress(id)) return {};
+    // Type is irrelevant to formatting identity; a bare address is not a
+    // connectable typed target until an advertisement supplies that metadata.
+    const NimBLEAddress address(id.substr(0,17),0);
     return address.isNull() ? std::string{} : address.toString();
+}
+DeviceId NimBleTransport::deviceIdForAddress(const std::string& address) const {
+    const auto canonical=deviceAddress(address);
+    if(canonical.empty()) return {};
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    const auto observed=impl_->observedRadios.find(canonical);
+    return observed==impl_->observedRadios.end() ? canonical :
+        canonical+"/"+std::to_string(observed->second.address.getType());
 }
 BleConnectionFailure NimBleTransport::connectionFailure() const { return impl_->failure; }
 TransportResult NimBleTransport::connect(const DeviceId& id) {
     impl_->failure={};
     if(!impl_->client) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
-    if(!validDeviceId(id)) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
+    if(!validDeviceId(id) && !validAddress(id)) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
+    NimBLEAddress target;
+    if(validAddress(id)) {
+        bool observed=false;
+        {
+            std::lock_guard<std::mutex> lock(impl_->mutex);
+            const auto found=impl_->observedRadios.find(deviceAddress(id));
+            if(found!=impl_->observedRadios.end()) {target=found->second.address;observed=true;}
+        }
+        if(!observed) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
+    } else target=NimBLEAddress(id.substr(0,17),uint8_t(id[18]-'0'));
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
-    impl_->target=NimBLEAddress(id.substr(0,17),uint8_t(id[18]-'0'));
+    impl_->target=target;
     impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;impl_->timeoutRetryUsed=false;
     // Accepted means queued; onConnection reports completion/failure later.
     return TransportResult::Accepted;
@@ -246,6 +284,14 @@ bool NimBleTransport::discoverService(const std::string& uuid) {
         impl_->fail(BleConnectionStage::Services,error!=previousError ? error : 0);
     }
     return found;
+}
+std::optional<Characteristic> NimBleTransport::discoverCharacteristic(const std::string& service,const std::string& uuid) {
+    if(!impl_->client || !impl_->client->isConnected()) return {};
+    auto* s=impl_->client->getService(service.c_str());
+    auto* c=s ? s->getCharacteristic(uuid.c_str()) : nullptr;
+    if(!c) return {};
+    impl_->characteristics[uuid]=c;
+    return Characteristic{uuid,c->canNotify(),c->canWrite() || c->canWriteNoResponse()};
 }
 std::vector<Characteristic> NimBleTransport::discoverCharacteristics(const std::string& service) {
     std::vector<Characteristic> result;

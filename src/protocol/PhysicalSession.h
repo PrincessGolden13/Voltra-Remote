@@ -14,6 +14,7 @@ class PhysicalSession final : public ControlSession {
 public:
     PhysicalSession(BleTransport&,const std::array<uint8_t,16>& clientIdentity,
                     std::optional<std::array<uint8_t,6>> helloIdentity = {});
+    bool prepareConnection() override;
     void connectionChanged(bool) override;
     void setSelectedAddress(std::string) override;
     bool setReadOnlyProbe(bool) override;
@@ -83,6 +84,7 @@ private:
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
     bool readOnlyProbe_=false; // Connection reset must preserve explicit probe intent.
+    bool helloPrepared_=false,connectionClockPending_=false;
     bool bootstrapWriteJustCompleted_=false;
     std::optional<std::pair<uint16_t,int>> waitingWrite_;
     uint64_t waitingAt_=0;
@@ -145,7 +147,8 @@ private:
     void pollState(size_t);
     bool enterTrainingOnConnect();
     void applyTelemetry(const Frame&);
-    bool send(uint8_t,const Bytes&,uint8_t sender=0xaa,uint8_t receiver=0x10,uint8_t type=0x04);
+    bool sendHello(bool preparing=false);
+    bool send(uint8_t,const Bytes&,uint8_t sender=0xaa,uint8_t receiver=0x10,uint8_t type=0x04,bool preparingHello=false);
     bool read(std::initializer_list<uint16_t>);
     bool writeParameter(uint16_t,int,int);
     void apply(const Frame&);

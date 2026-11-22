@@ -1,6 +1,7 @@
 #pragma once
 #include "BleTypes.h"
 #include <functional>
+#include <optional>
 namespace voltra {
 enum class BleConnectionStage { None, Setup, Teardown, Radio, Services, Characteristics, Subscription, Link, Notifications };
 struct BleConnectionFailure {
@@ -19,6 +20,9 @@ public:
     using Notification = std::function<void(const std::string&, const Bytes&)>;
     using Connection = std::function<void(bool)>;
     virtual ~BleTransport() = default;
+    // Callback-only adapters may use this discovery filter without knowing a
+    // product's UUIDs. Empty retains the adapter's unfiltered scan policy.
+    virtual void setScanServices(const std::vector<std::string>&) {}
     virtual std::vector<Advertisement> scan() = 0;
     // Asynchronous adapters expose only a completed scan window to the app.
     virtual bool scanInProgress() const { return false; }
@@ -26,6 +30,9 @@ public:
     // Optional canonical radio address for matching observed device metadata.
     // Only the adapter interprets its opaque DeviceId format.
     virtual std::string deviceAddress(const DeviceId&) const { return {}; }
+    // Resolve machine-reported identity for navigation. An adapter may retain
+    // an address without a radio type; that alone must not guess a connect type.
+    virtual DeviceId deviceIdForAddress(const std::string&) const { return {}; }
     virtual BleConnectionFailure connectionFailure() const { return {}; }
     // Accepted may mean queued. onConnection(true/false) delivers link outcome;
     // neither acceptance nor a link establishes a VOLTRA protocol session.
@@ -39,6 +46,13 @@ public:
         return false;
     }
     virtual std::vector<Characteristic> discoverCharacteristics(const std::string&) = 0;
+    // Locate a time-sensitive write channel before enumerating unrelated
+    // attributes. Existing adapters retain their enumerate-and-find behavior.
+    virtual std::optional<Characteristic> discoverCharacteristic(const std::string& service,const std::string& uuid) {
+        for(const auto& characteristic:discoverCharacteristics(service))
+            if(characteristic.uuid==uuid) return characteristic;
+        return {};
+    }
     virtual TransportResult subscribe(const std::string&) = 0;
     virtual TransportResult write(const std::string&, const Bytes&) = 0;
     virtual void poll(uint64_t nowMs) = 0;
