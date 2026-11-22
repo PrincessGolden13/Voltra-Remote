@@ -1,5 +1,18 @@
 # Foundation baseline
 
+## November 22 v0.4.14 physical follow-up: primary still times out
+
+- CONFIRMED latest report fc71b3c6, received 19:24:21 UTC on v0.4.14, retains
+  the same first-candidate pre-authentication Radio/code 13 timeout, two attempts,
+  9519 ms radio elapsed. The Wi-Fi ordering correction did not resolve it.
+- Second candidate connects as secondary and reports the first endpoint as its
+  partner. No wrong-MAC/byte-order/connection-flag defect was established.
+  See TWIN_CONNECTION_REPORT_2026_11_22.md for exact evidence and visibility limits.
+- Source comparison supplies a verified connection-before-pairing flow and only
+  best-effort cold reconnection. No additional product change/release is justified
+  as a timeout repair. Fresh official-app access to the same already-paired primary
+  is still needed to distinguish endpoint availability from remote interoperability.
+
 ## November 22 Wi-Fi/Bluetooth handoff v0.4.14
 
 - CONFIRMED report b47444b1 on v0.4.13: first candidate times out before usable

@@ -1,7 +1,71 @@
 # Pre-authentication timeout — report b47444b1
 
+## Follow-up: v0.4.14 report fc71b3c6 still fails
+
+Received 2026-11-22T19:24:21Z, full report ID
+fc71b3c63b65b4d44a02449044b7c58a. Firmware 0.4.14 therefore does not resolve
+the owner's primary connection failure.
+
+- First candidate: 9894 ms elapsed, accepted=0, Radio/stage 3, final code 13,
+  timedOut=1, two attempts and 9519 ms radio elapsed. Requested/actual type 0,
+  typeObserved=0. The retained final primary failure at 187566 ms reports unknown
+  observation age, RSSI and connectability. No VOLTRA authentication was reached.
+- Second candidate: 2361 ms, accepted=1, own-matched fresh A7 marker 1/raw 0x22,
+  interpreted as secondary, with distinct partner and age 8 ms. The preserved
+  first failure means its reported partner matched the first endpoint; otherwise
+  runSelection would have failed with the explicit changed-pair error.
+- Secondary observation age 58570 ms belongs to that second candidate, not the
+  primary. Its first attempt fails 574, then a retry connects.
+
+`typeObserved=0` means the transport found no matching learned entry when it
+launched the attempt. It is not proof the primary never advertised: entries can
+be evicted, and the scanner has a separate visibility limit described below.
+The previous v0.4.13 report did use observed type 0 and still failed with 13,
+so a stale type alone does not explain both reports.
+
+Independent reviews found no wrong-MAC conversion or hardcoded primary route.
+The A7 byte order matches both native references. NimBLE 2.3.6's async connect
+flags are correct and use the same GAP initiation procedure as Steven's blocking
+call. Final code 13 is expiry of that procedure, before GATT/hello/control code.
+Neither the log nor those checks identify the physical cause.
+
+The reference's verified flow connects the primary before pairing and retains
+that connection. Reacquiring an already-paired primary is explicitly best effort.
+No checked implementation supplies a read-only secondary relay or reopen command.
+Official Cortex's `twin connect` is a PAIR alias, not such a recovery command.
+Another timer change or unrelated discovery fix cannot be claimed as a proven
+repair for this timeout. No new product change/release is justified by this review.
+
+The required distinguishing observation remains: with the remote disconnected,
+fully close/reopen Beyond+ and freshly connect specifically to the same primary
+while the existing Twin pair remains unchanged. Successful fresh access would
+narrow investigation to remote interoperability; failure would support a paired
+endpoint availability problem. Merely keeping an app connection from before
+pairing does not answer this question. No load or pair change is needed.
+
+### Separate discovery limitations found, not established timeout causes
+
+Our scanner's `setMaxResults(64)` makes pinned NimBLEScan discard subsequent new
+advertisers before callbacks, whereas both native references use callback-only
+`setMaxResults(0)`. Our own advertisement map also caps arbitrary neighbours before
+the application service filter. These limits can hide a VOLTRA in a crowded scan;
+fixing only the stack cap would leave the second limit. The direct connect procedure
+does its own radio initiation and does not require that result map, so these are
+not proof of the observed host timeout.
+
+The Failed selection phase also returns from the application tick before discovery
+completion/refresh. Retry immediately reuses the saved candidate. This can explain
+old observations while a notice stays open, but not establish why a previously
+observed correct address also failed. Track these as discovery/Retry coverage gaps;
+do not publish them as an overall Twin recovery claim.
+
+No product code edit, physical connection, resistance operation, pairing or reset
+was performed in this follow-up review.
+
+## Original v0.4.13 review
+
 Received 2026-11-22T18:39:27Z, firmware 0.4.13. This is the newest report by receipt
-timestamp, not row order. The owner identifies the first attempted unit as the
+timestamp at the time of that review, not row order. The owner identifies the first attempted unit as the
 primary.
 
 ## Confirmed observations
