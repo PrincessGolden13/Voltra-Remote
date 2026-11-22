@@ -18,6 +18,29 @@ const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
     : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
     if (memory_) recent_ = memory_->load();
+    // Address type belongs to the current radio observation, not the logical
+    // device. Keep the existing saved key and remap old aliases/relationships.
+    const auto normalize=[&](std::vector<DeviceEntry>& entries) {
+        std::vector<DeviceEntry> unique;
+        for(auto d:entries) {
+            d.id=logicalDeviceId(d.id);
+            if(!d.twinPeerId.empty()) d.twinPeerId=logicalDeviceId(d.twinPeerId);
+            if(!d.twinSelectionId.empty()) d.twinSelectionId=logicalDeviceId(d.twinSelectionId);
+            if(d.twinPeerId==d.id || (!d.twinSelectionId.empty() && d.twinSelectionId!=d.id && d.twinSelectionId!=d.twinPeerId)) {
+                d.twinPeerId.clear();d.twinPeer.clear();d.twinSelectionId.clear();
+            }
+            const auto existing=std::find_if(unique.begin(),unique.end(),[&](const auto& entry){return entry.id==d.id;});
+            if(existing==unique.end()) unique.push_back(std::move(d));
+            else {
+                if(existing->name.empty() || (existing->name=="VOLTRA" && !d.name.empty())) existing->name=d.name;
+                if(existing->twinPeerId.empty() && !d.twinPeerId.empty()) {
+                    existing->twinPeerId=d.twinPeerId;existing->twinPeer=d.twinPeer;existing->twinSelectionId=d.twinSelectionId;
+                }
+            }
+        }
+        entries=std::move(unique);
+    };
+    normalize(recent_);normalize(knownDevices_);
     for (auto& d : recent_) {
         d.online=d.twinFresh=d.twinPeerAvailable=false;
         if(d.twinPeerId.empty()) {d.twinPeer.clear();d.twinSelectionId.clear();continue;}
@@ -28,14 +51,28 @@ TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, C
         else {d.twinPeer.clear();d.twinPeerId.clear();d.twinSelectionId.clear();}
     }
 }
+bool TrainingApplication::sameDeviceIdentity(const DeviceId& a,const DeviceId& b) const {
+    if(a==b) return true;
+    const auto address=transport_.deviceAddress(a);
+    return !address.empty() && address==transport_.deviceAddress(b);
+}
+DeviceId TrainingApplication::logicalDeviceId(const DeviceId& id) const {
+    if(id.empty() || transport_.deviceAddress(id).empty()) return id;
+    if(!selected_.empty() && sameDeviceIdentity(id,selected_)) return selected_;
+    for(const auto& d:recent_) if(sameDeviceIdentity(id,d.id)) return d.id;
+    for(const auto& d:knownDevices_) if(sameDeviceIdentity(id,d.id)) return d.id;
+    for(const auto& seen:seenDevices_) if(sameDeviceIdentity(id,seen.first)) return seen.first;
+    return id;
+}
 bool TrainingApplication::remembered(const DeviceId& id) const {
-    return std::any_of(recent_.begin(), recent_.end(), [&](const auto& d) { return d.id == id; });
+    return std::any_of(recent_.begin(), recent_.end(), [&](const auto& d) { return sameDeviceIdentity(d.id,id); });
 }
 DeviceId TrainingApplication::selectionDevice(const DeviceId& id) const {
-    const auto link=twinLinks_.find(id);
-    if(link!=twinLinks_.end() && !link->second.selection.empty()) return link->second.selection;
-    const auto device=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id;});
-    return device!=devices_.end() && !device->twinSelectionId.empty() ? device->twinSelectionId : id;
+    const auto logical=logicalDeviceId(id);
+    const auto link=twinLinks_.find(logical);
+    if(link!=twinLinks_.end() && !link->second.selection.empty()) return logicalDeviceId(link->second.selection);
+    const auto device=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==logical;});
+    return device!=devices_.end() && !device->twinSelectionId.empty() ? logicalDeviceId(device->twinSelectionId) : logical;
 }
 bool TrainingApplication::selectionReady() const {
     if(selectionPhase_!=SelectionPhase::Ready || !connected() || !session_.accepted() ||
@@ -45,23 +82,54 @@ bool TrainingApplication::selectionReady() const {
     // unconditional unload route while ordinary readback is stale. All load/
     // settings operations still enforce their own fresh readiness requirements.
     if(!selectionResolvedTwin_) return !r.twinDetected && !r.twin;
+    // Established Primary identity is a route, not current load permission.
+    // Its backend-held unload route survives mere polling TTL expiry and is
+    // revoked by an actual identity/role/topology contradiction.
+    if(!selectionReadOnlyView_) {
+        if(!r.unloadRouteKnown || selectionResolvedPeer_.empty() || r.twinPeerId!=selectionResolvedPeer_) return false;
+        const bool topologyCurrent=r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000;
+        if(topologyCurrent && r.twinLinkState==0) return false;
+        const bool roleCurrent=r.twinRoleAtMs!=0 && now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+        return !roleCurrent || r.currentTwinRole==CurrentTwinRole::Master;
+    }
+    return twinPermissionFresh();
+}
+bool TrainingApplication::twinPermissionFresh() const {
+    if(!selectionResolvedTwin_) return true;
+    const auto r=report();
     return r.twinDetected && r.twin && r.twinKnown && r.twinStatusFresh && r.twinLinkState==0x12 &&
         !selectionResolvedPeer_.empty() && r.twinPeerId==selectionResolvedPeer_ &&
         r.currentTwinRole==CurrentTwinRole::Master && r.twinRoleAtMs!=0 &&
         now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
 }
+void TrainingApplication::cancelControlIntents() {
+    const bool unloading=session_.unloading();
+    session_.cancelTraining();
+    if(!unloading) pending_=false;
+    requestedLoad_=autoLoadRequested_=false;
+    settingsIntent_.reset();weightIntent_.reset();presetIntent_.reset();dropRestore_.reset();dropStart_.reset();
+    if(const auto d=dropSettings_.find(selected_);d!=dropSettings_.end()) d->second.enabled=false;
+    resetDrops();dropsCancelled_=true;
+}
 bool TrainingApplication::retainSelectionControl(bool requireControl) {
     if(selectionReady()) {
-        if(requireControl && selectionReadOnlyView_) {
-            message_="Use VOLTRA controls";recordControlFailure(message_);return false;
+        const bool controlsFresh=!selectionReadOnlyView_ && (!selectionResolvedTwin_ ||
+            (twinPermissionFresh() && fresh() && readbackFresh()));
+        if(!controlsFresh) {
+            cancelControlIntents();
+            if(requireControl) {
+                waitingForControlFreshness_=!selectionReadOnlyView_;
+                message_=selectionReadOnlyView_ ? "Use VOLTRA controls" : "Waiting for VOLTRA";
+                recordControlFailure(message_);return false;
+            }
+        } else if(waitingForControlFreshness_) {
+            if(message_=="Waiting for VOLTRA") message_.clear();
+            waitingForControlFreshness_=false;
         }
         return true;
     }
     session_.setReadOnlyProbe(true);
-    session_.cancelTraining();
-    pending_=requestedLoad_=autoLoadRequested_=false;
-    settingsIntent_.reset();weightIntent_.reset();presetIntent_.reset();dropRestore_.reset();dropStart_.reset();
-    resetDrops();
+    cancelControlIntents();
     if(selectionPhase_==SelectionPhase::Ready) failSelection("VOLTRA connection changed; reconnect");
     return false;
 }
@@ -75,15 +143,21 @@ bool TrainingApplication::retrySelection() {
 }
 TrainingReport TrainingApplication::report() const {
     auto r=session_.trainingReport();
+    if(!r.twinPeerId.empty()) r.twinPeerId=logicalDeviceId(r.twinPeerId);
     if(!r.twinPeerAddress.empty()) {
         const auto resolve=[&](const DeviceEntry& d) {
-            if(d.id==selected_ || transport_.deviceAddress(d.id)!=r.twinPeerAddress) return false;
-            r.twinPeerId=d.id;r.twinPeerName=d.name;return true;
+            if(sameDeviceIdentity(d.id,selected_) || transport_.deviceAddress(d.id)!=r.twinPeerAddress) return false;
+            r.twinPeerId=logicalDeviceId(d.id);r.twinPeerName=d.name;
+            if(r.twinPeerName.empty() || r.twinPeerName=="VOLTRA") {
+                const auto seen=seenDevices_.find(r.twinPeerId);
+                if(seen!=seenDevices_.end() && !seen->second.device.name.empty()) r.twinPeerName=seen->second.device.name;
+            }
+            return true;
         };
         bool found=false;
-        for(const auto& entry:seenDevices_) if(resolve(entry.second.device)) {found=true;break;}
-        if(!found) for(const auto& d:recent_) if(resolve(d)) {found=true;break;}
+        for(const auto& d:recent_) if(resolve(d)) {found=true;break;}
         if(!found) for(const auto& d:knownDevices_) if(resolve(d)) {found=true;break;}
+        if(!found) for(const auto& entry:seenDevices_) if(resolve(entry.second.device)) {found=true;break;}
         // A paired peer can stop advertising. Retain its previously resolved
         // display identity only when the current machine address still matches;
         // this name cache does not renew topology or control freshness.
@@ -241,7 +315,8 @@ TrainingApplication::DisplayCounters TrainingApplication::displayCounters() cons
         resting ? std::optional<int>(set) : dropProgress_.completedSets>0 ? std::optional<int>(dropProgress_.completedSets) : std::nullopt,
         resting ? std::optional<int>(dropProgress_.reps) : dropProgress_.completedSets>0 ? std::optional<int>(dropProgress_.lastReps) : std::nullopt};
 }
-bool TrainingApplication::forget(const DeviceId& id) {
+bool TrainingApplication::forget(const DeviceId& requested) {
+    const auto id=logicalDeviceId(requested);
     automaticSelection_ = false;
     std::vector<DeviceId> forgotten{id};
     const auto link=twinLinks_.find(id);
@@ -298,19 +373,35 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
     }
     for (const auto& a : found) {
         if (std::find(a.services.begin(), a.services.end(), VoltraGattProfile::service) == a.services.end()) continue;
-        if(seenDevices_.size()>=maximumDiscoveredDevices && !seenDevices_.count(a.id)) continue;
-        auto& seen=seenDevices_[a.id];seen.device.id=a.id;seen.device.online=true;seen.at=now_;
-        if(!a.name.empty()) seen.device.name=a.name;
+        const auto id=logicalDeviceId(a.id);
+        if(seenDevices_.size()>=maximumDiscoveredDevices && !seenDevices_.count(id)) continue;
+        auto& seen=seenDevices_[id];seen.device.id=id;seen.device.online=true;seen.at=now_;
+        if(seen.device.name.empty() || seen.device.name=="VOLTRA") {
+            const auto saved=std::find_if(recent_.begin(),recent_.end(),[&](const auto& d){return d.id==id;});
+            const auto known=std::find_if(knownDevices_.begin(),knownDevices_.end(),[&](const auto& d){return d.id==id;});
+            if(saved!=recent_.end() && !saved->name.empty() && saved->name!="VOLTRA") seen.device.name=saved->name;
+            else if(known!=knownDevices_.end() && !known->name.empty() && known->name!="VOLTRA") seen.device.name=known->name;
+            else if(!a.name.empty()) seen.device.name=a.name;
+            else if(saved!=recent_.end()) seen.device.name=saved->name;
+            else if(known!=knownDevices_.end()) seen.device.name=known->name;
+        }
         if(seen.device.name.empty()) seen.device.name="VOLTRA";
     }
     devices_ = knownDevices_;
-    for(const auto& d : recent_) if(std::none_of(devices_.begin(),devices_.end(),[&](const auto& known){return known.id == d.id;})) devices_.push_back(d);
+    for(const auto& d:recent_) {
+        const auto known=std::find_if(devices_.begin(),devices_.end(),[&](const auto& entry){return entry.id==d.id;});
+        if(known==devices_.end()) devices_.push_back(d);
+        else {
+            if(!d.name.empty() && (d.name!="VOLTRA" || known->name.empty())) known->name=d.name;
+            if(!d.twinPeerId.empty()) {known->twinPeer=d.twinPeer;known->twinPeerId=d.twinPeerId;known->twinSelectionId=d.twinSelectionId;}
+        }
+    }
     for (auto& d : devices_) d.online = false;
     for (const auto& pair : seenDevices_) {
         const auto& a=pair.second.device;
         auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == a.id; });
         if (it == devices_.end()) devices_.push_back({a.id, a.name.empty() ? "VOLTRA" : a.name, true, {}});
-        else { if(!a.name.empty()) it->name = a.name; it->online = true; }
+        else { if(it->name.empty() || it->name=="VOLTRA") it->name = a.name; it->online = true; }
     }
     refreshTwinDevices();
 }
@@ -322,7 +413,7 @@ bool TrainingApplication::select(const DeviceId& id) {
     leave();
     selectionPhase_=SelectionPhase::Resolving;selectionStartedAt_=now_;
     selectionFirstEndpoint_=endpoint;
-    retrySelectionCandidate_=id;
+    retrySelectionCandidate_=logicalDeviceId(id);
     selectionTrace_.clear();selectionFirstFailure_.clear();
     const auto link=twinLinks_.find(endpoint);
     if(link!=twinLinks_.end()) selectionPeerCandidate_=link->second.peer;
@@ -355,7 +446,8 @@ void TrainingApplication::traceSelectionEndpoint() {
         detail="accepted=0 readOnlyProbe="+std::to_string(session_.readOnlyProbe())+
             " transportStage="+std::to_string(static_cast<int>(failure.stage))+" code="+std::to_string(failure.reason)+
             " timedOut="+std::to_string(failure.timedOut)+" attempts="+std::to_string(failure.attempts)+
-            " radioElapsedMs="+std::to_string(failure.elapsedMs);
+            " radioElapsedMs="+std::to_string(failure.elapsedMs)+" logicalType="+std::to_string(failure.logicalAddressType)+
+            " radioType="+std::to_string(failure.radioAddressType)+" typeObserved="+std::to_string(failure.observedRadioType);
     } else detail=session_.diagnosticState().substr(0,700);
     const auto snapshot="candidate"+std::to_string(selectionProbed_.size())+" elapsedMs="+std::to_string(elapsed)+
         "={"+detail+"}";
@@ -490,6 +582,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
     selectionFirstPeerObserved_=selectionResolvedTwin_=false;
     selectionReadOnlyView_=false;
+    waitingForControlFreshness_=false;
     scanned_ = scanPending_ = false;
     connectingDevice_.reset();
     presetIntent_.reset(); observedLoaded_ = false;
@@ -507,17 +600,23 @@ bool TrainingApplication::fresh() const {
 }
 bool TrainingApplication::settingsAllowed() const {
     const auto r = report();
-    return selectionReady() && !selectionReadOnlyView_ && fresh() && r.twinKnown && session_.readiness().validated &&
+    return selectionReady() && !selectionReadOnlyView_ && twinPermissionFresh() && fresh() && readbackFresh() &&
+        r.twinKnown && session_.readiness().validated &&
         r.minWeight > 0 && weightTicksDown(r,r.maxWeight) >= weightTicksUp(r,r.minWeight) && !r.autoLoadArmed && !requestedLoad_;
 }
 void TrainingApplication::sent(TransportResult result) {
+    waitingForControlFreshness_=false; // New request feedback owns the message now.
     if (result != TransportResult::Accepted) { message_ = session_.status().empty() ? "Request not accepted" : session_.status(); return; }
     pending_ = true; sentAt_ = now_; sentRevision_ = report().revision;
     message_.clear(); // Brief requests do not flash a warning on every input.
 }
-bool TrainingApplication::sendSettings(TrainingSettings s) {
+bool TrainingApplication::sendSettings(TrainingSettings s,bool explicitBaseEdit) {
     if(!retainSelectionControl()) return false;
     const auto r = report();
+    if(r.loaded && !r.liveWeightSupported && (!explicitBaseEdit || !r.manualLiveWeightSupported ||
+       s.magicMode!=r.settings.magicMode || !sameModifier(s.magic,r.settings.magic) || !sameModifier(s.eccentric,r.settings.eccentric))) {
+        message_="Unload to adjust";return false;
+    }
     if (!settingsAllowed() || !modifierUnitsAllowed(r,s) || s.weight < r.minWeight || !weightOnIncrement(r,s.weight) || s.magic.value < 0 || s.eccentric.value < 0 ||
         (s.magic.enabled && s.magic.value == 0) || (s.eccentric.enabled && s.eccentric.value == 0) ||
         (s.magic.enabled && !s.magic.percent && !weightOnIncrement(r,s.magic.value)) ||
@@ -539,13 +638,14 @@ void TrainingApplication::adjustWeight(int delta) {
         recordControlFailure(message_);return;
     }
     auto r = report();
-    if (r.loaded && !r.liveWeightSupported) { message_ = "Unload to adjust"; return; }
+    if (r.loaded && !r.liveWeightSupported && !r.manualLiveWeightSupported) { message_ = "Unload to adjust"; return; }
     dropStart_.reset(); // A subsequent manual base choice supersedes restoration.
     if(running_ || dropTarget_ || dropsExhausted_) stopDrops("Drops stopped for manual adjustment");
-    auto s = settingsIntent_.value_or(r.settings);
+    const bool loadedBaseOnly=r.loaded && !r.liveWeightSupported && r.manualLiveWeightSupported;
+    auto s = loadedBaseOnly ? r.settings : settingsIntent_.value_or(r.settings);
     const int minimum=weightTicksUp(r,r.minWeight),ceiling=weightTicksDown(r,r.loaded ? baseMaximum(r) : r.maxWeight);
     if(ceiling<minimum) {message_="Outside device limits";return;}
-    const int requested=weightIntent_.value_or(s.weight)+delta;
+    const int requested=(weightIntent_ && weightIntentUnit_==r.unit ? *weightIntent_ : s.weight)+delta;
     const int aligned=delta>0 ? weightTicksUp(r,requested) : delta<0 ? weightTicksDown(r,requested) : weightTicksNearest(r,requested);
     s.weight = std::clamp(aligned, minimum, ceiling);
     // The original brief specifies reducing modifiers before capping the base.
@@ -560,7 +660,7 @@ void TrainingApplication::adjustWeight(int delta) {
     }
     if (!pending_ && s.weight == r.settings.weight && sameModifier(s.magic,r.settings.magic) &&
         sameModifier(s.eccentric,r.settings.eccentric)) return;
-    if (sendSettings(s)) {weightIntent_ = s.weight;weightIntentUnit_=r.unit;}
+    if (sendSettings(s,true)) {weightIntent_ = s.weight;weightIntentUnit_=r.unit;}
 }
 void TrainingApplication::recordControlFailure(const std::string& reason) {
     // RAM-only boot-local snapshot survives leaving Devices for Settings. The
@@ -573,12 +673,13 @@ void TrainingApplication::recordLoadRefusal() {
     recordControlFailure(loadRefusalMessage_);
 }
 void TrainingApplication::toggleWeight() {
-    if(!retainSelectionControl()) return;
+    if(!retainSelectionControl(false)) return;
     diagnostic("Explicit weight action");
     auto r = report();
-    if (!fresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
+    if (!fresh() || !twinPermissionFresh() || r.loaded || r.autoLoadArmed || requestedLoad_) {
         unload(); return;
     }
+    if(!retainSelectionControl()) return;
     if(session_.unloading()) {
         // A second tap during the device's reset is not a new load intent.
         // Keep the pending feedback, without opening a failure dialog or replay.
@@ -596,7 +697,10 @@ void TrainingApplication::toggleWeight() {
     if(result!=TransportResult::Accepted) recordLoadRefusal();
 }
 void TrainingApplication::unload() {
-    if(!retainSelectionControl()) return;
+    if(!retainSelectionControl(false)) return;
+    if(selectionReadOnlyView_ || (selectionResolvedTwin_ && !report().unloadRouteKnown)) {
+        message_="Use VOLTRA to unload";recordControlFailure(message_);return;
+    }
     diagnostic("Unload requested");
     // Always a cancel/unload, even before a pending load is reported. Never
     // route an editor's unload target through a toggle that could load instead.
@@ -684,6 +788,11 @@ bool TrainingApplication::applyPreset(const Preset& saved) {
        (restPauseHoldMaximum(r)<1 || p.drops.holdSeconds>restPauseHoldMaximum(r))) {
         presetError_=restPauseLimitError;message_=presetError_;return false;
     }
+    if(r.twin && !r.liveWeightSupported && !p.drops.enabled) {
+        // An OFF recipe carries no supported Twin drop configuration. Keep the
+        // local OFF recipe rather than staging an unsupported dormant edit.
+        p.drops=drops();p.drops.enabled=false;
+    }
     // A preset replaces all modifiers as one request, using the same per-device
     // unit/increment conversion shown in its preview. The stored recipe stays
     // unchanged; normal limits still apply. Lower only base for headroom.
@@ -737,6 +846,14 @@ std::optional<int> TrainingApplication::restPauseRemainingPermille() const {
 bool TrainingApplication::applyDrops(DropSettings d) {
     if(!retainSelectionControl()) return false;
     if (!fresh() || selected_.empty()) { message_ = "Device state unavailable"; return false; }
+    const auto current=report();
+    if(current.twin && !current.liveWeightSupported) {
+        const auto previous=drops();
+        if(d.enabled || d.mode!=previous.mode || d.step!=previous.step || d.drops!=previous.drops ||
+           d.percent!=previous.percent || d.holdSeconds!=previous.holdSeconds) {
+            message_="Drops unavailable for this VOLTRA";return false;
+        }
+    }
     if(d.enabled && (!report().liveWeightSupported || report().minWeight<1 || report().autoLoadArmed || pending())) {
         message_="Wait for weight controls before arming drops";return false;
     }
@@ -945,7 +1062,8 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
 }
 void TrainingApplication::tick(uint64_t now) {
     now_ = now;
-    // Revoke a resolved Twin route before polling can dispatch a queued intent.
+    // Cancel stale permissions before polling can dispatch a queued intent;
+    // retain an established unload route while polling renews its live state.
     if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl(false)) return;
     controller_.tick(now);
     refreshTwinDevices();
@@ -978,7 +1096,7 @@ void TrainingApplication::tick(uint64_t now) {
     observeTwin(r);refreshTwinDevices();
     // A physical pair may be identified for presentation while commands remain
     // quarantined. No automatic recipe/restore executor runs in that view.
-    if(selectionReadOnlyView_) return;
+    if(selectionReadOnlyView_ || (selectionResolvedTwin_ && (!twinPermissionFresh() || !fresh() || !readbackFresh()))) return;
     if(!fresh()) restSince_.reset();
     else {
         const bool wasDropActive=dropProgress_.active;

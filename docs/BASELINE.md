@@ -1,5 +1,21 @@
 # Foundation baseline
 
+## November 21–22 native Twin comparison v0.4.13
+
+- Compared current native repos, their histories/captures and official Cortex.
+  Found definite stale radio-type routing and TTL-triggered primary disconnect
+  defects, plus blanket standalone-only control gates and incorrect paired wire
+  setting/motor semantics. See TWIN_COMPARISON_2026_11_21.md for pinned evidence.
+- Implement a fresh primary A7 control profile with per-unit setting commands,
+  current reported envelope, native display conversion, exact paired load/unload/
+  Auto states, stale-data unload retention and strict paired motion/count decoding.
+  Secondary/unknown routes and unknown motor load remain blocked. No independent
+  secondary safety query, arbitrary mask, duplicate command or fixed max is invented.
+- Source-backed manual loaded base edits have a separate both-channel stationary
+  capability and no motor reassertion. Paired Live target, loaded modifier edits
+  and automatic drops remain unsupported. Physical compatibility is unverified;
+  no motor operation. Validation/publication receipts follow.
+
 ## November 21 connection timeout v0.4.12
 
 - CONFIRMED report58926a2a is installed v0.4.11: first endpoint connection times out

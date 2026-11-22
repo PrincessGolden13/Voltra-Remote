@@ -1,3 +1,15 @@
+> November 21–22 v0.4.13 supersedes the physical Twin read-only policy below:
+> fresh own-matched primary A7 supports the coordinated pair profile. Send settings
+> once in per-unit wire values with combined display/steps/reported limits. Use exact
+> paired motor commands and Auto status; secondary/unknown routes cannot load.
+> Separate retained connection/unload route from fresh edit/load readiness: TTL alone
+> must not disconnect the primary or replay intent. Canonical discovery refreshes
+> current radio type without changing saved logical identity. See
+> TWIN_COMPARISON_2026_11_21.md. Manual loaded base edits require fresh stationary
+> readings from both cables and unchanged accessories, with their own capability.
+> Paired target resistance, loaded modifier edits and automatic drops remain
+> unsupported; no force/base/percentage fallback or load reassertion is introduced.
+>
 > November 21 v0.4.12: retry host connection timeout once within the previous radio
 > budget, using shorter attempts and real terminal evidence. Keep application
 > discovery to two endpoints. If a fresh follower points to the failed first

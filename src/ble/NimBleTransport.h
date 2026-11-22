@@ -20,6 +20,7 @@ public:
     TransportResult connect(const DeviceId&) override;
     void disconnect() override;
     std::vector<std::string> discoverServices() override;
+    bool discoverService(const std::string&) override;
     std::vector<Characteristic> discoverCharacteristics(const std::string&) override;
     TransportResult subscribe(const std::string&) override;
     TransportResult write(const std::string&, const Bytes&) override;

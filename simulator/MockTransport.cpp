@@ -16,11 +16,12 @@ MockTransport::MockTransport() {
         r.eccentricSupported = r.autoLoadSupported = r.liveWeightSupported = true;
         r.liveModifierAmountsSupported = true;
         r.twinKnown = true; r.twin = i == 1 || i == 2;
+        if(r.twin) r.liveWeightSupported=r.liveModifierAmountsSupported=false;
         r.twinDetected=r.twin;r.twinStatusFresh=true;r.combinedWeightKnown=r.twin;
         r.twinLinkState=r.twin ? 0x12 : 0x00;
         // Explicit synthetic combined floor, not a physical Twin inference.
         r.minWeight = r.twin ? 10 : voltraISingleMinimum(r.unit);
-        r.weightIncrement=r.twin && r.unit==WeightUnit::Pounds ? 2 : 1;
+        r.weightIncrement=r.twin ? 2 : 1;
         r.twinPeerName = i == 1 ? names[2] : i == 2 ? names[1] : "";
         if(r.twin) {
             r.twinPeerId=std::string(deviceId)+'-'+std::to_string(i==1 ? 2 : 1);
@@ -59,7 +60,7 @@ void MockTransport::previewUnit(WeightUnit unit) {
         if (!m->percent) m->value = convertWeightUnits(m->value, r.unit, unit);
     r.unit = unit; r.maxWeight = resolveWeightLimit(device.limits, unit).ticks;
     r.minWeight = r.twin ? (unit==WeightUnit::Pounds ? 10 : 8) : voltraISingleMinimum(unit);
-    r.weightIncrement=r.twin && unit==WeightUnit::Pounds ? 2 : 1;
+    r.weightIncrement=r.twin ? 2 : 1;
     r.settings.weight=weightTicksNearest(r,r.settings.weight);
     for(auto* m:{&r.settings.magic,&r.settings.eccentric})
         if(!m->percent) m->value=weightTicksNearest(r,m->value);
@@ -103,14 +104,14 @@ TransportResult MockTransport::connect(const DeviceId& id) {
     active_ = size_t(it-devices_.begin()); connected_ = true; sent_ = subscribed_ = false;
     restSince_ = 0;
     liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
-    reported_ = {}; pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
+    reported_ = {};retainedPrimaryPeer_.clear(); pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
     if (connection_) connection_(true);
     return TransportResult::Accepted;
 }
 void MockTransport::disconnect() {
     connected_ = subscribed_ = sent_ = false;
     pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
-    reported_ = {}; heldSince_ = 0;
+    reported_ = {};retainedPrimaryPeer_.clear(); heldSince_ = 0;
     liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
     if (connection_) connection_(false);
 }
@@ -141,6 +142,7 @@ void MockTransport::setProfile(SimulatorProfile profile) {
     r.force.reset(); r.setNumber.reset(); r.completedSets.reset(); r.lastSetReps.reset(); r.restSeconds.reset();
 }
 bool MockTransport::setReadOnlyProbe(bool enabled) {
+    if(enabled) retainedPrimaryPeer_.clear();
     if(enabled==readOnlyProbe_) return true;
     if(!enabled && connected_) {
         const auto& r=reported_;
@@ -150,10 +152,43 @@ bool MockTransport::setReadOnlyProbe(bool enabled) {
         const bool topologyFresh=r.twinStatusFresh && nowMs_>=r.twinAtMs && nowMs_-r.twinAtMs<=2000;
         if(!freshReport || !r.twinKnown || !currentTwinControlReady() ||
            (r.twin && (!topologyFresh || !roleFresh))) return false;
+        retainedPrimaryPeer_=r.twin ? r.twinPeerId : DeviceId{};
     }
     pendingWeight_.reset();pendingSettings_.reset();pendingLoaded_.reset();pendingAuto_=false;
     readOnlyProbe_=enabled;
     return true;
+}
+bool MockTransport::primaryRouteKnown() const {
+    if(!connected_ || readOnlyProbe_ || retainedPrimaryPeer_.empty()) return false;
+    const auto& device=devices_[active_];const auto& state=device.state;
+    if(!state.twin || device.role!=CurrentTwinRole::Master || state.twinPeerId!=retainedPrimaryPeer_) return false;
+    const auto peer=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==retainedPrimaryPeer_;});
+    return peer!=devices_.end() && peer->state.twin && peer->role==CurrentTwinRole::Follower && peer->state.twinPeerId==device.id;
+}
+TrainingReport MockTransport::trainingReport() const {
+    auto r=reported_;
+    r.unloadRouteKnown=primaryRouteKnown();
+    if(r.unloadRouteKnown && r.twinPeerId.empty()) r.twinPeerId=retainedPrimaryPeer_;
+    if(r.twin) {
+        r.liveWeightSupported=r.liveModifierAmountsSupported=false;
+        r.held=false; // No Twin hold inference from the synthetic motion stream.
+        r.liveTargetTenthsLb.reset();r.liveTargetAtMs=0;
+        // Explicit synthetic two-channel fixture only. This cannot establish
+        // physical compatibility: production uses fresh captured B4 channels.
+        const auto stationary=[&](const TrainingReport& state){
+            return state.loaded && !state.autoLoadArmed && !state.moving && !state.held && state.motionRevision &&
+                state.motionAtMs && nowMs_>=state.motionAtMs && nowMs_-state.motionAtMs<=500;
+        };
+        const auto& state=devices_[active_].state;
+        const auto peer=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==state.twinPeerId;});
+        r.manualLiveWeightSupported=r.unloadRouteKnown && currentTwinControlReady() &&
+            peer!=devices_.end() && stationary(state) && stationary(peer->state);
+    }
+    if(r.twin && (nowMs_<r.twinAtMs || nowMs_-r.twinAtMs>2000)) {
+        r.twinStatusFresh=r.combinedWeightKnown=r.readbackKnown=false;
+        r.currentTwinRole=CurrentTwinRole::Unknown;r.twinRoleAtMs=0;
+    }
+    return r;
 }
 bool MockTransport::currentTwinControlReady() const {
     const auto& device=devices_[active_];const auto& state=device.state;
@@ -174,7 +209,10 @@ bool MockTransport::retainControlRoute() {
     if(currentTwinControlReady()) return true;
     // The backend rechecks before every commit. An application's earlier
     // snapshot cannot authorize a write after this poll observes a role loss.
-    pendingWeight_.reset();pendingSettings_.reset();pendingLoaded_.reset();pendingAuto_=false;
+    pendingWeight_.reset();pendingSettings_.reset();pendingAuto_=false;
+    if(pendingLoaded_.value_or(false)) pendingLoaded_.reset();
+    if(primaryRouteKnown()) return false; // TTL blocks commands, retaining unload/GATT.
+    pendingLoaded_.reset();retainedPrimaryPeer_.clear();
     readOnlyProbe_=true;
     return false;
 }
@@ -184,6 +222,9 @@ void MockTransport::poll(uint64_t now) {
     if (!devices_[active_].online) { disconnect(); return; }
     auto& state = devices_[active_].state;
     if(!readOnlyProbe_) retainControlRoute();
+    if(state.twin && state.loaded && pendingSettings_ && !trainingReport().manualLiveWeightSupported) {
+        pendingSettings_.reset();pendingWeight_.reset();sent_=false;
+    }
     if (!readOnlyProbe_ && now >= dueMs_ && profile_ != SimulatorProfile::Stale) {
         if (pendingSettings_) { state.settings = *pendingSettings_; pendingSettings_.reset(); sent_ = false; }
         if (pendingLoaded_) {
@@ -208,7 +249,7 @@ void MockTransport::poll(uint64_t now) {
             state.autoLoadCountdownAtMs=now;
             if (now-heldSince_ >= 3000) {
                 state.loaded = true; state.autoLoadArmed = false; sent_ = false;
-                state.autoLoadPhase=14;state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
+                state.autoLoadPhase=state.twin ? 15 : 14;state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
                 state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;
                 state.restSeconds.reset(); restSince_ = 0;
@@ -240,8 +281,8 @@ void MockTransport::poll(uint64_t now) {
     }
     // Synthetic target report follows the explicitly injected preview (or the
     // mock's configured target). The physical backend never computes this field.
-    state.liveTargetTenthsLb=state.liveWeightLbs ? std::optional<int>(*state.liveWeightLbs*10) : std::optional<int>{};
-    state.liveTargetAtMs=state.liveWeightAtMs;
+    state.liveTargetTenthsLb=!state.twin && state.liveWeightLbs ? std::optional<int>(*state.liveWeightLbs*10) : std::optional<int>{};
+    state.liveTargetAtMs=state.twin ? 0 : state.liveWeightAtMs;
     // Already-paired synthetic endpoints share a workout through one selected
     // session. This is not a second BLE connection or a duplicate command.
     if(!readOnlyProbe_ && (active_ == 1 || active_ == 2)) {
@@ -280,6 +321,10 @@ bool MockTransport::consumeIgnored() { const bool ignored = ignoreNext_; ignoreN
 TransportResult MockTransport::setTraining(const TrainingSettings& s) {
     if(!retainControlRoute()) return TransportResult::Unsupported;
     const auto r = trainingReport();
+    if(r.loaded && !r.liveWeightSupported && (!r.manualLiveWeightSupported || s.magicMode!=r.settings.magicMode ||
+       s.magic.enabled!=r.settings.magic.enabled || s.magic.value!=r.settings.magic.value || s.magic.percent!=r.settings.magic.percent ||
+       s.eccentric.enabled!=r.settings.eccentric.enabled || s.eccentric.value!=r.settings.eccentric.value ||
+       s.eccentric.percent!=r.settings.eccentric.percent)) return TransportResult::Unsupported;
     if(r.loaded && (s.magicMode!=r.settings.magicMode || s.magic.percent!=r.settings.magic.percent || s.eccentric.percent!=r.settings.eccentric.percent))
         return TransportResult::Unsupported;
     if (!readiness().validated || !modifierUnitsAllowed(r,s) || !r.twinKnown || pendingLoaded_ || pendingAuto_ || r.autoLoadArmed ||
@@ -303,11 +348,11 @@ TransportResult MockTransport::setWeight(uint16_t pounds) {
 TransportResult MockTransport::setLiveWeight(int ticks) {
     if(!retainControlRoute()) return TransportResult::Unsupported;
     const auto r=trainingReport();
-    if(!r.loaded || pendingSettings_ || pendingLoaded_ || pendingAuto_) return TransportResult::Unsupported;
+    if(!r.loaded || !r.liveWeightSupported || pendingSettings_ || pendingLoaded_ || pendingAuto_) return TransportResult::Unsupported;
     auto s=r.settings;s.weight=ticks;return setTraining(s);
 }
 TransportResult MockTransport::setLoaded(bool loaded) {
-    if(!retainControlRoute()) return TransportResult::Unsupported;
+    if(loaded ? !retainControlRoute() : (readOnlyProbe_ || (!currentTwinControlReady() && !primaryRouteKnown()))) return TransportResult::Unsupported;
     if (!connected_) return TransportResult::Disconnected;
     const auto r = readiness();
     if (loaded && (!r.ready || !r.cableZero || !r.twinSafe || pendingSettings_ || pendingLoaded_ ||

@@ -25,7 +25,8 @@ public:
     SessionReadiness readiness() const override;
     TransportResult setWeight(uint16_t pounds) override;
     TransportResult setLoaded(bool loaded) override;
-    TrainingReport trainingReport() const override { return reported_; }
+    TrainingReport trainingReport() const override;
+    bool unloading() const override { return pendingLoaded_.has_value() && !*pendingLoaded_; }
     TransportResult setTraining(const TrainingSettings&) override;
     TransportResult setLiveWeight(int ticks) override;
     void cancelTraining() override { pendingSettings_.reset();pendingWeight_.reset(); }
@@ -59,6 +60,7 @@ private:
     uint64_t restSince_ = 0;
     bool consumeIgnored();
     bool currentTwinControlReady() const;
+    bool primaryRouteKnown() const;
     bool retainControlRoute();
     MockVoltra device_;
     Notification notification_;
@@ -66,6 +68,7 @@ private:
     SimulatorProfile profile_ = SimulatorProfile::Unloaded;
     bool connected_ = false, subscribed_ = false, sent_ = false;
     bool readOnlyProbe_=false;
+    DeviceId retainedPrimaryPeer_;
     uint64_t lastMs_ = 0;
     uint64_t nowMs_ = 0, dueMs_ = 0;
     std::optional<uint16_t> pendingWeight_;

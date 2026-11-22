@@ -24,6 +24,9 @@ struct TrainingReport {
     bool readbackKnown=false,loadStateKnown=false;
     uint64_t readbackAtMs=0;
     bool twinDetected=false,twinStatusFresh=false,combinedWeightKnown=false;
+    // Established primary route retained through TTL expiry for explicit unload
+    // only. It never supplies load, settings or current-role permission.
+    bool unloadRouteKnown=false;
     uint64_t twinAtMs=0;
     std::string twinPeerAddress,twinPeerId; // RAM-only identity resolution, never diagnostic output.
     std::optional<int> twinLinkState,twinPeerBattery;
@@ -52,6 +55,9 @@ struct TrainingReport {
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
     bool liveModifierAmountsSupported = false; // Same curve and units; never a load/reassertion.
+    // Explicit base-only dial edits while loaded and idle. Separate from the
+    // automatic drop capability; a paired source must observe both channels.
+    bool manualLiveWeightSupported=false;
     // Device-confirmed hold-still Auto Unload delay. Zero disables that trigger;
     // absent means unavailable. The remote never changes this configuration.
     std::optional<int> autoUnloadHoldSeconds;

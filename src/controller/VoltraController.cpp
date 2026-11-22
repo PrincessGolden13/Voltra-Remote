@@ -65,8 +65,7 @@ bool VoltraController::connect(const DeviceId& id) {
     return linkUp_ ? finishConnection() : true;
 }
 bool VoltraController::finishConnection() {
-    const auto services = transport_.discoverServices();
-    if (std::find(services.begin(), services.end(), VoltraGattProfile::service) == services.end()) {
+    if (!transport_.discoverService(VoltraGattProfile::service)) {
         return failConnection("VOLTRA service unavailable");
     }
     const auto chars = transport_.discoverCharacteristics(VoltraGattProfile::service);

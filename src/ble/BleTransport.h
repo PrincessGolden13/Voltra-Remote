@@ -9,6 +9,8 @@ struct BleConnectionFailure {
     bool timedOut=false;
     unsigned attempts=0;
     uint64_t elapsedMs=0; // Radio budget elapsed at failure, before app handoff.
+    int logicalAddressType=-1, radioAddressType=-1;
+    bool observedRadioType=false; // Actual type learned from this boot's advertisements.
 };
 // One transport session per controller. Callbacks execute on the application loop;
 // future radio adapters must marshal stack callbacks before delivery.
@@ -30,6 +32,12 @@ public:
     virtual TransportResult connect(const DeviceId&) = 0;
     virtual void disconnect() = 0;
     virtual std::vector<std::string> discoverServices() = 0;
+    // UUID-filtered discovery avoids enumerating unrelated services before a
+    // time-sensitive protocol handshake. Adapters may provide a direct query.
+    virtual bool discoverService(const std::string& uuid) {
+        for(const auto& service:discoverServices()) if(service==uuid) return true;
+        return false;
+    }
     virtual std::vector<Characteristic> discoverCharacteristics(const std::string&) = 0;
     virtual TransportResult subscribe(const std::string&) = 0;
     virtual TransportResult write(const std::string&, const Bytes&) = 0;

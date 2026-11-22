@@ -1238,7 +1238,7 @@ void UiController::updateAutoLoadFeedback() {
         const auto wave=now%1600;
         const auto pulse=wave<800 ? wave : 1600-wave;
         style::set_opa(autoLoadArc_,lv_opa_t(96+pulse*159/800),0);
-        std::string prompt="Pull cable and\nhold still";
+        std::string prompt=r.twin && r.autoLoadPhase!=11 ? "Waiting for\nVOLTRA" : "Pull cable and\nhold still";
         if(r.autoLoadPhase==12) {
             prompt="Hold still";
             if(r.autoLoadCountdownMs && now>=r.autoLoadCountdownAtMs && now-r.autoLoadCountdownAtMs<=500) {

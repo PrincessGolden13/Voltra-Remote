@@ -32,7 +32,7 @@ public:
     TransportResult setLoaded(bool) override;
     TransportResult setTraining(const TrainingSettings&) override;
     TransportResult setLiveWeight(int ticks) override;
-    void cancelTraining() override { if(intentUnit_) cancelWrites(""); }
+    void cancelTraining() override { if(intentUnit_ && !unloading()) cancelWrites(""); }
     TransportResult triggerAutoLoad() override;
 private:
     BleTransport& transport_;
@@ -45,6 +45,10 @@ private:
     std::optional<Observed> directMotor_;
     std::optional<DeviceAddress> selectedAddress_;
     std::optional<TwinStatus> twinStatus_;
+    std::optional<DeviceAddress> primaryPeer_;
+    bool primaryRouteRevoked_=false;
+    enum class PairedMotorFamily { Native, Legacy };
+    std::optional<PairedMotorFamily> pairedMotorFamily_;
     uint64_t twinStatusAt_=0,twinTopologyAt_=0,twinPollAt_=0;
     bool twinObserved_=false,twinReplyOwnMatch_=false,twinReplyAccepted_=false,twinReplySeen_=false;
     size_t twinReplyBytes_=0;
@@ -60,6 +64,8 @@ private:
     bool pairedReadSupported_=false,autoUnloadReadSupported_=false;
     bool autoLoadCountdownProbed_=false,autoLoadCountdownSupported_=false;
     uint64_t autoLoadPollAt_=0;
+    uint64_t pairedRefreshAt_=0;
+    bool pairedRefreshPending_=false;
     bool liveWeightProbed_=false;
     // The terse runtime target belongs to one exact standalone loaded context.
     // A settings/core/topology transition cannot reuse an earlier rep's target.
@@ -92,6 +98,9 @@ private:
     uint64_t unitSwitchAt_=0;
     uint64_t motionAt_=0, motionRevision_=0, repAt_=0, repRevision_=0, telemetryLogAt_=0;
     int motionPosition_=0, motionVelocity_=0, motionForce_=0;
+    int peerMotionVelocity_=0;
+    bool pairedMotion_=false;
+    bool pairedMotionUsableForEdit_=false;
     uint8_t motionPhase_=0;
     uint32_t completedRep_=0;
     std::optional<int> repSet_;
@@ -112,6 +121,13 @@ private:
     bool updateAllowsControls() const;
     const char* updateBlockReason() const;
     bool standalone() const;
+    bool primaryTwinFresh() const;
+    bool primaryRouteKnown() const;
+    bool controlObservationsCurrent(bool loading=false) const;
+    std::optional<int64_t> decodeMotorMode(int64_t) const;
+    std::optional<int> encodedWeight(int ticks,bool baseWeight) const;
+    int motorCommand(bool loaded) const;
+    void invalidatePrimaryRoute(const char*);
     bool twinStatusFresh() const;
     CurrentTwinRole currentTwinRole() const;
     const char* readOnlyControlReason() const;
@@ -120,6 +136,7 @@ private:
     bool loadSafetyStatusSupported() const;
     bool controlContextReady() const;
     bool liveWeightReady() const;
+    bool pairedManualWeightReady() const;
     bool liveAccessoriesExpected() const;
     bool modifiersKnown() const;
     uint16_t percentParameter(bool magic) const;
