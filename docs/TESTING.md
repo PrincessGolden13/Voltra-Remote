@@ -5,12 +5,13 @@ PASS independent current-head/source comparison, actual HELLO byte comparison
 against Steven and literal official capture, existing core/packet-inspector build
 and diff whitespace check. The HELLO payload/header/CRC is unchanged.
 PASS actual Native adapter compiled against a synthetic SDK: 16 scenarios /
-125 assertions on cpp SHA11a01dbb6939beb73f7d405c22496834481d73bce3c1e660404705f4ba660ce8.
+126 assertions on cpp SHAcf4b96ef12a4578cfd5cfed502a24eaba4a2c87facabc77f68a229fea87e0357.
 One full snapshot, callback/pointer lifetime, reconnect invalidation, absent/empty
 channels, queued531 during discovery/subscription/write, no recursive callback
 delivery or queue consumption, stale-owner/wrong-peer/cancelled events, overflow
 and live-only failure clearing pass. UUID case/short/base aliases share one
-snapshot/callback lifetime; invalid UUIDs fail without a query. ASan/UBSan pass; LeakSanitizer was disabled
+snapshot/callback lifetime, including first-use SDK-prefixed short UUIDs;
+invalid-length UUIDs fail without a query. ASan/UBSan pass; LeakSanitizer was disabled
 because this environment cannot run it under ptrace. This is the actual adapter
 with mocked SDK behavior, not a real NimBLE host/ATT or physical-radio check.
 Receipt: /workspace/preview-tools/native-gatt-v0416/validation.json.

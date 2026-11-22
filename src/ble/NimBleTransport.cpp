@@ -334,7 +334,8 @@ std::vector<std::string> NimBleTransport::discoverServices() {
 }
 bool NimBleTransport::discoverService(const std::string& uuid) {
     const auto previousError=impl_->client ? impl_->client->getLastError() : 0;
-    const bool found=impl_->client && impl_->client->isConnected() && impl_->client->getService(uuid.c_str());
+    const auto canonical=attributeKey(uuid);
+    const bool found=!canonical.empty() && impl_->client && impl_->client->isConnected() && impl_->client->getService(canonical.c_str());
     if(!found) {
         const auto error=impl_->client ? impl_->client->getLastError() : 0;
         impl_->failGatt(BleConnectionStage::Services,error!=previousError ? error : 0);
@@ -361,7 +362,7 @@ std::vector<Characteristic> NimBleTransport::discoverCharacteristics(const std::
     if(cached!=impl_->characteristicSnapshots.end()) return cached->second;
     std::vector<Characteristic> result;
     const auto previousError=impl_->client->getLastError();
-    const auto* s=impl_->client->getService(service.c_str());
+    const auto* s=impl_->client->getService(canonical.c_str());
     // Drop adapter aliases before the SDK refresh deletes its prior objects.
     // Refresh only once, before returning any channel to a subscriber/writer.
     if(s) for(const auto* previous:s->getCharacteristics(false)) {

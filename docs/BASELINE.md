@@ -13,7 +13,7 @@
   registration and retain independent protocol/state/role authorization. Optional
   telemetry cannot satisfy the response requirement. Preserve real queued errors.
 - Physical recovery and the official app's actual paired route remain unverified.
-- PASS native-adapter/mock-SDK16/125 with ASan/UBSan, actual-controller/session
+- PASS native-adapter/mock-SDK16/126 with ASan/UBSan, actual-controller/session
   20/1301 plus31 existing regressions, and unchanged LVGL72/1566 at three sizes.
   Independent HELLO bytes match Steven and official capture for identical inputs.
 
