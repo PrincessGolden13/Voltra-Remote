@@ -1,5 +1,22 @@
 # Foundation baseline
 
+## November 22 response-channel setup v0.4.16
+
+- Latest1cb1cbf1 confirms v0.4.15 reaches a usable link and HELLO but fails before
+  the first response subscription completes. Its generic text/None stage does not
+  distinguish missing properties from a disconnect during blocking discovery.
+- Rechecked current public heads and connection code across ten implementations,
+  plus official captured CCCD/frame order and exact HELLO bytes. See
+  TWIN_GATT_REVIEW_2026_11_22.md for pinned sources and evidence limits.
+- Correct repeated characteristic scans with one cached snapshot; subscribe a
+  supported response path before HELLO, require successful55ca/a010 response
+  registration and retain independent protocol/state/role authorization. Optional
+  telemetry cannot satisfy the response requirement. Preserve real queued errors.
+- Physical recovery and the official app's actual paired route remain unverified.
+- PASS native-adapter/mock-SDK16/125 with ASan/UBSan, actual-controller/session
+  20/1301 plus31 existing regressions, and unchanged LVGL72/1566 at three sizes.
+  Independent HELLO bytes match Steven and official capture for identical inputs.
+
 ## November 22 device-screen Twin refresh v0.4.15
 
 - Owner reports Beyond+ sees Red alone, discovers Black's existing relationship

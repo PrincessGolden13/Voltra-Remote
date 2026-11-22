@@ -138,7 +138,6 @@ bool PhysicalSession::prepareConnection() {
     if(helloPrepared_) return true; // Repeated preparation never repeats hello.
     if(connected_ || accepted_ || bootstrap_!=0) return false;
     helloPrepared_=sendHello(true);
-    if(helloPrepared_) diagnostic("VOLTRA hello prepared before subscriptions");
     return helloPrepared_;
 }
 void PhysicalSession::connectionChanged(bool connected) {
@@ -171,7 +170,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     peerMotionVelocity_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
     workoutStatus_.reset();telemetryHeaders_=telemetrySetup_=0;
     telemetryTypes_={};rawTelemetryHeaders_=0;
-    // Preparation can precede blocking descriptor operations. Start its pacing
+    // Preparation can precede blocking optional-stream setup. Start its pacing
     // on the next fresh loop, never from the discovery loop's old timestamp.
     bootstrapWriteJustCompleted_=prepared;
     if(connected) {connectionFailure_=false;status_="Opening VOLTRA session...";}
@@ -357,7 +356,7 @@ bool PhysicalSession::sendHello(bool preparing) {
     return send(0x4f,hello,1,0x10,0x04,preparing);
 }
 bool PhysicalSession::send(uint8_t command,const Bytes& payload,uint8_t sender,uint8_t receiver,uint8_t type,bool preparingHello) {
-    // Before notification setup, permit only the first session hello. Normal
+    // Before connection completion, permit only the first session hello. Normal
     // readiness and every command path still require the complete connection.
     if(!connected_ && !(preparingHello && command==0x4f && bootstrap_==0 && !accepted_ && !helloPrepared_)) return false;
     if(readOnlyProbe_) {

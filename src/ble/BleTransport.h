@@ -34,6 +34,10 @@ public:
     // an address without a radio type; that alone must not guess a connect type.
     virtual DeviceId deviceIdForAddress(const std::string&) const { return {}; }
     virtual BleConnectionFailure connectionFailure() const { return {}; }
+    // Optional native link check for response-channel negotiation. Older
+    // adapters retain their existing completion contract.
+    virtual bool linkAlive() const { return true; }
+    virtual void clearConnectionFailure() {}
     // Accepted may mean queued. onConnection(true/false) delivers link outcome;
     // neither acceptance nor a link establishes a VOLTRA protocol session.
     virtual TransportResult connect(const DeviceId&) = 0;

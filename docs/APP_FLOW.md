@@ -1,3 +1,11 @@
+> November 22 v0.4.16 supersedes v0.4.15's opening-message order: cache one
+> complete GATT characteristic snapshot, establish at least one documented
+> response subscription, then send HELLO before optional telemetry setup.
+> Support the known command or notify-capable transport response channel; the
+> telemetry channel alone is insufficient. Authentication and fresh state/role
+> checks remain separate. Preserve a queued real disconnect reason on failed
+> discovery. See TWIN_GATT_REVIEW_2026_11_22.md for the ten-repo comparison.
+>
 > November 22 v0.4.15: Devices periodically refreshes machine-reported Twin
 > membership through short read-only sessions while keeping the icons visible.
 > A fresh Alone response splits a group; a fresh paired response joins/updates it.

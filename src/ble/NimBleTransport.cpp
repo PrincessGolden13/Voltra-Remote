@@ -35,6 +35,16 @@ bool validAddress(const std::string& id) {
 bool validDeviceId(const DeviceId& id) {
     return id.size()==19 && id[17]=='/' && id[18]>='0' && id[18]<='3' && validAddress(id.substr(0,17));
 }
+std::string attributeKey(const std::string& text) {
+    // SDK toString() prefixes short UUIDs with 0x, while its string
+    // constructor expects the unprefixed digits.
+    const bool prefixed=text.size()>2 && text[0]=='0' && (text[1]=='x' || text[1]=='X');
+    NimBLEUUID uuid(prefixed ? text.substr(2) : text);
+    if(!uuid.bitSize()) return {};
+    // The same attribute may be spelled with a short Bluetooth UUID, its
+    // 128-bit base form, or different case. All must share one SDK snapshot.
+    return uuid.to128().toString();
+}
 }
 struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     NimBLEClient* client=nullptr;
@@ -44,6 +54,10 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     std::function<void(const std::string&)> diagnostic;
     void log(const std::string& message) const { if(diagnostic) diagnostic(message); }
     std::map<std::string,NimBLERemoteCharacteristic*> characteristics;
+    // One immutable characteristic snapshot per service and connection. SDK
+    // filtered characteristic lookups traverse the same ATT declaration range;
+    // repeating them would rescan it and cache only one channel each time.
+    std::map<std::string,std::vector<Characteristic>> characteristicSnapshots;
     struct Received { uint32_t generation; std::string uuid; Bytes bytes; };
     std::mutex mutex;
     std::map<std::string,Advertisement> advertisements;
@@ -148,6 +162,35 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     std::deque<LinkEvent> linkEvents;
     std::atomic<uint32_t> radioGeneration{0},cancelledGeneration{0};
     std::atomic<bool> linkOverflow{false};
+    std::optional<LinkEvent> pendingTerminal() {
+        const auto owner=radioGeneration.load();
+        if(cancelling || cancelledGeneration.load()==owner || linkOverflow.load()) return {};
+        std::lock_guard<std::mutex> lock(mutex);
+        for(auto it=linkEvents.rbegin();it!=linkEvents.rend();++it)
+            if(it->generation==owner && it->peer==radioTarget && !it->cancelled &&
+               (it->kind==LinkKind::Down || it->kind==LinkKind::Failed)) return *it;
+        return {};
+    }
+    void failGatt(BleConnectionStage stage,int reason=0) {
+        // Blocking GATT can return after the SDK queued a disconnect but before
+        // poll() can deliver it. Preserve that cause before local teardown marks
+        // the event cancelled. Do not consume terminal/ownership evidence here.
+        if(linkOverflow.load() || overflow.load()) {
+            if(failure.stage!=BleConnectionStage::Notifications) fail(BleConnectionStage::Notifications);
+            return;
+        }
+        const bool rawLink=client && client->isConnected();
+        const auto terminal=pendingTerminal();
+        bool timedOut=false;
+        if(terminal) {
+            stage=BleConnectionStage::Link;reason=terminal->reason;
+            timedOut=terminal->kind==LinkKind::Failed && reason==BLE_HS_ETIMEOUT;
+        } else if(connected && !cancelling && !rawLink) {
+            stage=BleConnectionStage::Link;reason=0;
+        }
+        if(failure.stage==stage && failure.reason==reason && failure.timedOut==timedOut) return;
+        fail(stage,reason,timedOut);
+    }
     void queueLink(LinkKind kind,NimBLEClient* source,int reason=0,const NimBLEAddress* knownPeer=nullptr) {
         const auto generation=radioGeneration.load();
         const auto peer=knownPeer ? *knownPeer : source->getPeerAddress();
@@ -224,6 +267,16 @@ DeviceId NimBleTransport::deviceIdForAddress(const std::string& address) const {
         canonical+"/"+std::to_string(observed->second.address.getType());
 }
 BleConnectionFailure NimBleTransport::connectionFailure() const { return impl_->failure; }
+bool NimBleTransport::linkAlive() const {
+    const bool rawLink=impl_->client && impl_->client->isConnected();
+    const bool alive=impl_->connected && !impl_->cancelling && rawLink &&
+        !impl_->linkOverflow.load() && !impl_->overflow.load() && !impl_->pendingTerminal();
+    if(!alive && impl_->connected && !impl_->cancelling) impl_->failGatt(BleConnectionStage::Link);
+    return alive;
+}
+void NimBleTransport::clearConnectionFailure() {
+    if(linkAlive()) impl_->failure={};
+}
 TransportResult NimBleTransport::connect(const DeviceId& id) {
     impl_->failure={};
     if(!impl_->client) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
@@ -259,6 +312,7 @@ void NimBleTransport::disconnect() {
     impl_->overflow=false;
     impl_->diagnosticRx=impl_->diagnosticTx=0;
     impl_->characteristics.clear();
+    impl_->characteristicSnapshots.clear();
     const bool was=impl_->connected; impl_->connected=false;
     if(was) impl_->log("BLE disconnected");
     if(was && impl_->connection) impl_->connection(false);
@@ -266,13 +320,15 @@ void NimBleTransport::disconnect() {
 std::vector<std::string> NimBleTransport::discoverServices() {
     std::vector<std::string> result;
     const auto previousError=impl_->client ? impl_->client->getLastError() : 0;
+    if(impl_->characteristicSnapshots.empty()) impl_->characteristics.clear();
     if(impl_->client && impl_->client->isConnected())
         // NimBLE 2.x defaults to cached-only; true performs actual discovery.
-        for(const auto* s:impl_->client->getServices(true)) result.push_back(s->getUUID().toString());
+        // Once attributes are in use, keep their service objects/callbacks alive.
+        for(const auto* s:impl_->client->getServices(impl_->characteristicSnapshots.empty())) result.push_back(s->getUUID().toString());
     impl_->log("BLE services: "+std::to_string(result.size()));
     if(result.empty()) {
         const auto error=impl_->client ? impl_->client->getLastError() : 0;
-        impl_->fail(BleConnectionStage::Services,error!=previousError ? error : 0);
+        impl_->failGatt(BleConnectionStage::Services,error!=previousError ? error : 0);
     }
     return result;
 }
@@ -281,63 +337,90 @@ bool NimBleTransport::discoverService(const std::string& uuid) {
     const bool found=impl_->client && impl_->client->isConnected() && impl_->client->getService(uuid.c_str());
     if(!found) {
         const auto error=impl_->client ? impl_->client->getLastError() : 0;
-        impl_->fail(BleConnectionStage::Services,error!=previousError ? error : 0);
+        impl_->failGatt(BleConnectionStage::Services,error!=previousError ? error : 0);
     }
     return found;
 }
 std::optional<Characteristic> NimBleTransport::discoverCharacteristic(const std::string& service,const std::string& uuid) {
-    if(!impl_->client || !impl_->client->isConnected()) return {};
-    auto* s=impl_->client->getService(service.c_str());
-    auto* c=s ? s->getCharacteristic(uuid.c_str()) : nullptr;
-    if(!c) return {};
-    impl_->characteristics[uuid]=c;
-    return Characteristic{uuid,c->canNotify(),c->canWrite() || c->canWriteNoResponse()};
+    const auto canonical=attributeKey(uuid);
+    if(canonical.empty()) {impl_->log("BLE characteristic UUID invalid");return {};}
+    const auto snapshot=discoverCharacteristics(service);
+    const auto found=std::find_if(snapshot.begin(),snapshot.end(),[&](const auto& c){return attributeKey(c.uuid)==canonical;});
+    if(found!=snapshot.end()) return *found;
+    impl_->log("BLE characteristic unavailable: "+uuid);
+    // A successfully read table can legitimately omit an optional channel.
+    // Record absence, but never invent a transport error or guessed code.
+    return {};
 }
 std::vector<Characteristic> NimBleTransport::discoverCharacteristics(const std::string& service) {
+    if(!linkAlive()) {impl_->failGatt(BleConnectionStage::Characteristics);return {};}
+    // UUID spelling/case must not refresh an already subscribed SDK service.
+    const auto canonical=attributeKey(service);
+    if(canonical.empty()) {impl_->failGatt(BleConnectionStage::Characteristics);return {};}
+    const auto cached=impl_->characteristicSnapshots.find(canonical);
+    if(cached!=impl_->characteristicSnapshots.end()) return cached->second;
     std::vector<Characteristic> result;
-    if(!impl_->client || !impl_->client->isConnected()) return result;
     const auto previousError=impl_->client->getLastError();
     const auto* s=impl_->client->getService(service.c_str());
+    // Drop adapter aliases before the SDK refresh deletes its prior objects.
+    // Refresh only once, before returning any channel to a subscriber/writer.
+    if(s) for(const auto* previous:s->getCharacteristics(false)) {
+        for(auto it=impl_->characteristics.begin();it!=impl_->characteristics.end();)
+            if(it->second==previous) it=impl_->characteristics.erase(it);else ++it;
+    }
     if(s) for(auto* c:s->getCharacteristics(true)) {
-        const auto uuid=c->getUUID().toString(); impl_->characteristics[uuid]=c;
+        const auto uuid=c->getUUID().toString(); impl_->characteristics[attributeKey(uuid)]=c;
         result.push_back({uuid,c->canNotify(),c->canWrite() || c->canWriteNoResponse()});
         impl_->log("BLE characteristic "+uuid+" notify="+std::to_string(c->canNotify())+" write="+std::to_string(c->canWrite())+" writeNoResponse="+std::to_string(c->canWriteNoResponse()));
     }
-    if(result.empty()) {
+    impl_->log("BLE characteristic table count="+std::to_string(result.size()));
+    const bool alive=linkAlive();
+    if(!alive || result.empty()) {
         const auto error=impl_->client->getLastError();
-        impl_->fail(BleConnectionStage::Characteristics,error!=previousError ? error : 0);
+        if(!alive) impl_->characteristics.clear();
+        impl_->failGatt(BleConnectionStage::Characteristics,error!=previousError ? error : 0);
+        result.clear();
     }
+    impl_->characteristicSnapshots.emplace(canonical,result);
     return result;
 }
 TransportResult NimBleTransport::subscribe(const std::string& uuid) {
-    const auto it=impl_->characteristics.find(uuid);
+    if(!linkAlive()) {impl_->failGatt(BleConnectionStage::Subscription);return TransportResult::Disconnected;}
+    const auto canonical=attributeKey(uuid);
+    const auto it=impl_->characteristics.find(canonical);
     if(it==impl_->characteristics.end() || !it->second->canNotify()) {impl_->fail(BleConnectionStage::Subscription);return TransportResult::Unsupported;}
     // NimBLE subscribe() returns true even when no CCCD is found. A callback
     // alone cannot prove notifications were enabled on the peripheral.
     if(!it->second->getDescriptor(NimBLEUUID(uint16_t(0x2902)))) {
-        impl_->fail(BleConnectionStage::Subscription);impl_->log("BLE notification descriptor missing: "+uuid);return TransportResult::Failed;
+        impl_->failGatt(BleConnectionStage::Subscription);impl_->log("BLE notification descriptor missing: "+uuid);return TransportResult::Failed;
     }
     const auto generation=impl_->generation;
+    const auto routeUuid=it->second->getUUID().toString();
     const auto previousError=impl_->client->getLastError();
-    const bool ok=it->second->subscribe(true,[this,uuid,generation](NimBLERemoteCharacteristic*,uint8_t* data,size_t size,bool) {
+    const bool ok=it->second->subscribe(true,[this,routeUuid,generation](NimBLERemoteCharacteristic*,uint8_t* data,size_t size,bool) {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         // Overflow invalidates the session; losing state must never preserve readiness.
         if(size>517 || impl_->received.size()>=32) { impl_->overflow=true; return; }
-        impl_->received.push_back({generation,uuid,Bytes(data,data+size)});
+        impl_->received.push_back({generation,routeUuid,Bytes(data,data+size)});
     });
     impl_->log(std::string(ok ? "BLE subscribed " : "BLE subscription failed ")+uuid);
     if(!ok) {
         const auto error=impl_->client->getLastError();
-        impl_->fail(BleConnectionStage::Subscription,error!=previousError ? error : 0);
+        impl_->failGatt(BleConnectionStage::Subscription,error!=previousError ? error : 0);
     }
     return ok ? TransportResult::Accepted : TransportResult::Failed;
 }
 TransportResult NimBleTransport::write(const std::string& uuid,const Bytes& bytes) {
-    if(!impl_->client || !impl_->client->isConnected()) return TransportResult::Disconnected;
-    const auto it=impl_->characteristics.find(uuid);
+    if(!linkAlive()) {impl_->failGatt(BleConnectionStage::Link);return TransportResult::Disconnected;}
+    const auto it=impl_->characteristics.find(attributeKey(uuid));
     if(it==impl_->characteristics.end()) return TransportResult::Unsupported;
+    const auto previousError=impl_->client->getLastError();
     const bool ok=it->second->writeValue(bytes.data(),bytes.size(),it->second->canWrite());
     if(impl_->diagnosticTx++<8) impl_->log("BLE write bytes="+std::to_string(bytes.size())+" accepted="+std::to_string(ok));
+    if(!ok) {
+        const auto error=impl_->client->getLastError();
+        impl_->failGatt(BleConnectionStage::Link,error!=previousError ? error : 0);
+    }
     return ok ? TransportResult::Accepted : TransportResult::Failed;
 }
 void NimBleTransport::poll(uint64_t now) {
