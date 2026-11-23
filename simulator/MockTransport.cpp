@@ -102,6 +102,7 @@ TransportResult MockTransport::connect(const DeviceId& id) {
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == id && d.online; });
     if (it == devices_.end()) return TransportResult::Failed;
     active_ = size_t(it-devices_.begin()); connected_ = true; sent_ = subscribed_ = false;
+    devices_[active_].state.completedRepWindow=false;
     restSince_ = 0;
     liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
     reported_ = {};retainedPrimaryPeer_.clear(); pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
@@ -110,6 +111,7 @@ TransportResult MockTransport::connect(const DeviceId& id) {
 }
 void MockTransport::disconnect() {
     connected_ = subscribed_ = sent_ = false;
+    devices_[active_].state.completedRepWindow=false;
     pendingWeight_.reset(); pendingLoaded_.reset(); pendingSettings_.reset(); pendingAuto_ = false;
     reported_ = {};retainedPrimaryPeer_.clear(); heldSince_ = 0;
     liveWeightPreview_=false;previewLiveWeightLbs_.reset();previewLiveWeightAgeMs_=0;
@@ -130,7 +132,7 @@ TransportResult MockTransport::subscribe(const std::string& uuid) {
 void MockTransport::setProfile(SimulatorProfile profile) {
     profile_ = profile; sent_ = false; pendingSettings_.reset(); pendingLoaded_.reset(); pendingAuto_ = false;
     auto& r = devices_[active_].state;
-    r.loaded = profile == SimulatorProfile::Loaded; r.autoLoadArmed = false;
+    r.loaded = profile == SimulatorProfile::Loaded; r.autoLoadArmed = false;r.completedRepWindow=false;
     r.autoLoadPhase.reset();r.autoLoadCountdownMs.reset();r.autoLoadCountdownAtMs=0;
     r.twinKnown = profile != SimulatorProfile::TwinUnknown;
     r.twinDetected=r.twin || profile==SimulatorProfile::TwinUnknown;
@@ -230,18 +232,18 @@ void MockTransport::poll(uint64_t now) {
         if (pendingLoaded_) {
             if (*pendingLoaded_ && !state.loaded) {
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
-                state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;
+                state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;state.completedRepWindow=false;
                 state.restSeconds.reset(); restSince_ = 0;
             } else if (!*pendingLoaded_ && state.loaded && state.repsStarted.value_or(false)) {
                 state.completedSets = state.setNumber.value_or(1); state.lastSetReps = int(state.rep);
                 restSince_ = now; state.restSeconds = 0;
             }
-            state.loaded = *pendingLoaded_; state.autoLoadArmed = false;
+            state.loaded = *pendingLoaded_; state.autoLoadArmed = false;state.completedRepWindow=false;
             state.autoLoadPhase.reset();state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
             if (!state.loaded) { state.moving = state.held = false; state.repsStarted = false; }
             pendingLoaded_.reset(); sent_ = false;
         }
-        if (pendingAuto_) { state.autoLoadArmed = true;state.autoLoadPhase=11; pendingAuto_ = false; sent_ = false; heldSince_ = 0; }
+        if (pendingAuto_) { state.completedRepWindow=false;state.autoLoadArmed = true;state.autoLoadPhase=11; pendingAuto_ = false; sent_ = false; heldSince_ = 0; }
         // Synthetic device behavior, not a remote timer that issues a load.
         if (state.autoLoadArmed && state.held) {
             if (!heldSince_) heldSince_ = now;
@@ -251,7 +253,7 @@ void MockTransport::poll(uint64_t now) {
                 state.loaded = true; state.autoLoadArmed = false; sent_ = false;
                 state.autoLoadPhase=state.twin ? 15 : 14;state.autoLoadCountdownMs.reset();state.autoLoadCountdownAtMs=0;
                 state.setNumber = state.completedSets.value_or(0)+1; state.rep = 0; state.repsStarted = false;
-                state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;
+                state.completedRep=0;state.repSet=state.setNumber;state.repRevision=0;state.repAtMs=0;state.completedRepWindow=false;
                 state.restSeconds.reset(); restSince_ = 0;
             }
         } else {
@@ -293,6 +295,7 @@ void MockTransport::poll(uint64_t now) {
         peer.currentTwinRole=state.twinKnown ? devices_[active_==1 ? 2 : 1].role : CurrentTwinRole::Unknown;
         peer.twinRoleAtMs=peer.currentTwinRole!=CurrentTwinRole::Unknown ? now : 0;
     }
+    if(!state.loaded || state.autoLoadArmed || state.moving || state.held) state.completedRepWindow=false;
     state.motionAtMs=now;++state.motionRevision;
     state.repActive=state.loaded && (state.moving || state.held);
     state.receivedAtMs = now; ++state.revision; reported_ = state;
@@ -374,11 +377,14 @@ void MockTransport::toggleAvailability() { devices_[5].online = !devices_[5].onl
 void MockTransport::completeRep() {
     auto& r = devices_[active_].state;
     if (!connected_ || !r.loaded) return;
-    ++r.rep; r.repsStarted = true; r.moving = true; r.held = false; sent_ = false;
+    // This explicit simulator action completes a whole rep at its stationary
+    // endpoint. New movement/holds discard that window independently of counts.
+    ++r.rep; r.repsStarted = true; r.moving = r.held = false; sent_ = false;
     r.completedRep=r.rep;r.repSet=r.setNumber;r.repAtMs=nowMs_;++r.repRevision;
+    r.completedRepWindow=true;r.repActive=false;
 }
 void MockTransport::setHeld(bool held) {
     auto& r = devices_[active_].state;
-    r.held = held; r.moving = !held; sent_ = false;
+    r.held = held; r.moving = !held; r.completedRepWindow=false;sent_ = false;
 }
 }

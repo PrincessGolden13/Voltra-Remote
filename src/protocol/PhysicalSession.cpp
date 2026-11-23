@@ -76,6 +76,9 @@ constexpr uint64_t motionFreshMs=500;
 // SDK 79f6c55 stream units: mm, mm/s, tenths of pounds. Tunable detection
 // policy, not a device safety interlock. Require extension and tension for RP.
 constexpr int stationarySpeedMmPerSec=20, heldExtensionMm=20, heldForceTenthsLb=20;
+// Conservative remote policy, not a VOLTRA interlock or inferred ROM length.
+// A queued automatic edit cannot survive measurable drift from its still window.
+constexpr int automaticWindowDriftMm=10;
 constexpr uint16_t telemetrySubscribe=20867;
 constexpr uint16_t telemetryRate=20866;
 constexpr uint8_t telemetryHz=10; // Catalogued 5..50 Hz; Android resets it to 0 on exit.
@@ -173,6 +176,8 @@ void PhysicalSession::connectionChanged(bool connected) {
     closedSet_.reset();setEndRevision_=setEndedAt_=0;
     motionAt_=motionRevision_=repAt_=repRevision_=telemetryLogAt_=0;
     motionPosition_=motionVelocity_=motionForce_=0;motionPhase_=0;completedRep_=0;repSet_.reset();intentLoaded_=false;liveIntent_.reset();
+    boundarySet_.reset();
+    clearRepBoundary();automaticWeightWindow_.reset();
     peerMotionVelocity_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
     workoutStatus_.reset();telemetryHeaders_=telemetrySetup_=0;
     telemetryTypes_={};rawTelemetryHeaders_=0;
@@ -261,9 +266,20 @@ void PhysicalSession::cancelWrites(const char* reason) {
     if(*reason) diagnostic(std::string("Control transaction stopped: ")+reason);
     waitingWrite_.reset();writes_.clear();target_.reset();status_=reason;
     singleAutoFollowup_=SingleAutoFollowup::None;
+    automaticWeightWindow_.reset();clearRepBoundary();
     targetClockPending_=targetImmediate_=false;
     liveIntent_.reset();liveBefore_.reset();
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();unitSwitchAt_=0;commandFailed_=*reason!=0;
+}
+void PhysicalSession::clearRepBoundary() {
+    pendingReturn_.reset();completedRepWindow_=false;
+}
+bool PhysicalSession::automaticWeightWindowCurrent() const {
+    if(!automaticWeightWindow_) return true;
+    const auto& window=*automaticWeightWindow_;
+    return !pairedMotion_ && !twinObserved_ && motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs &&
+        deviceSet_==window.set && deviceRep_==window.rep && motionPhase_==window.phase &&
+        std::abs(motionVelocity_)<=stationarySpeedMmPerSec && std::abs(motionPosition_-window.position)<=automaticWindowDriftMm;
 }
 bool PhysicalSession::liveAccessoriesExpected() const {
     if(!liveIntent_ || !liveBefore_) return true;
@@ -317,6 +333,7 @@ void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
     primaryPeer_.reset();pairedMotorFamily_.reset();runtimeTarget_.reset();
     pairedRefreshPending_=false;pairedRefreshAt_=0;
     singleAutoFollowup_=SingleAutoFollowup::None;
+    clearRepBoundary();automaticWeightWindow_.reset();
     pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
     deviceSet_.reset();deviceRep_.reset();telemetryAt_=0;
 }
@@ -450,10 +467,11 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
             continue;
         }
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa || f.sender!=0x10) continue;
-        // Endpoint/activation status are observations, not once-only command
-        // ACKs. Reused sequences must not hide role loss, an inactive status,
-        // or a valid status following a malformed reply to the same query.
-        if(f.command==twinStatusCommand || f.command==0xab) {apply(f);continue;}
+        // Status, parameter pushes and vendor telemetry are observations, not ACKs.
+        // Reused sequences must not hide role loss, inactive status or motion
+        // that invalidates an unsent automatic edit. Logical rep/set guards
+        // handle repeated observations without replaying a completed event.
+        if(f.command==twinStatusCommand || f.command==0xab || f.command==0xaa || f.command==0x10) {apply(f);continue;}
         const auto key=std::make_pair(f.command,f.sequence);
         if(std::find(seen_.begin(),seen_.end(),key)!=seen_.end()) continue;
         seen_.push_back(key);if(seen_.size()>32) seen_.pop_front();
@@ -532,12 +550,13 @@ void PhysicalSession::apply(const Frame& f) {
             if(changed) {
                 twinTopologyAt_=now_;
                 runtimeTarget_.reset();
+                clearRepBoundary();automaticWeightWindow_.reset();
                 singleAutoFollowup_=SingleAutoFollowup::None;
                 motionAt_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
                 if(busy() && !unloading()) cancelWrites("Waiting for VOLTRA connection state");
                 if(scopeChanged) {
                     deviceSet_.reset();deviceRep_.reset();telemetryAt_=repAt_=0;
-                    completedRep_=0;repSet_.reset();completedSets_.reset();completedReps_.reset();
+                    completedRep_=0;repSet_.reset();boundarySet_.reset();completedSets_.reset();completedReps_.reset();
                     workoutStatus_.reset();closedSet_.reset();setEndedAt_=setEndRevision_=0;
                 }
             }
@@ -553,6 +572,8 @@ void PhysicalSession::apply(const Frame& f) {
             // proof without erasing the connection's detected-Twin latch.
             twinStatus_.reset();
             runtimeTarget_.reset();
+            clearRepBoundary();
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
             singleAutoFollowup_=SingleAutoFollowup::None;
             // Alternating 22-byte pushes and 23-byte replies must not erase
             // every useful event with the same rejection. The latest detail
@@ -630,6 +651,15 @@ void PhysicalSession::apply(const Frame& f) {
         }
         const auto previous=values_.find(pair.first);
         const bool changed=previous==values_.end() || previous->second.value!=pair.second;
+        const bool controlContext=pair.first==base || pair.first==unit || pair.first==motor || pair.first==workout ||
+            pair.first==autoLoadStatus || pair.first==chains || pair.first==eccentric || pair.first==chainsPercent ||
+            pair.first==eccentricPercent || pair.first==inverse || pair.first==mountain || pair.first==extraMode ||
+            pair.first==accessoryDisplayPercent || pair.first==mountLock || pair.first==voidLock || pair.first==childLock ||
+            pair.first==otaState || pair.first==maxForce || pair.first==twin || pair.first==remoteCoworker || pair.first==pairedDevice;
+        if(changed && controlContext) {
+            clearRepBoundary();
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
+        }
         if(changed && (pair.first==chains || pair.first==eccentric || pair.first==chainsPercent || pair.first==eccentricPercent ||
            pair.first==inverse || pair.first==mountain || pair.first==extraMode || pair.first==accessoryDisplayPercent))
             runtimeTarget_.reset();
@@ -641,6 +671,8 @@ void PhysicalSession::apply(const Frame& f) {
         }
         if((pair.first==twin || pair.first==remoteCoworker || pair.first==pairedDevice) && pair.second!=0) {
             twinObserved_=true;
+            clearRepBoundary();
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
             singleAutoFollowup_=SingleAutoFollowup::None;
         }
         // Only normalized parameter values; never serial numbers or BLE identities.
@@ -708,34 +740,91 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     if(twinObserved_) return;
     // SDK 79f6c55's on-device validated AA subtypes. Per-rep means are NOT
     // stationary-cable telemetry. No locally invented rep/set/rest counters.
-    if(p.size()==61 && p[0]==0x82 && p[1]==0x3b && (p[2]==1 || p[2]==2)) {
+    if(p.size()==61 && p[0]==0x82 && p[1]==0x3b) {
+        if(p[2]!=1 && p[2]!=2) {
+            clearRepBoundary();
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: motion unavailable");
+            updateReport();return;
+        }
+        if(automaticWeightWindow_) cancelWrites("Drop stopped: movement resumed");
+        if(p[2]==1) clearRepBoundary();
+        else completedRepWindow_=false;
         if(p[2]==1) {deviceSet_=u16(p,4);deviceRep_=u16(p,6);telemetryAt_=now_;}
-        // Return-phase statistics are a completed repetition; pull statistics
-        // and the stream's in-progress rep counter cannot trigger Stairs.
+        // SDK 79f6c55 explicitly labels these pull START / return START.
+        // Retain the device's counter as a candidate only. A separate fresh
+        // AA81 return-to-idle transition must finish it before Stairs can act.
         if(p[2]==2) {
-            completedRep_=u16(p,6);repSet_=u16(p,4);repAt_=now_;++repRevision_;
-            Serial.printf("VOLTRA completed rep set=%d rep=%u\n",*repSet_,unsigned(completedRep_));
+            const int set=u16(p,4);const auto rep=u16(p,6);
+            boundarySet_=set;
+            const auto m=fresh(motor),u=fresh(unit),w=fresh(base);
+            if(report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed && standalone() && m && u && w &&
+               (!workoutStatus_ || *workoutStatus_==2) && !(repSet_==set && completedRep_==rep) &&
+               (!pendingReturn_ || pendingReturn_->set!=set || pendingReturn_->rep!=rep)) {
+                completedRepWindow_=false;
+                const bool returning=motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs &&
+                    motionPhase_==3 && deviceSet_==set && deviceRep_==rep;
+                pendingReturn_=ReturnBoundary{set,rep,returning,*m,*u,*w};
+            }
         }
     } else if(p.size()==127 && p[0]==0x86 && p[1]==0x7d) {
+        clearRepBoundary();
+        if(automaticWeightWindow_) cancelWrites("Drop stopped: set ended");
         completedSets_=u16(p,3);completedReps_=u16(p,5);telemetryAt_=now_;
         Serial.printf("VOLTRA workout summary sets=%d reps=%d\n",*completedSets_,*completedReps_);
     } else if(p.size()==97 && p[0]==0x85 && p[1]==0x5f) {
+        clearRepBoundary();
+        if(automaticWeightWindow_) cancelWrites("Drop stopped: set ended");
         // SDK 79f6c55: set-close report after the final rep. Its decoded schema
         // has no set index; retain the index actually observed in this session.
-        completedSets_=repSet_ ? repSet_ : deviceSet_;
+        completedSets_=boundarySet_ ? boundarySet_ : deviceSet_;
         completedReps_=u16(p,15);telemetryAt_=now_;
         // A repeated close/summary for this set must not restart the rest clock.
         if(completedSets_ && *completedReps_>0 && closedSet_!=completedSets_) {
             closedSet_=completedSets_;setEndedAt_=now_;++setEndRevision_;
         }
         Serial.printf("VOLTRA set summary set=%d reps=%d\n",completedSets_.value_or(-1),*completedReps_);
-    } else if(p.size()==45 && p[0]==0x81 && p[1]==0x2b && p[2]<=3) {
+    } else if(p.size()==45 && p[0]==0x81 && p[1]==0x2b) {
+        if(p[2]>3) {
+            clearRepBoundary();motionAt_=0;
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: motion unavailable");
+            updateReport();return;
+        }
         // kirby 8e1ea1c counters; SDK 79f6c55 live sensor offsets (frame - 11).
         const int rep=int(p[4])*256+p[5];
-        if(rep>10000) return;
+        if(rep>10000) {
+            clearRepBoundary();motionAt_=0;
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: motion unavailable");
+            updateReport();return;
+        }
+        const bool continuous=motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs;
+        const auto previousPhase=motionPhase_;
         deviceSet_=p[3];deviceRep_=rep;telemetryAt_=motionAt_=now_;++motionRevision_;
         pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
         motionPhase_=p[2];motionForce_=u16(p,11);motionPosition_=u16(p,13);motionVelocity_=int16_t(u16(p,15));
+        const bool stationary=std::abs(motionVelocity_)<=stationarySpeedMmPerSec;
+        if(completedRepWindow_ && (!continuous || motionPhase_!=0 || !stationary ||
+           repSet_!=deviceSet_ || completedRep_!=uint32_t(rep) ||
+           std::abs(motionPosition_-completedRepPosition_)>automaticWindowDriftMm)) completedRepWindow_=false;
+        if(pendingReturn_) {
+            const auto candidate=*pendingReturn_;
+            if(!continuous || candidate.set!=*deviceSet_ || candidate.rep!=uint32_t(rep) ||
+               fresh(motor)!=candidate.motor || fresh(unit)!=candidate.unit || fresh(base)!=candidate.base ||
+               motionPhase_==1 || (candidate.sawReturn && motionPhase_==2)) pendingReturn_.reset();
+            else if(motionPhase_==3) pendingReturn_->sawReturn=true;
+            else if(motionPhase_==0 && candidate.sawReturn) {
+                // Local conservative endpoint policy: do not infer ROM from
+                // force, elapsed time, position extrema or a rep counter alone.
+                if(previousPhase==3 && stationary && report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed) {
+                    completedRep_=candidate.rep;repSet_=candidate.set;repAt_=now_;++repRevision_;
+                    completedRepWindow_=true;completedRepPosition_=motionPosition_;
+                    diagnostic("Rep return-to-idle observed set="+std::to_string(candidate.set)+" rep="+std::to_string(candidate.rep));
+                }
+                pendingReturn_.reset();
+            }
+        }
+        // Invalidate immediately within notification delivery, even if a later
+        // frame in the same BLE batch becomes stationary again.
+        if(automaticWeightWindow_ && (!continuous || !automaticWeightWindowCurrent())) cancelWrites("Drop stopped: movement resumed");
         if(now_-telemetryLogAt_>=250) {
             telemetryLogAt_=now_;
             Serial.printf("VOLTRA motion phase=%u set=%d rep=%d posMm=%d speedMmS=%d forceTenthsLb=%d\n",
@@ -745,6 +834,10 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
         // Retain unknown values as unknown phases, never the previous active
         // phase. Readiness accepts only the explicitly recognized states.
         workoutStatus_=p[4];
+        if(*workoutStatus_!=2) {
+            clearRepBoundary();
+            if(automaticWeightWindow_) cancelWrites("Drop stopped: set ended");
+        }
         Serial.printf("VOLTRA workout status=%u\n",unsigned(p[4]));
     }
     updateReport();
@@ -836,7 +929,7 @@ void PhysicalSession::updateReport() {
        fresh(unit)!=runtimeTarget_->unit || fresh(base)!=runtimeTarget_->base)) runtimeTarget_.reset();
     if(report_.twinDetected && !commandFailed_) status_.clear();
     const auto w=fresh(base),rawMotor=fresh(motor),m=freshMotorMode(),mode=fresh(workout),u=fresh(unit);
-    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) return;
+    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) {clearRepBoundary();return;}
     // Ryan dff6227 documents readback 0/1, distinct from write commands 4/5.
     // The October 18 unloaded capture reports 0. Retain recognized legacy
     // report values, but never turn an unknown value into an unloaded state.
@@ -846,6 +939,7 @@ void PhysicalSession::updateReport() {
     const bool knownAuto=m==autoMode && autoState && *autoState>=autoLoadWaiting && *autoState<=autoComplete;
     if(*mode!=1 || !m || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
         runtimeTarget_.reset();
+        clearRepBoundary();
         // A newly unknown/non-training mode must invalidate the previous report
         // immediately. The weight target then remains an unconditional unload,
         // rather than treating an unrecognized motor state as confirmed unloaded.
@@ -860,10 +954,13 @@ void PhysicalSession::updateReport() {
     const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==autoComplete);
     if(report_.loadStateKnown && loaded && !wasLoaded) {
         deviceSet_.reset();deviceRep_.reset();repSet_.reset();completedRep_=0;
+        boundarySet_.reset();
         repAt_=motionAt_=0;motionRevision_=repRevision_=0;
+        clearRepBoundary();
     }
     report_.loaded=report_.loadStateKnown && loaded;
     report_.autoLoadArmed=report_.loadStateKnown && (*m==38 || (knownAuto && *autoState!=autoComplete));
+    if(!report_.loaded || report_.autoLoadArmed) clearRepBoundary();
     if(!report_.loaded || report_.autoLoadArmed) runtimeTarget_.reset();
     report_.autoLoadPhase.reset();report_.autoLoadCountdownMs.reset();report_.autoLoadCountdownAtMs=0;
     if(knownAuto || (*m==38 && autoState && *autoState>=autoLoadWaiting && *autoState<=autoComplete))
@@ -907,6 +1004,7 @@ void PhysicalSession::updateReport() {
     report_.completedRep=completedRep_;report_.repSet=repSet_;
     const bool live=motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs;
     report_.repActive=live && !pairedMotion_ ? std::optional<bool>(motionPhase_!=0) : std::optional<bool>{};
+    report_.completedRepWindow=completedRepWindow_ && live && standalone() && report_.loaded && !report_.autoLoadArmed;
     report_.moving=live && (std::abs(motionVelocity_)>stationarySpeedMmPerSec ||
         (pairedMotion_ && primaryTwinFresh() && std::abs(peerMotionVelocity_)>stationarySpeedMmPerSec));
     report_.held=live && !pairedMotion_ && !twinObserved_ && !report_.moving && fresh(offset) &&
@@ -937,6 +1035,8 @@ void PhysicalSession::updateReport() {
 }
 TrainingReport PhysicalSession::trainingReport() const {
     auto result=report_;
+    result.completedRepWindow=result.completedRepWindow && completedRepWindow_;
+    if(!motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) result.completedRepWindow=false;
     result.currentTwinRole=currentTwinRole();
     result.twinRoleAtMs=result.currentTwinRole==CurrentTwinRole::Unknown ? 0 : twinStatusAt_;
     result.unloadRouteKnown=!readOnlyProbe_ && primaryRouteKnown();
@@ -1085,6 +1185,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     // Coalesce only new explicit settings intents. Never replay on reconnect,
     // timeout, mode change, or after unload. Do not overwrite an in-flight ACK.
     target_=settings;targetAt_=now_;targetClockPending_=true;targetImmediate_=false;writes_.clear();status_.clear();commandFailed_=false;
+    automaticWeightWindow_.reset();
     intentUnit_=report_.unit;intentInterpretation_=fresh(extraMode);intentMaximum_=fresh(maxForce);
     intentLoaded_=report_.loaded;
     liveIntent_=intentLoaded_ ? std::optional<TrainingSettings>(settings) : std::optional<TrainingSettings>{};
@@ -1095,7 +1196,8 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
 TransportResult PhysicalSession::setLiveWeight(int ticks) {
     if(readOnlyProbe_) {status_=readOnlyControlReason();return TransportResult::Unsupported;}
     if(twinObserved_) {status_="Use VOLTRA controls";return TransportResult::Unsupported;}
-    if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) {
+    if(!report_.loaded || !liveWeightReady() || busy() || !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs ||
+       !deviceSet_ || !deviceRep_ || std::abs(motionVelocity_)>stationarySpeedMmPerSec) {
         status_=freshDirectMotorMode()==5 ? "Active-set drop unsupported; send debug log" : "Drop blocked: fresh loaded state required";
         diagnostic(status_);
         return TransportResult::Unsupported;
@@ -1104,7 +1206,10 @@ TransportResult PhysicalSession::setLiveWeight(int ticks) {
         " unit="+unitName(report_.unit)+" forceTenthsLb="+std::to_string(motionForce_));
     auto s=report_.settings;s.weight=ticks;
     const auto result=setTraining(s);
-    if(result==TransportResult::Accepted) targetImmediate_=true;
+    if(result==TransportResult::Accepted) {
+        targetImmediate_=true;
+        automaticWeightWindow_=AutomaticWeightWindow{motionPhase_,*deviceSet_,*deviceRep_,motionPosition_};
+    }
     return result;
 }
 void PhysicalSession::prepareWrites(const TrainingSettings& s) {
@@ -1227,6 +1332,8 @@ bool PhysicalSession::enterTrainingOnConnect() {
 }
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
+    if(!motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) clearRepBoundary();
+    if(automaticWeightWindow_ && !automaticWeightWindowCurrent()) cancelWrites("Drop stopped: motion window passed");
     if(connectionClockPending_) {connectedAt_=now_;connectionClockPending_=false;}
     if(!readOnlyProbe_ && twinObserved_ && !primaryTwinFresh() && busy() && !unloading())
         cancelWrites("Waiting for VOLTRA connection state");
@@ -1334,6 +1441,14 @@ void PhysicalSession::tick(uint64_t now) {
         }
         if(!waitingWrite_ && !writes_.empty()) {
             const auto step=writes_.front();writes_.pop_front();
+            if(automaticWeightWindow_) {
+                if(step.id!=base || !automaticWeightWindowCurrent()) {
+                    cancelWrites("Drop stopped: motion window passed");return;
+                }
+                // Movement after an issued base write must not cancel its
+                // readback or pretend the already-sent command was withdrawn.
+                automaticWeightWindow_.reset();
+            }
             if(!writeParameter(step.id,step.value,step.bytes)) cancelWrites("Settings write failed; stopped");
             return;
         }
