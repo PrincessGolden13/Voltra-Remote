@@ -83,6 +83,11 @@ private:
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
+    // Activation is a same-session status observation, separate from historical
+    // coworker diagnostics. Unknown status cannot admit a load.
+    bool activationKnown_=false;
+    unsigned activationReadAttempts_=0;
+    uint64_t activationReadAt_=0,activationStatusAt_=0;
     bool readOnlyProbe_=false; // Connection reset must preserve explicit probe intent.
     bool helloPrepared_=false,connectionClockPending_=false;
     bool bootstrapWriteJustCompleted_=false;

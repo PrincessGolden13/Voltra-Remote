@@ -1,5 +1,28 @@
 # Validation status and pending tests
 
+November 23 v0.4.17: [load readiness and Auto Load handoff](LOAD_READINESS_2026_11_23.md).
+PASS actual PhysicalSession offline MOCK:15 scenarios/13,436 assertions and
+31 existing regressions. Prioritized AB01, exact0/1, malformed/error/foreign/CRC
+guards, same-sequence revocation/recovery, three paced attempts, background late
+recovery, no intent replay, reconnect reset and explicit unload pass. Synthetic
+15.4-second/70-intent differential sends0 activation queries before and3 after,
+with zero motor/Auto controls. Receipt:
+`/workspace/preview-tools/activation-v0417/validation.json`.
+PASS actual LVGL/TrainingApplication observers at360/466/480:51 Auto-to-Live
+scenes/795 assertions, plus57 quiet-dial cases/306 checks against the combined UI.
+The old executable reproduces the phase14 admission failure. Confirmed completion
+without reps,35-to-loaded without14, retained old rest/end/active, new boundaries,
+TTL/unknown consumption, same-device reconnect, fresh readback, unload/rearm,
+normal tap behavior, reported target changes/no fallback and real errors pass.
+Expected pre-first-rep silence adds no rep warning when target telemetry is valid.
+Renders fit all three round sizes. Receipts:
+`/workspace/preview-tools/single-auto-live-v0417/validation.json` and
+`/workspace/preview-tools/quiet-dial-v0417/combined-validation.json`.
+Core/packet-inspector build and diff whitespace check pass. CI/publication results
+follow when executed. No new tracked automated test source or physical
+Bluetooth/motor operation. Missing standalone
+Auto Load Live target feed is unresolved pending a report from that state.
+
 November 22 v0.4.16: [ten-repo GATT review](TWIN_GATT_REVIEW_2026_11_22.md).
 PASS independent current-head/source comparison, actual HELLO byte comparison
 against Steven and literal official capture, existing core/packet-inspector build

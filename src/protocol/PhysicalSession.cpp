@@ -63,6 +63,10 @@ constexpr uint64_t stateFreshMs=2000, writeConfirmationMs=3000;
 // A bounded unloaded transaction can contain several individually confirmed
 // writes. Keep critical polls ahead of it; never retry a timed-out step.
 constexpr uint64_t settingsDeadlineMs=10000, criticalPollIntervalMs=1300;
+// Read-only initial activation discovery is part of bootstrap readiness. A
+// missing reply gets a small paced budget, never an unbounded priority loop.
+constexpr unsigned activationInitialReadAttempts=3;
+constexpr uint64_t activationRetryIntervalMs=criticalPollIntervalMs;
 // Send the latest explicit setting after a short pause in rotary input.
 constexpr uint64_t settingsQuietMs=100;
 // Read the parameter after settling; a transient asynchronous settings echo is
@@ -145,6 +149,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     helloPrepared_=false;
     if(!connected) selectedAddress_.reset();
     connected_=connected;accepted_=activated_=false; bootstrap_=prepared ? 1 : 0;backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
+    activationKnown_=false;activationReadAttempts_=0;activationReadAt_=activationStatusAt_=0;
     connectionClockPending_=connected;
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
@@ -442,10 +447,10 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
             continue;
         }
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa || f.sender!=0x10) continue;
-        // Endpoint status is an observation, not a once-only command ACK.
-        // Pushes/replies can reuse a sequence; never suppress role/peer loss
-        // or prevent identical current status from renewing its own clock.
-        if(f.command==twinStatusCommand) {apply(f);continue;}
+        // Endpoint/activation status are observations, not once-only command
+        // ACKs. Reused sequences must not hide role loss, an inactive status,
+        // or a valid status following a malformed reply to the same query.
+        if(f.command==twinStatusCommand || f.command==0xab) {apply(f);continue;}
         const auto key=std::make_pair(f.command,f.sequence);
         if(std::find(seen_.begin(),seen_.end(),key)!=seen_.end()) continue;
         seen_.push_back(key);if(seen_.size()>32) seen_.pop_front();
@@ -555,9 +560,17 @@ void PhysicalSession::apply(const Frame& f) {
         updateReport();return;
     }
     if(f.command==0xaa) {applyTelemetry(f);return;}
-    if(f.command==0xab && p.size()>=2 && p[0]==0) {
-        if(activated_!=(p[1]==1)) Serial.printf("VOLTRA activation %u\n",unsigned(p[1]));
-        activated_=p[1]==1;
+    if(f.command==0xab) {
+        // Errors/truncated payloads supply no replacement activation fact.
+        // A valid status with an unknown flag is a current contradiction and
+        // fails closed. The outer envelope/source/CRC guards still apply.
+        if(p.size()<2 || p[0]!=0) return;
+        const bool known=p[1]==0 || p[1]==1;
+        const bool active=known && p[1]==1;
+        if(activationKnown_!=known || activated_!=active)
+            diagnostic(std::string("VOLTRA activation status ")+(known ? active ? "active" : "inactive" : "unknown"));
+        activationKnown_=known;activated_=active;activationStatusAt_=now_;
+        return;
     }
     if(f.command==0x77 && diagnosticVersions_++<2) {
         // These are module/product identifiers, not the installed app release.
@@ -978,6 +991,8 @@ SessionReadiness PhysicalSession::readiness() const {
 std::string PhysicalSession::diagnosticState() const {
     const auto role=currentTwinRole();
     std::string text="accepted="+std::to_string(accepted_)+" activated="+std::to_string(activated_)+
+        " activationKnown="+std::to_string(activationKnown_)+" activationReads="+std::to_string(activationReadAttempts_)+
+        " activationAgeMs="+(activationKnown_ && now_>=activationStatusAt_ ? std::to_string(now_-activationStatusAt_) : "missing")+
         " readOnlyProbe="+std::to_string(readOnlyProbe_)+" primaryRouteRevoked="+std::to_string(primaryRouteRevoked_)+" currentTwinRole="+
         (role==CurrentTwinRole::Master ? "master" : role==CurrentTwinRole::Follower ? "follower" : "unknown");
     text+=" directMotor="+(directMotor_ ? std::to_string(directMotor_->value)+"@"+std::to_string(now_>=directMotor_->at ? now_-directMotor_->at : 0)+"ms" : "missing");
@@ -1233,6 +1248,15 @@ void PhysicalSession::tick(uint64_t now) {
     } else if(bootstrap_==1) {if(send(0xff,{0,0xaa},0xaa,0xd2,0x08)) ++bootstrap_;}
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {
+        // Steven's captured bootstrap reads AB01 before ordinary state sweeps.
+        // Do not put the first activation observation behind optional work,
+        // continuous edits, or a saturated critical-poll schedule. This is a
+        // query only: a reply never replays an earlier load/Auto intent.
+        if(!activationKnown_ && activationReadAttempts_<activationInitialReadAttempts &&
+           (!activationReadAttempts_ || now_<activationReadAt_ || now_-activationReadAt_>=activationRetryIntervalMs)) {
+            activationReadAt_=now_;++activationReadAttempts_;
+            send(0xab,{1});return;
+        }
         if(busy() && intentUnit_ && (!(intentLoaded_ ? (twinObserved_ ? pairedManualWeightReady() : liveWeightReady()) : settingsReady()) || report_.unit!=*intentUnit_ ||
            !liveAccessoriesExpected() ||
            fresh(extraMode)!=intentInterpretation_ || fresh(maxForce)!=intentMaximum_ ||
@@ -1319,7 +1343,11 @@ void PhysicalSession::tick(uint64_t now) {
             case 2:send(0x74,{});break;
             case 3:send(0x77,{0});break;
             case 4:send(0x77,{1});break;
-            case 5:send(0xab,{1});break;
+            case 5:
+                // Keep ordinary status monitoring after the priority budget,
+                // including late recovery from an initially missing reply.
+                if(activationKnown_ || activationReadAttempts_>=activationInitialReadAttempts) send(0xab,{1});
+                break;
             case 6:read({chainsPercent,eccentricPercent,legacyChainsPercent,legacyEccentricPercent});break;
             case 7:read({21028,21273,21716,telemetryRate,telemetrySubscribe});break;
             case 8:if(!readOnlyProbe_) send(0xaa,{0x13,1});break; // Captured vendor state refresh, no resistance write.
