@@ -75,6 +75,13 @@ private:
     lv_obj_t *autoLoadArc_=nullptr,*autoLoadTitle_=nullptr,*autoLoadPrompt_=nullptr;
     bool weightHoldActive_=false,weightAutoLoadGesture_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
     void updateAutoLoadFeedback();
+    // Presentation only: confirmed Auto Load completion can precede the first
+    // workout packet. Keep that Live screen without changing load/control state.
+    DeviceId autoLiveDevice_;
+    bool autoLiveArmedSeen_=false,autoLiveCompletionConsumed_=false,autoLiveAwaitingSet_=false;
+    int autoLiveWorkoutPhase_=0;
+    uint64_t autoLiveSetEndRevision_=0;
+    void updateLiveNavigation(const TrainingReport&);
     std::vector<const DeviceEntry*> deviceChoices() const;
     lv_obj_t *miniArc_[3]{}, *miniValue_[3]{}, *modeLabels_[3]{}, *choice_[3]{};
     lv_obj_t *tiles_[3]{};
@@ -156,6 +163,7 @@ private:
     void act(int action, const std::string& id, bool held);
     void build();
     void update();
+    std::string controlFeedback() const;
     void rotate(int delta);
     int editMaximum() const;
     int editValue(int amount) const;

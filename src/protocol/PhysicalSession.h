@@ -33,7 +33,10 @@ public:
     TransportResult setLoaded(bool) override;
     TransportResult setTraining(const TrainingSettings&) override;
     TransportResult setLiveWeight(int ticks) override;
-    void cancelTraining() override { if(intentUnit_ && !unloading()) cancelWrites(""); }
+    void cancelTraining() override {
+        singleAutoFollowup_=SingleAutoFollowup::None;
+        if(intentUnit_ && !unloading()) cancelWrites("");
+    }
     TransportResult triggerAutoLoad() override;
 private:
     BleTransport& transport_;
@@ -67,6 +70,8 @@ private:
     uint64_t autoLoadPollAt_=0;
     uint64_t pairedRefreshAt_=0;
     bool pairedRefreshPending_=false;
+    enum class SingleAutoFollowup { None, ReadStatus, RefreshStream };
+    SingleAutoFollowup singleAutoFollowup_=SingleAutoFollowup::None;
     bool liveWeightProbed_=false;
     // The terse runtime target belongs to one exact standalone loaded context.
     // A settings/core/topology transition cannot reuse an earlier rep's target.
@@ -83,6 +88,11 @@ private:
     unsigned diagnosticFrames_=0;
     unsigned diagnosticVersions_=0;
     bool connected_=false,accepted_=false,activated_=false,connectionFailure_=false;
+    // Activation is a same-session status observation, separate from historical
+    // coworker diagnostics. Unknown status cannot admit a load.
+    bool activationKnown_=false;
+    unsigned activationReadAttempts_=0;
+    uint64_t activationReadAt_=0,activationStatusAt_=0;
     bool readOnlyProbe_=false; // Connection reset must preserve explicit probe intent.
     bool helloPrepared_=false,connectionClockPending_=false;
     bool bootstrapWriteJustCompleted_=false;

@@ -436,6 +436,47 @@ void UiController::updateRestAlert(uint64_t now) {
         hardware_.restAlert(0);restBuzzing_=false;
     }
 }
+void UiController::updateLiveNavigation(const TrainingReport& r) {
+    if(autoLiveDevice_!=app_.selectedDevice() || !app_.connected() || !app_.selectionReady()) {
+        autoLiveDevice_=app_.selectedDevice();
+        autoLiveArmedSeen_=autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
+    }
+    if(!app_.fresh()) return;
+    const bool single=r.twinKnown && !r.twin && !r.twinDetected;
+    if(r.loadStateKnown && !r.loaded && !r.autoLoadArmed) {
+        autoLiveArmedSeen_=autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
+    } else if(single && r.loadStateKnown && r.autoLoadArmed) {
+        autoLiveArmedSeen_=true;
+        autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
+    }
+    if(!single || !r.loadStateKnown) autoLiveAwaitingSet_=false;
+    const int phase=r.setActive==true ? 2 : r.resting==true ? 3 : r.setEnding==true ? 4 : 0;
+    // A device may leave Auto motor mode before its completion field is read.
+    // In either case it must independently confirm known loaded state first.
+    const bool completedAuto=single && app_.readbackFresh() && r.loadStateKnown &&
+        r.loaded && !r.autoLoadArmed && !autoLiveCompletionConsumed_ &&
+        (r.autoLoadPhase==14 || autoLiveArmedSeen_);
+    if(completedAuto && page_==Screen::Main) {
+        autoLiveCompletionConsumed_=true;autoLiveArmedSeen_=false;autoLiveAwaitingSet_=true;
+        autoLiveWorkoutPhase_=phase;autoLiveSetEndRevision_=r.setEndRevision;
+        navigate(Screen::Live);
+    }
+    bool endedBeforeFirstSet=false;
+    if(autoLiveAwaitingSet_) {
+        // Workout status is retained by the protocol adapter. An old rest/end
+        // at completion must not bounce Live; require a newly observed boundary.
+        endedBeforeFirstSet=((phase==3 || phase==4) && phase!=autoLiveWorkoutPhase_) ||
+            (r.setEndRevision && r.setEndRevision!=autoLiveSetEndRevision_);
+        const bool began=(phase==2 && phase!=autoLiveWorkoutPhase_) ||
+            (r.telemetryValid && r.repsStarted.value_or(false));
+        autoLiveWorkoutPhase_=phase;autoLiveSetEndRevision_=r.setEndRevision;
+        if(endedBeforeFirstSet || began) autoLiveAwaitingSet_=false;
+    }
+    if(r.loaded && r.setActive.value_or(true) && r.telemetryValid &&
+        r.repsStarted.value_or(false) && page_==Screen::Main) navigate(Screen::Live);
+    if((!r.loaded || endedBeforeFirstSet || (r.setActive==false && !autoLiveAwaitingSet_)) &&
+        page_==Screen::Live) navigate(Screen::Main);
+}
 void UiController::readTouch() {
     const auto now=hardware_.nowMs();lv_tick_inc(uint32_t(now-lastTickMs_));lastTickMs_=now;
     lv_indev_read(touch_);
@@ -1010,6 +1051,12 @@ void UiController::rotate(int delta) {
     else if (dropField_ == 1) draftDrops_.percent = std::clamp(draftDrops_.percent+delta, 0, 80);
     else draftDrops_.holdSeconds = std::clamp(draftDrops_.holdSeconds+delta, 1, std::max(1,restPauseHoldMaximum(app_.report())));
 }
+std::string UiController::controlFeedback() const {
+    const auto& feedback=app_.message();
+    // Keep ordinary dial queue/readback waits quiet without hiding failures
+    // or feedback from other operations.
+    return app_.weightPreview() && !app_.dropPending() && feedback=="Awaiting device" ? "" : feedback;
+}
 void UiController::update() {
     const auto battery = remoteBatteryPercent();
     const char* batteryIcon = !battery ? LV_SYMBOL_BATTERY_EMPTY : *battery > 85 ? LV_SYMBOL_BATTERY_FULL :
@@ -1032,6 +1079,7 @@ void UiController::update() {
         const bool readback=app_.readbackFresh() && (!detectedTwin || (topologyFresh && r.combinedWeightKnown));
         const bool loadKnown=app_.fresh() && r.loadStateKnown;
         const auto preview=app_.weightPreview();
+        const auto feedback=controlFeedback();
         const int shownWeight=preview.value_or(r.settings.weight);
         largeValue(readback ? weightText(shownWeight,r.unit) : "--");
         const bool atMaximum = readback && r.maxWeight > 0 && shownWeight >= r.maxWeight;
@@ -1102,12 +1150,12 @@ void UiController::update() {
         if (counters.completedSets && counters.lastSetReps) summary = std::to_string(*counters.completedSets)+" | "+std::to_string(*counters.lastSetReps);
         if (const auto rest=app_.restSeconds()) summary += "    "+std::to_string(*rest/60)+":"+(*rest%60 < 10 ? "0" : "")+std::to_string(*rest%60);
         value(stats_,summary);
-        value(message_,!app_.fresh() ? (app_.message().empty() ? detectedTwin ? "" : "State unknown / tap weight to unload" : app_.message()) :
-            r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !app_.message().empty() ? app_.message() :
-            preview ? "Setting weight..." : atMaximum ? "MAX" : "");
+        value(message_,!app_.fresh() ? (feedback.empty() ? detectedTwin ? "" : "State unknown / tap weight to unload" : feedback) :
+            r.autoLoadArmed ? "Auto Load armed / tap to cancel" : !feedback.empty() ? feedback :
+            preview ? "" : atMaximum ? "MAX" : "");
         lv_obj_set_width(message_,width_*68/100);
         lv_obj_set_y(message_,height_*88/100);
-        color(message_,atMaximum && app_.message().empty() ? maximumColor : soft);
+        color(message_,atMaximum && feedback.empty() ? maximumColor : soft);
         updateAutoLoadFeedback();
         return;
     }
@@ -1461,8 +1509,7 @@ void UiController::tick() {
         pendingPreset_ = -1;
     }
     if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_])))) activePreset_ = -1;
-    if (app_.fresh() && r.loaded && r.setActive.value_or(true) && r.telemetryValid && r.repsStarted.value_or(false) && page_ == Screen::Main) navigate(Screen::Live);
-    if (app_.fresh() && (!r.loaded || r.setActive==false) && page_ == Screen::Live) navigate(Screen::Main);
+    updateLiveNavigation(r);
     updateRestAlert(now);
     if (rebuild_) build();
     const int delta = hardware_.rotary().getDelta();

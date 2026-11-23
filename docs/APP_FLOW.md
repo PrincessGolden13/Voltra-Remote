@@ -1,3 +1,14 @@
+> November 23 v0.4.17: request activation status early after acceptance with a
+> bounded read-only priority budget, keeping exact positive status mandatory for
+> Load/Auto Load. On a single VOLTRA, confirmed Auto Load completion opens Live
+> before the first rep; old retained rest/end status cannot immediately bounce
+> back to Adjust. Ordinary dial changes have no waiting caption. Actual errors
+> and unload remain visible/available. A successful single Auto trigger gets one
+> paced status read and stream refresh, matching both reference implementations.
+> Its effect on the missing feed still needs physical confirmation; no target or
+> telemetry settings are guessed. See
+> LOAD_READINESS_2026_11_23.md.
+>
 > November 22 v0.4.16 supersedes v0.4.15's opening-message order: cache one
 > complete GATT characteristic snapshot, establish at least one documented
 > response subscription, then send HELLO before optional telemetry setup.

@@ -1,5 +1,40 @@
 # Validation status and pending tests
 
+November 23 v0.4.17: [load readiness and Auto Load handoff](LOAD_READINESS_2026_11_23.md).
+PASS actual PhysicalSession offline MOCK:15 scenarios/13,436 assertions and
+31 existing regressions. Prioritized AB01, exact0/1, malformed/error/foreign/CRC
+guards, same-sequence revocation/recovery, three paced attempts, background late
+recovery, no intent replay, reconnect reset and explicit unload pass. Synthetic
+15.4-second/70-intent differential sends0 activation queries before and3 after,
+with zero motor/Auto controls. Receipt:
+`/workspace/preview-tools/activation-v0417/validation.json`.
+PASS actual LVGL/TrainingApplication observers at360/466/480:51 Auto-to-Live
+scenes/795 assertions, plus57 quiet-dial cases/306 checks against the combined UI.
+The old executable reproduces the phase14 admission failure. Confirmed completion
+without reps,35-to-loaded without14, retained old rest/end/active, new boundaries,
+TTL/unknown consumption, same-device reconnect, fresh readback, unload/rearm,
+normal tap behavior, reported target changes/no fallback and real errors pass.
+Expected pre-first-rep silence adds no rep warning when target telemetry is valid.
+Renders fit all three round sizes. Receipts:
+`/workspace/preview-tools/single-auto-live-v0417/validation.json` and
+`/workspace/preview-tools/quiet-dial-v0417/combined-validation.json`.
+Core/packet-inspector build and diff whitespace check pass. CI/publication results
+follow when executed. No new tracked automated test source or physical
+Bluetooth/motor operation. Four real standalone B4 fixtures pass72 actual-session
+MOCK assertions across Auto11/12/13/14,35-to-1/5 invalidation/recovery, missing
+target clearing and no force/base fallback. Receipt:
+`/workspace/preview-tools/single-auto-live-v0417/target-replay-validation.json`.
+The standalone post-Auto stream sequence omission is reproduced at100/260 ms
+cadence. PASS final actual-session MOCK follow-up matrix:22 scenarios/121
+assertions. Exact AA12/read/AA13 order sends one trigger and zero motor-setting
+writes; refresh follows at200/520 ms for the two cadences. Failed trigger/read/
+refresh, cancellation, unload, disconnect, topology/workout loss, boot/manual/
+preexisting Auto and unchanged Twin behavior pass. Activation15/13,436 and the
+existing31 regressions also pass on final combined PhysicalSession source
+SHA`3da78bc78a06b26d48afb499d8f9403b992cd9bcaf1951a6b9973e9f5fe2bf14`.
+Physical Auto
+Load target-feed recovery remains unverified pending a report from that state.
+
 November 22 v0.4.16: [ten-repo GATT review](TWIN_GATT_REVIEW_2026_11_22.md).
 PASS independent current-head/source comparison, actual HELLO byte comparison
 against Steven and literal official capture, existing core/packet-inspector build

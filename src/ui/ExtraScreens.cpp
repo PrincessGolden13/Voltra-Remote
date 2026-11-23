@@ -284,10 +284,11 @@ void UiController::updateExtra() {
         text(liveValues_[0],counters.set ? std::to_string(*counters.set) : "");
         text(liveValues_[1],counters.rep ? std::to_string(*counters.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
-        const auto feedback=app_.dropPending() && app_.message().empty() ? std::string("Setting drop...") : app_.message();
+        const auto control=controlFeedback();
+        const auto feedback=app_.dropPending() && control.empty() ? std::string("Setting drop...") : control;
         text(message_,!app_.fresh() ? "State unavailable" :
             !liveWeightFresh ? (feedback.empty() ? "Waiting for live load" : feedback) :
-            !known && feedback.empty() ? "Rep data unavailable" : feedback);
+            !known && !autoLiveAwaitingSet_ && feedback.empty() ? "Rep data unavailable" : feedback);
         const auto remaining=app_.restPauseRemainingPermille();
         if(remaining) {
             lv_bar_set_value(holdBar_,*remaining,LV_ANIM_OFF);
