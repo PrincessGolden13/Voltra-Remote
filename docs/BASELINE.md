@@ -10,13 +10,20 @@
 - Single Auto completion opens Live before first rep; consume that transition
   once and distinguish retained previous-set rest/end from a new boundary.
   Quiet ordinary dial waits while retaining real errors and drop feedback.
+- Both Steven and Dylan Android follow standalone Auto with a status read and
+  AA13 01 stream refresh. Restore that missing bounded follow-up; preserve mask,
+  rate and Twin refresh behavior. The sequence omission is reproduced offline;
+  its effect on the owner's feed still needs physical confirmation.
 - PASS actual-session offline MOCK:15 scenarios/13,436 assertions plus31 existing
   regressions. Synthetic starvation differential:0 activation reads before,
   3 after, zero motor/Auto writes. PASS combined actual LVGL matrices:51 Auto
   scenes/795 assertions and57 quiet-dial cases/306 checks at360/466/480. Existing
   core/packet-inspector and diff checks pass. See TESTING.md for receipts.
+- PASS source-backed standalone refresh MOCK matrix:22 scenarios/121 assertions;
+  one trigger, ordered status/refresh at200/520 ms under100/260 ms cadence, zero
+  motor-setting writes. All activation and31 prior regressions pass combined source.
 - Owner clarifies normal tap-load Live weight works; missing weight is specific
-  to Auto Load. No single-unit failing Live report yet. Stream repair and
+  to Auto Load. No single-unit failing Live report yet. Stream recovery and
   physical effect of these changes remain UNVERIFIED.
 
 ## November 22 response-channel setup v0.4.16

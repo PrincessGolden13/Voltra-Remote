@@ -161,6 +161,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     pairedReadSupported_=autoUnloadReadSupported_=false;
     autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
     pairedRefreshAt_=0;pairedRefreshPending_=false;
+    singleAutoFollowup_=SingleAutoFollowup::None;
     liveWeightProbed_=false;runtimeTarget_.reset();
     runtimeTargetFrames_=0;runtimeTargetSource_=0;runtimeTargetBytes_=0;runtimeTargetShapeValid_=false;
     waitingWrite_.reset();
@@ -259,6 +260,7 @@ bool PhysicalSession::pairedManualWeightReady() const {
 void PhysicalSession::cancelWrites(const char* reason) {
     if(*reason) diagnostic(std::string("Control transaction stopped: ")+reason);
     waitingWrite_.reset();writes_.clear();target_.reset();status_=reason;
+    singleAutoFollowup_=SingleAutoFollowup::None;
     targetClockPending_=targetImmediate_=false;
     liveIntent_.reset();liveBefore_.reset();
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();unitSwitchAt_=0;commandFailed_=*reason!=0;
@@ -314,6 +316,7 @@ void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
     primaryRouteRevoked_=primaryRouteRevoked_ || primaryPeer_.has_value();
     primaryPeer_.reset();pairedMotorFamily_.reset();runtimeTarget_.reset();
     pairedRefreshPending_=false;pairedRefreshAt_=0;
+    singleAutoFollowup_=SingleAutoFollowup::None;
     pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
     deviceSet_.reset();deviceRep_.reset();telemetryAt_=0;
 }
@@ -529,6 +532,7 @@ void PhysicalSession::apply(const Frame& f) {
             if(changed) {
                 twinTopologyAt_=now_;
                 runtimeTarget_.reset();
+                singleAutoFollowup_=SingleAutoFollowup::None;
                 motionAt_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
                 if(busy() && !unloading()) cancelWrites("Waiting for VOLTRA connection state");
                 if(scopeChanged) {
@@ -549,6 +553,7 @@ void PhysicalSession::apply(const Frame& f) {
             // proof without erasing the connection's detected-Twin latch.
             twinStatus_.reset();
             runtimeTarget_.reset();
+            singleAutoFollowup_=SingleAutoFollowup::None;
             // Alternating 22-byte pushes and 23-byte replies must not erase
             // every useful event with the same rejection. The latest detail
             // remains in every report, even between these bounded log entries.
@@ -634,8 +639,10 @@ void PhysicalSession::apply(const Frame& f) {
                 pairedMotorFamily_=PairedMotorFamily::Native;
             else if(pair.second==4 || pair.second==5) pairedMotorFamily_=PairedMotorFamily::Legacy;
         }
-        if((pair.first==twin || pair.first==remoteCoworker || pair.first==pairedDevice) && pair.second!=0)
+        if((pair.first==twin || pair.first==remoteCoworker || pair.first==pairedDevice) && pair.second!=0) {
             twinObserved_=true;
+            singleAutoFollowup_=SingleAutoFollowup::None;
+        }
         // Only normalized parameter values; never serial numbers or BLE identities.
         if(changed && pair.first==pairedDevice) Serial.printf("VOLTRA paired endpoint present = %u\n",unsigned(pair.second!=0));
         else if(changed) Serial.printf("VOLTRA param %u = %lld\n",unsigned(pair.first),static_cast<long long>(pair.second));
@@ -1175,6 +1182,7 @@ TransportResult PhysicalSession::triggerAutoLoad() {
     commandFailed_=false;status_.clear();
     if(!send(0xaa,{0x12})) return TransportResult::Failed;
     if(twinObserved_) pairedRefreshPending_=true;
+    else singleAutoFollowup_=SingleAutoFollowup::ReadStatus;
     waitingWrite_=std::make_pair(motor,twinObserved_ ? pairedAutoMode : 38);waitingAt_=now_;return TransportResult::Accepted;
 }
 void PhysicalSession::pollState(size_t group) {
@@ -1262,6 +1270,23 @@ void PhysicalSession::tick(uint64_t now) {
            fresh(extraMode)!=intentInterpretation_ || fresh(maxForce)!=intentMaximum_ ||
            (!(waitingWrite_ && waitingWrite_->first==accessoryDisplayPercent) && fresh(accessoryDisplayPercent)!=intentDisplay_))) {
             cancelWrites(!updateAllowsControls() ? updateBlockReason() : "Control state changed; request stopped");
+        }
+        // Steven 1c14860 and Android da514d2 both follow explicit AA12 with a
+        // status read then AA13{1}, including standalone. Keep these two paced
+        // observations ahead of recurring polls so they cannot starve. Consume
+        // each stage before sending: never retry the trigger or this follow-up.
+        if(singleAutoFollowup_!=SingleAutoFollowup::None) {
+            if(readOnlyProbe_ || !standalone() || fresh(workout)!=1) {
+                singleAutoFollowup_=SingleAutoFollowup::None;
+            } else if(singleAutoFollowup_==SingleAutoFollowup::ReadStatus) {
+                singleAutoFollowup_=SingleAutoFollowup::RefreshStream;
+                if(!read({motor,autoLoadStatus})) singleAutoFollowup_=SingleAutoFollowup::None;
+                return;
+            } else {
+                singleAutoFollowup_=SingleAutoFollowup::None;
+                if(send(0xaa,{0x13,1})) diagnostic("Auto Load vendor state refresh sent");
+                return;
+            }
         }
         // Deadline-based group scheduling keeps readiness fresh even while a
         // sequence of settings and readbacks occupies the link. Track requests,

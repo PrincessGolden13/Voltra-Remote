@@ -27,6 +27,16 @@ The latest received report above concerns Twin. The feed cause remains
 UNVERIFIED; no subscription-mask, rate, target decoder or motor change is made
 on the basis of that different report.
 
+CONFIRMED independent source difference: Steven's
+[Auto sequence](https://github.com/stevenpoint/voltra_remote/blob/1c14860b53b805a789b8bed2095e63443e355d7d/src/voltra/voltra_client.cpp#L1369)
+and Dylan Android's
+[Direct Load queue](https://github.com/dylanmaniatakes/Beyond-Power-Voltra-Android/blob/da514d2db1a16ebb4ded3156bc8fd200bed1e6eb/device/ble/src/main/kotlin/com/technogizguy/voltra/controller/ble/AndroidVoltraClient.kt#L2608)
+both follow AA12 with a status read and AA13 01 vendor-stream refresh, including
+standalone operation. Our standalone trigger omitted that prompt refresh.
+The synthetic actual-session baseline sends one AA12 but no AA13 during the
+first two seconds at either 100 or 260 ms loop cadence. This establishes an
+omitted sequence, not the physical cause of the owner's missing target stream.
+
 ## Changes
 
 Independent reference: Steven
@@ -47,6 +57,15 @@ inactive/active status. An unknown successful flag clears authorization;
 truncated/error responses cannot grant it. Reused response sequences may update
 this observation. Reconnect clears it. There is no new activation TTL, activation
 write, resistance retry or replay of a previously refused action.
+
+After a successful explicit standalone Auto trigger, schedule one status read
+and one AA13 01 refresh at paced ticks ahead of recurring polling. These two
+bounded observations cannot be starved by a saturated critical-poll sweep.
+Consume each step before sending, with no retry; clear on cancellation, unload,
+disconnect or topology change and require current standalone training context.
+The existing Twin refresh schedule and telemetry mask/rate remain unchanged.
+This matches the source-backed sequence; physical restoration of the reported
+Auto Load weight feed remains UNVERIFIED.
 
 For standalone Auto Load, navigate from Adjust to Live on fresh, known loaded
 completion (phase 14), or after a fresh armed observation followed by known
@@ -73,12 +92,26 @@ control in either run. Checks cover malformed/foreign/CRC-invalid status,
 same-sequence updates, bounded retries, late background recovery, reconnect,
 explicit unload and no intent replay. Independent source review passes.
 
+CONFIRMED final actual-session MOCK refresh matrix:22 scenarios/121 assertions.
+At100/260 ms cadence, the exact AA12/read/AA13 sequence emits one trigger and
+zero motor-setting writes, with refresh at200/520 ms. Failed trigger/read/refresh,
+cancellation, unload, disconnect, topology/workout loss and no boot/manual/
+preexisting-Auto follow-up pass. Existing Twin behavior and activation/prior
+regressions pass on the combined source. These are synthetic wire observations.
+
 Actual LVGL and TrainingApplication observers exercise both UI changes at
 360/466/480. The old executable reproduces the phase-14 admission failure.
 External receipts are under `/workspace/preview-tools/activation-v0417`,
 `quiet-dial-v0417` and `single-auto-live-v0417`. These use synthetic device I/O;
 they do not establish physical Auto Load timing or restoration of its missing
 weight stream. No new tracked automated test source or physical operation.
+
+Four unchanged real standalone B4 packets replayed through the actual session
+pass 72 MOCK assertions: Auto11/12/13 reject target,35/14 accepts its reported
+trailer,35-to-1/5 clears the old context and the next sample restores it. Missing
+target clears the value; neither force nor base substitutes for it. This rules
+out permanent target rejection for those supplied packets, not different
+delivery or payloads on the owner's Auto path.
 
 The existing whole-pound Live display continues to use only fresh device target
 telemetry. Force, measured wire weight, base and percentage calculations are

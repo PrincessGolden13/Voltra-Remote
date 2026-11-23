@@ -20,8 +20,20 @@ Renders fit all three round sizes. Receipts:
 `/workspace/preview-tools/quiet-dial-v0417/combined-validation.json`.
 Core/packet-inspector build and diff whitespace check pass. CI/publication results
 follow when executed. No new tracked automated test source or physical
-Bluetooth/motor operation. Missing standalone
-Auto Load Live target feed is unresolved pending a report from that state.
+Bluetooth/motor operation. Four real standalone B4 fixtures pass72 actual-session
+MOCK assertions across Auto11/12/13/14,35-to-1/5 invalidation/recovery, missing
+target clearing and no force/base fallback. Receipt:
+`/workspace/preview-tools/single-auto-live-v0417/target-replay-validation.json`.
+The standalone post-Auto stream sequence omission is reproduced at100/260 ms
+cadence. PASS final actual-session MOCK follow-up matrix:22 scenarios/121
+assertions. Exact AA12/read/AA13 order sends one trigger and zero motor-setting
+writes; refresh follows at200/520 ms for the two cadences. Failed trigger/read/
+refresh, cancellation, unload, disconnect, topology/workout loss, boot/manual/
+preexisting Auto and unchanged Twin behavior pass. Activation15/13,436 and the
+existing31 regressions also pass on final combined PhysicalSession source
+SHA`3da78bc78a06b26d48afb499d8f9403b992cd9bcaf1951a6b9973e9f5fe2bf14`.
+Physical Auto
+Load target-feed recovery remains unverified pending a report from that state.
 
 November 22 v0.4.16: [ten-repo GATT review](TWIN_GATT_REVIEW_2026_11_22.md).
 PASS independent current-head/source comparison, actual HELLO byte comparison

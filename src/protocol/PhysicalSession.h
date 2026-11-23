@@ -33,7 +33,10 @@ public:
     TransportResult setLoaded(bool) override;
     TransportResult setTraining(const TrainingSettings&) override;
     TransportResult setLiveWeight(int ticks) override;
-    void cancelTraining() override { if(intentUnit_ && !unloading()) cancelWrites(""); }
+    void cancelTraining() override {
+        singleAutoFollowup_=SingleAutoFollowup::None;
+        if(intentUnit_ && !unloading()) cancelWrites("");
+    }
     TransportResult triggerAutoLoad() override;
 private:
     BleTransport& transport_;
@@ -67,6 +70,8 @@ private:
     uint64_t autoLoadPollAt_=0;
     uint64_t pairedRefreshAt_=0;
     bool pairedRefreshPending_=false;
+    enum class SingleAutoFollowup { None, ReadStatus, RefreshStream };
+    SingleAutoFollowup singleAutoFollowup_=SingleAutoFollowup::None;
     bool liveWeightProbed_=false;
     // The terse runtime target belongs to one exact standalone loaded context.
     // A settings/core/topology transition cannot reuse an earlier rep's target.
