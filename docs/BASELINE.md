@@ -19,6 +19,14 @@
   Core/packet-inspector and diff checks pass. See TESTING.md for scoped receipts.
 - Physical ROM agreement, continuous-rep endpoint availability and Auto Load
   target-feed recovery remain UNVERIFIED.
+- CONFIRMED current PR CI45265879282 at6603e4d5 and artifact14862881979 pass
+  public Normal/isolated Simulator/core/package and full package/symbol review.
+  Merge d1fa73b3 has the exact reviewed tree. Tag CI45266887723/artifact14863162889
+  passes and both images exactly match the reviewed PR. Four assets/notes pass.
+- Published [v0.4.18](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.18)
+  as latest ordinary release at2026-11-23T21:17:16Z. The bare public latest
+  manifest and pinned Normal download pass identity/size/SHA-256 and exact tag
+  comparison. v0.4.17 remains an unpublished draft. No physical operation.
 
 ## November 23 load readiness and Auto Load presentation v0.4.17
 

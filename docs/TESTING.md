@@ -31,9 +31,37 @@ under `/workspace/preview-tools`, plus `quiet-dial-v0418/validation.json` and
 `single-auto-live-v0418/validation.json` there; simulator workflow receipt is
 `stairs-boundary-v0418/simulator_matrix-validation.json` and final activation
 outputs are `stairs-boundary-v0418/activation-current-*.txt`.
-Existing core/packet-inspector and
-diff whitespace checks pass. Public artifact checks follow when executed.
+Existing core/packet-inspector and diff whitespace checks pass.
 No physical operation or new tracked automated test source.
+
+PASS [current PR CI45265879282](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45265879282)
+at6603e4d5a752ec9270ffdd29d5fe71d9b47755d0: both public images, core and package.
+Artifact14862881979 SHA-256
+`bce0d8e7665f9a6ed14d123af17d1844daaa7e223d0ce73db0e9657da1c9bbd3`.
+Normal2,044,240bytes SHA-256
+`ee1fbd6ff37d7a90fb1fcc9b7f0041276ef140db1a2170c65c6a17b947fcdd2e`;
+Simulator1,048,768bytes SHA-256
+`1c391a7b892ab84ca700d8b1044e4baf2a7ffa6daf29e149f4ce01185903c084`.
+Explicit0.4.18 descriptors, manifest, all USB hashes/offset/map and USBNormal=OTA,
+physical-only Normal/mock-only Simulator and strong GLOBAL NVS/rollback hooks
+pass. Superseded run45264709040/artifact14861213799 is not the release source.
+Merge d1fa73b379e0b38e783adfff477267bdf280b36a exactly matches the reviewed tree.
+Receipts: ignored `build/review-v0418/{validation,source-review}.json`.
+
+PASS [tag CI45266887723](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45266887723)
+atv0.4.18/d1fa73b3: artifact14863162889 SHA-256
+`88f553af42b76eb99508fc8d9931e75bed8292d92c4aceca6156f9d2e64336f9`.
+Full descriptor/manifest/USB/map/backend/protection checks pass. Both images
+match reviewed PR bytes exactly. All four draft456006007 assets and notes match
+the tag, confirmed by independent metadata review. Receipts: ignored
+`build/review-v0418-tag/{validation,draft-validation}.json`.
+
+PASS publication: release456006007 published as latest ordinaryv0.4.18 at
+2026-11-23T21:17:16Z. The unchanged bare latest-feed verifier passes version,
+schema/board/channel/layout/descriptor, length and SHA-256. Public pinned Normal
+matches reviewed tag bytes exactly. Receipt: ignored
+`build/published-v0418/verification.json`. v0.4.17 remains unpublished. These
+delivery/build/MOCK checks do not establish physical ROM or Auto feed recovery.
 
 November 23 v0.4.17: [load readiness and Auto Load handoff](LOAD_READINESS_2026_11_23.md).
 Publication HOLD: the subsequent Stairs report is addressed in v0.4.18 instead.
