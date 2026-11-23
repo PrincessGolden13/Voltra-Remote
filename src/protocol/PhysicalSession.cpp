@@ -467,11 +467,11 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
             continue;
         }
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa || f.sender!=0x10) continue;
-        // Status and vendor telemetry are observations, not once-only ACKs.
+        // Status, parameter pushes and vendor telemetry are observations, not ACKs.
         // Reused sequences must not hide role loss, inactive status or motion
         // that invalidates an unsent automatic edit. Logical rep/set guards
         // handle repeated observations without replaying a completed event.
-        if(f.command==twinStatusCommand || f.command==0xab || f.command==0xaa) {apply(f);continue;}
+        if(f.command==twinStatusCommand || f.command==0xab || f.command==0xaa || f.command==0x10) {apply(f);continue;}
         const auto key=std::make_pair(f.command,f.sequence);
         if(std::find(seen_.begin(),seen_.end(),key)!=seen_.end()) continue;
         seen_.push_back(key);if(seen_.size()>32) seen_.pop_front();

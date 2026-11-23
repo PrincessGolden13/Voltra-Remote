@@ -5,11 +5,14 @@ CONFIRMED source baseline: actual PhysicalSession dispatches a base edit on
 AA82 return-start during movement and lets an idle-queued edit survive a later
 moving sample. Actual TrainingApplication also requests the premature drop.
 External receipts: `/workspace/preview-tools/stairs-boundary-v0418`.
-PASS final actual PhysicalSession source-shaped MOCK:49 scenarios/184 assertions,
+PASS final actual PhysicalSession source-shaped MOCK:53 scenarios/210 assertions,
 including slow return, same-batch movement and stop, idle-queued/new-pull rejection,
 duplicates/reused sequence, gap/unknown phase, rest/summary, rejected topology,
 temporary changed/restored control context and already-issued write confirmation.
-Physical cpp SHA`6bea0a8a9cd7bb14cc2547b0e40447c68df4ddceacdc13bd59a7892bfc9d3686`.
+Four additional push cases cover changed mount/unknown motor with a reused
+sequence, duplicate pushes not confirming settings before0x0F and push-only motor
+data not renewing expired direct-read evidence. Physical cpp
+SHA`b0ddc36e53b3459917d8c7c0042c2b19de17ce6061129949a862afee46a0fe5b`.
 PASS actual TrainingApplication:12 scenarios/120 assertions. Sequential valid
 Auto/manual Stairs, duplicate/no catch-up, absent/moving/active/unknown/stale/gap/
 wrong-set windows and independent RP hold behavior pass. App cpp

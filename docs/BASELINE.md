@@ -13,7 +13,7 @@
 - v0.4.17 PR/tag/artifact/draft checks pass, but publication is held. Tag run
   45261755158/artifact14860886764 matches reviewed PR images exactly; draft
   455975057 remains unpublished. All its changes are included in v0.4.18.
-- PASS actual protocol MOCK49/184 and application12/120, combined activation
+- PASS actual protocol MOCK53/210 and application12/120, combined activation
   15/13,436 plus31 prior regressions, refresh22/121 and captured target4/72.
   Fresh LVGL matrices Single51/795 and quiet-dial57/306 pass at360/466/480.
   Core/packet-inspector and diff checks pass. See TESTING.md for scoped receipts.

@@ -48,10 +48,13 @@ Once the base write is issued, later movement does not cancel its confirmation
 or pretend that command was withdrawn. No retry, motor command or load reassertion
 is added. Explicit unload remains available.
 
-Read-only vendor telemetry is an observation, so reused sequence numbers cannot
+Vendor telemetry and parameter pushes are observations, so reused sequence numbers cannot
 hide motion from these guards. Counter/transition checks prevent duplicate
 completion; a repeated boundary may conservatively cancel an unsent edit.
-CRC/source/envelope checks still precede decoding. Hardware sequence reuse has
+CRC/source/envelope checks and atomic parameter decoding still precede updates;
+parameter query-response (0x0F) deduplication and settled settings confirmation
+are unchanged.
+Hardware sequence reuse has
 not been established as the cause of this report.
 
 The selected policy waits for the return to finish, consistent with the existing
@@ -67,7 +70,7 @@ remains unpublished; its tag and assets are not replaced. v0.4.18 includes the
 activation, single Auto screen/refresh and quiet-dial changes from that tree.
 
 Validation uses external source-shaped MOCK fixtures and the actual application,
-protocol and simulator implementations. Protocol49/184 and application12/120 pass;
+protocol and simulator implementations. Protocol53/210 and application12/120 pass;
 prior activation, refresh, target and LVGL observers pass on the combined source.
 Detailed results and artifact checks are recorded in TESTING.md. The simplified
 Simulator's 40 ms settings queue does not model every PhysicalSession dispatch
