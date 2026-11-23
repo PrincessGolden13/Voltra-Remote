@@ -1,3 +1,11 @@
+> November 23 v0.4.18 supersedes Stairs' old completed-report trigger: AA82 phase2
+> is return START. Wait for fresh matching AA81 return3-to-idle0 and stillness;
+> reject a late or moving window and cancel unsent automatic edits if motion or
+> context changes before their base write. No catch-up on later reps. This is a
+> conservative remote policy, physically unverified at continuous-rep ROM ends.
+> See STAIRS_BOUNDARY_2026_11_23.md. v0.4.17 remains unpublished; its changes below
+> are included in v0.4.18.
+>
 > November 23 v0.4.17: request activation status early after acceptance with a
 > bounded read-only priority budget, keeping exact positive status mandatory for
 > Load/Auto Load. On a single VOLTRA, confirmed Auto Load completion opens Live

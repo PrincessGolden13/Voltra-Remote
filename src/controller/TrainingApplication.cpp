@@ -1145,6 +1145,11 @@ void TrainingApplication::runDrops(const TrainingReport& r) {
     if(waitingForDropSet_) return;
     bool trigger = false;
     if (d.mode == DropMode::Stairs) {
+        // A completed counter is not permission to change resistance later in
+        // the rep. The adapter must still confirm the observed return endpoint.
+        if(completed && d.step!=0 && (!r.completedRepWindow || r.repActive!=false || r.moving)) {
+            stopDrops("Drop missed; Stairs stopped");return;
+        }
         trigger=completed && d.step!=0;
     } else {
         if(r.motionRevision==telemetryRevision_) return;

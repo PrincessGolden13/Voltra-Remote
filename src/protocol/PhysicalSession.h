@@ -114,11 +114,21 @@ private:
     bool pairedMotion_=false;
     bool pairedMotionUsableForEdit_=false;
     uint8_t motionPhase_=0;
+    // AA82 phase 2 starts the return; it is not a completed repetition.
+    struct ReturnBoundary { int set; uint32_t rep; bool sawReturn; int64_t motor,unit,base; };
+    std::optional<ReturnBoundary> pendingReturn_;
+    bool completedRepWindow_=false;
+    int completedRepPosition_=0;
     uint32_t completedRep_=0;
-    std::optional<int> repSet_;
+    std::optional<int> repSet_,boundarySet_; // Raw AA82 set retained for summary association only.
     bool intentLoaded_=false;
     std::optional<TrainingSettings> liveIntent_;
     std::optional<TrainingSettings> liveBefore_;
+    // Applies only to automatic base changes, through their first wire write.
+    struct AutomaticWeightWindow { uint8_t phase; int set,rep,position; };
+    std::optional<AutomaticWeightWindow> automaticWeightWindow_;
+    bool automaticWeightWindowCurrent() const;
+    void clearRepBoundary();
     std::optional<int> workoutStatus_;
     unsigned telemetryHeaders_=0, telemetrySetup_=0;
     std::array<bool,256> telemetryTypes_{};

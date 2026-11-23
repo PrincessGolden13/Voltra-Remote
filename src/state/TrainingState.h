@@ -74,6 +74,9 @@ struct TrainingReport {
     // Receipt of an actual set-close report, never a load/unload button event.
     uint64_t setEndRevision = 0, setEndedAtMs = 0;
     uint32_t completedRep = 0;
+    // Source-reported return boundary qualified by a fresh return-to-idle
+    // stream transition. False once that stationary endpoint window passes.
+    bool completedRepWindow = false;
     std::optional<int> repSet;
     std::optional<int> positionMm;
     // Optional device telemetry; absent fields are omitted by the UI.

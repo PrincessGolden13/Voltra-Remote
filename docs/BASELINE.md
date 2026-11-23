@@ -1,5 +1,25 @@
 # Foundation baseline
 
+## November 23 Stairs boundary follow-up v0.4.18
+
+- Owner reports Stairs changing weight midrep after Auto Load. Already-pinned
+  SDK79f6c55 calls the AA82 event return START; the old source incorrectly used
+  it as completion. Actual protocol/application MOCK baselines reproduce the
+  early request and a queued edit surviving resumed movement.
+- Qualify the reported return counter with fresh matching AA81 return-to-idle
+  and stillness. Require its current window in Stairs and keep a backend motion
+  guard until the base write is issued. No catch-up, retry or motor reassertion.
+  See STAIRS_BOUNDARY_2026_11_23.md for the conservative policy and limitations.
+- v0.4.17 PR/tag/artifact/draft checks pass, but publication is held. Tag run
+  45261755158/artifact14860886764 matches reviewed PR images exactly; draft
+  455975057 remains unpublished. All its changes are included in v0.4.18.
+- PASS actual protocol MOCK49/184 and application12/120, combined activation
+  15/13,436 plus31 prior regressions, refresh22/121 and captured target4/72.
+  Fresh LVGL matrices Single51/795 and quiet-dial57/306 pass at360/466/480.
+  Core/packet-inspector and diff checks pass. See TESTING.md for scoped receipts.
+- Physical ROM agreement, continuous-rep endpoint availability and Auto Load
+  target-feed recovery remain UNVERIFIED.
+
 ## November 23 load readiness and Auto Load presentation v0.4.17
 
 - Owner confirms a primary connection and working Twin weight edits on v0.4.16.

@@ -1,6 +1,47 @@
 # Validation status and pending tests
 
+November 23 v0.4.18: [Stairs boundary correction](STAIRS_BOUNDARY_2026_11_23.md).
+CONFIRMED source baseline: actual PhysicalSession dispatches a base edit on
+AA82 return-start during movement and lets an idle-queued edit survive a later
+moving sample. Actual TrainingApplication also requests the premature drop.
+External receipts: `/workspace/preview-tools/stairs-boundary-v0418`.
+PASS final actual PhysicalSession source-shaped MOCK:49 scenarios/184 assertions,
+including slow return, same-batch movement and stop, idle-queued/new-pull rejection,
+duplicates/reused sequence, gap/unknown phase, rest/summary, rejected topology,
+temporary changed/restored control context and already-issued write confirmation.
+Physical cpp SHA`6bea0a8a9cd7bb14cc2547b0e40447c68df4ddceacdc13bd59a7892bfc9d3686`.
+PASS actual TrainingApplication:12 scenarios/120 assertions. Sequential valid
+Auto/manual Stairs, duplicate/no catch-up, absent/moving/active/unknown/stale/gap/
+wrong-set windows and independent RP hold behavior pass. App cpp
+SHA`54a459941e1b1b036d6a2faf8b2a3daa89be80cc421d2b5a05a617d1ad392ba5`.
+PASS final combined PhysicalSession activation15/13,436 plus31 prior regressions,
+standalone refresh22/121 and unchanged captured B4 target4/72. PASS fresh actual
+LVGL/application rebuilds:Single Auto51/795 and quiet-dial57/306 at360/466/480.
+Quiet-dial drop fixtures explicitly supply a qualified stationary endpoint;
+the Single Auto fixtures are unchanged. Source hashes match each receipt.
+PASS actual MockTransport workflow14 checks: Auto completion, two endpoint
+Stairs changes and independent RP hold behavior. Its simplified40 ms settings
+queue does not implement the PhysicalSession cancellation guard; these are
+synthetic workflow checks, not physical or dispatch-parity evidence.
+Receipts: `stairs-boundary-v0418/{physical_matrix,app_matrix,target_replay,refresh_followup}-validation.json`
+under `/workspace/preview-tools`, plus `quiet-dial-v0418/validation.json` and
+`single-auto-live-v0418/validation.json` there; simulator workflow receipt is
+`stairs-boundary-v0418/simulator_matrix-validation.json` and final activation
+outputs are `stairs-boundary-v0418/activation-current-*.txt`.
+Existing core/packet-inspector and
+diff whitespace checks pass. Public artifact checks follow when executed.
+No physical operation or new tracked automated test source.
+
 November 23 v0.4.17: [load readiness and Auto Load handoff](LOAD_READINESS_2026_11_23.md).
+Publication HOLD: the subsequent Stairs report is addressed in v0.4.18 instead.
+PR CI45260726519 at836fe791 and tag CI45261755158 ata6bb9d4b pass both public
+images/core/package. Tag artifact14860886764 SHA-256
+`55834dfd38891f6613242a90a4f1d335b555cd3a6fd31b0d50f298280cfdac37`
+matches the PR images exactly. Full descriptors/manifest/USB hashes/offset/map,
+backend isolation and strong NVS/rollback hooks pass. All four draft455975057
+assets and notes match the tag; it remains unpublished. Receipts: ignored
+`build/review-v0417/validation.json` and
+`build/review-v0417-tag/{validation,draft-validation}.json`.
 PASS actual PhysicalSession offline MOCK:15 scenarios/13,436 assertions and
 31 existing regressions. Prioritized AB01, exact0/1, malformed/error/foreign/CRC
 guards, same-sequence revocation/recovery, three paced attempts, background late
@@ -18,8 +59,8 @@ Expected pre-first-rep silence adds no rep warning when target telemetry is vali
 Renders fit all three round sizes. Receipts:
 `/workspace/preview-tools/single-auto-live-v0417/validation.json` and
 `/workspace/preview-tools/quiet-dial-v0417/combined-validation.json`.
-Core/packet-inspector build and diff whitespace check pass. CI/publication results
-follow when executed. No new tracked automated test source or physical
+Core/packet-inspector build and diff whitespace check pass. No new tracked
+automated test source or physical
 Bluetooth/motor operation. Four real standalone B4 fixtures pass72 actual-session
 MOCK assertions across Auto11/12/13/14,35-to-1/5 invalidation/recovery, missing
 target clearing and no force/base fallback. Receipt:
