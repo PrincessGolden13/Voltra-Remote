@@ -101,7 +101,7 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
             // Old neighbours cannot prevent learning a newer target/type.
             const auto oldest=std::min_element(observedRadios.begin(),observedRadios.end(),
                 [](const auto& a,const auto& b){return a.second.order<b.second.order;});
-            advertisements.erase(oldest->first);
+            if(recoveryScanTarget.empty()) advertisements.erase(oldest->first);
             observedRadios.erase(oldest);
         }
         // The callback uses the last poll's monotonic clock under this mutex.
@@ -292,7 +292,7 @@ void NimBleTransport::setScanServices(const std::vector<std::string>& services) 
 std::vector<Advertisement> NimBleTransport::scan() {
     if(!impl_->scanner || impl_->connected || impl_->connecting || impl_->radioBusy || impl_->scanner->isScanning()) return {};
     impl_->scanner->clearResults();
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->advertisements.clear();}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->recoveryScanTarget.clear();impl_->advertisements.clear();}
     const bool started=impl_->scanner->start(2000,false,true); // Async: complete window before auto-selection.
     if(!started) impl_->log("BLE scan could not start");
     return {};
@@ -366,6 +366,7 @@ void NimBleTransport::disconnect() {
     impl_->connecting=false;
     impl_->cancelledGeneration=impl_->radioGeneration.load();
     if(impl_->scanner && impl_->scanner->isScanning()) impl_->scanner->stop();
+    const bool scanStopped=!impl_->scanner || !impl_->scanner->isScanning();
     impl_->recoveryScanDue=impl_->recoveryScanActive=false;
     if(!impl_->cancelling && !impl_->terminalObserved && impl_->client && (impl_->radioBusy || impl_->client->isConnected() || ble_gap_conn_active())) {
         impl_->cancelling=true;
@@ -373,7 +374,12 @@ void NimBleTransport::disconnect() {
         else impl_->client->cancelConnect();
     }
     ++impl_->generation;
-    { std::lock_guard<std::mutex> lock(impl_->mutex); impl_->received.clear();impl_->recoveryScanTarget.clear(); }
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->received.clear();
+        // If cancel failed, keep filtering this short window until it drains.
+        if(scanStopped) impl_->recoveryScanTarget.clear();
+    }
     impl_->overflow=false;
     impl_->diagnosticRx=impl_->diagnosticTx=0;
     impl_->characteristics.clear();
