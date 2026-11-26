@@ -73,7 +73,7 @@ private:
     lv_obj_t *face_ = nullptr, *weight_ = nullptr, *title_ = nullptr, *status_ = nullptr,
         *hint_ = nullptr, *message_ = nullptr, *arc_ = nullptr, *unit_ = nullptr, *limit_ = nullptr;
     lv_obj_t *autoLoadArc_=nullptr,*autoLoadTitle_=nullptr,*autoLoadPrompt_=nullptr;
-    bool weightHoldActive_=false,weightAutoLoadGesture_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
+    bool weightHoldActive_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
     void updateAutoLoadFeedback();
     // Presentation only: confirmed Auto Load completion can precede the first
     // workout packet. Keep Live through that handoff without changing control state.
@@ -82,6 +82,7 @@ private:
     int autoLiveWorkoutPhase_=0;
     uint64_t autoLiveSetEndRevision_=0;
     void updateLiveNavigation(const TrainingReport&);
+    static std::string deviceNames(const std::string& first,const std::string& second);
     std::vector<const DeviceEntry*> deviceChoices() const;
     lv_obj_t *miniArc_[3]{}, *miniValue_[3]{}, *modeLabels_[3]{}, *choice_[3]{};
     lv_obj_t *tiles_[3]{};
@@ -104,12 +105,13 @@ private:
     std::string deviceSignature_, scaleSignature_;
     uint64_t lastTickMs_ = 0;
     RotaryAdjustment rotaryAdjustment_;
-    bool touchDown_ = false, touchMoved_ = false;
+    bool touchDown_ = false, touchMoved_ = false, touchPressTwin_ = false;
     int touchStartX_ = 0, touchStartY_ = 0;
     RemoteConfigurationStore* store_ = nullptr;
     RemoteConfiguration config_;
     int presetIndex_ = 0, activePreset_ = -1, pendingPreset_ = -1, settingsField_ = 0;
     bool draftPercent_ = true, editDirty_ = false, returnAfterEdit_ = false;
+    bool lastInputTwin_ = false;
     uint64_t editedAt_ = 0;
     lv_obj_t* unitChoices_[2]{};
     void edited();

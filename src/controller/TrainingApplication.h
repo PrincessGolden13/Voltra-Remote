@@ -129,6 +129,7 @@ private:
     DeviceId selectionFirstEndpoint_,selectionExpectedPeer_,selectionResolvedPeer_;
     bool selectionFirstPeerObserved_=false,selectionResolvedTwin_=false;
     bool selectionReadOnlyView_=false;
+    bool twinTransitionPending_=false;
     bool userSelected_=false;
     DeviceId recoveryFollower_;
     bool waitingForControlFreshness_=false;
@@ -143,6 +144,7 @@ private:
                        ConnectionEnd end=ConnectionEnd::None);
     void traceSelectionEndpoint();
     bool retainSelectionControl(bool requireControl=true);
+    void refreshConnectedTwinSelection(bool afterProtocolPoll);
     uint64_t loadRefusalRevision_=0;
     void recordControlFailure(const std::string&);
     void recordLoadRefusal();

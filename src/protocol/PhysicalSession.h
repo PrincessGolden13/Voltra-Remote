@@ -19,6 +19,7 @@ public:
     void setSelectedAddress(std::string) override;
     bool setReadOnlyProbe(bool) override;
     bool readOnlyProbe() const override { return readOnlyProbe_; }
+    bool twinHandoffIdle() const override;
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
@@ -48,6 +49,7 @@ private:
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::optional<Observed> directMotor_;
+    std::optional<Observed> followerIdle_;
     std::optional<uint64_t> mountReleasedAt_;
     std::optional<DeviceAddress> selectedAddress_;
     std::optional<TwinStatus> twinStatus_;
@@ -71,7 +73,7 @@ private:
     bool autoLoadCountdownProbed_=false,autoLoadCountdownSupported_=false;
     uint64_t autoLoadPollAt_=0;
     uint64_t pairedRefreshAt_=0;
-    bool pairedRefreshPending_=false;
+    bool pairedRefreshPending_=false, pairedDirectRefreshSent_=false;
     enum class SingleAutoFollowup { None, ReadStatus, RefreshStream };
     SingleAutoFollowup singleAutoFollowup_=SingleAutoFollowup::None;
     bool liveWeightProbed_=false;

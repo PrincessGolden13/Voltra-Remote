@@ -161,13 +161,13 @@ void PhysicalSession::connectionChanged(bool connected) {
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
-    values_.clear();directMotor_.reset();mountReleasedAt_.reset();seen_.clear();report_={};firmware_.clear();
+    values_.clear();directMotor_.reset();followerIdle_.reset();mountReleasedAt_.reset();seen_.clear();report_={};firmware_.clear();
     twinStatus_.reset();primaryPeer_.reset();primaryRouteRevoked_=false;pairedMotorFamily_.reset();twinStatusAt_=twinTopologyAt_=twinPollAt_=0;
     twinObserved_=twinReplyOwnMatch_=twinReplyAccepted_=twinReplySeen_=false;twinReplyBytes_=0;
     twinReplyDiagnostic_.clear();twinDiagnosticAt_=0;
     pairedReadSupported_=autoUnloadReadSupported_=false;
     autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
-    pairedRefreshAt_=0;pairedRefreshPending_=false;
+    pairedRefreshAt_=0;pairedRefreshPending_=pairedDirectRefreshSent_=false;
     singleAutoFollowup_=SingleAutoFollowup::None;
     liveWeightProbed_=false;runtimeTarget_.reset();
     runtimeTargetFrames_=0;runtimeTargetSource_=0;runtimeTargetBytes_=0;runtimeTargetShapeValid_=false;
@@ -331,6 +331,12 @@ bool PhysicalSession::primaryTwinFresh() const {
     return currentTwinRole()==CurrentTwinRole::Master && primaryRouteKnown() &&
         twinStatus_->peer==*primaryPeer_;
 }
+bool PhysicalSession::twinHandoffIdle() const {
+    return !busy() && currentTwinRole()==CurrentTwinRole::Follower && followerIdle_ &&
+        followerIdle_->at>twinTopologyAt_ && now_>=followerIdle_->at && now_-followerIdle_->at<=stateFreshMs &&
+        fresh(motor)==followerIdle_->value && fresh(autoLoadStatus)==0 && fresh(workout)==1 &&
+        (!workoutStatus_ || *workoutStatus_==0 || *workoutStatus_==1 || *workoutStatus_==3);
+}
 bool PhysicalSession::primaryRouteKnown() const {
     return !primaryRouteRevoked_ && connected_ && accepted_ && selectedAddress_ && primaryPeer_.has_value();
 }
@@ -338,7 +344,8 @@ void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
     if(primaryPeer_ || busy()) cancelWrites(reason);
     primaryRouteRevoked_=primaryRouteRevoked_ || primaryPeer_.has_value();
     primaryPeer_.reset();pairedMotorFamily_.reset();runtimeTarget_.reset();
-    pairedRefreshPending_=false;pairedRefreshAt_=0;
+    followerIdle_.reset();
+    pairedRefreshPending_=pairedDirectRefreshSent_=false;pairedRefreshAt_=0;
     singleAutoFollowup_=SingleAutoFollowup::None;
     clearRepBoundary();automaticWeightWindow_.reset();
     pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
@@ -579,6 +586,7 @@ void PhysicalSession::apply(const Frame& f) {
                 decoded->peer!=twinStatus_->peer;
             if(changed) {
                 twinTopologyAt_=now_;
+                followerIdle_.reset();
                 runtimeTarget_.reset();
                 clearRepBoundary();automaticWeightWindow_.reset();
                 singleAutoFollowup_=SingleAutoFollowup::None;
@@ -601,6 +609,7 @@ void PhysicalSession::apply(const Frame& f) {
             // Invalid or wrong-device topology invalidates the previous live
             // proof without erasing the connection's detected-Twin latch.
             twinStatus_.reset();
+            followerIdle_.reset();
             runtimeTarget_.reset();
             clearRepBoundary();
             if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
@@ -749,6 +758,19 @@ void PhysicalSession::apply(const Frame& f) {
     // while cached status 14 still described the preceding loaded sequence.
     // Unload completes only on a direct response containing BOTH reset values;
     // never combine a motor push/read with an older cached status (even 0).
+    if(followerIdle_ && (fresh(motor)!=followerIdle_->value || fresh(autoLoadStatus)!=0 || fresh(workout)!=1))
+        followerIdle_.reset();
+    if(f.command==0x0f && currentTwinRole()==CurrentTwinRole::Follower && now_>twinTopologyAt_ &&
+       motorObserved && decoded.count(autoLoadStatus) && decoded.at(autoLoadStatus)==0) {
+        const auto raw=decoded.at(motor);
+        if(raw==0 || raw==4 || raw==pairedUnloaded) followerIdle_=Observed{raw,now_};
+    }
+    if(f.command==0x0f && primaryTwinFresh() && now_>twinTopologyAt_ && motorObserved &&
+       decoded.count(autoLoadStatus) && decoded.at(autoLoadStatus)==0) {
+        const auto mode=decodeMotorMode(decoded.at(motor));
+        // Freshness gaps and unloaded pushes cannot re-arm priority work.
+        if(mode==0 || mode==4) pairedDirectRefreshSent_=false;
+    }
     if(waitingWrite_ && waitingWrite_->first==motor && now_>=waitingAt_ && motorObserved) {
         const auto observed=decodeMotorMode(decoded.at(motor));
         const auto autoState=fresh(autoLoadStatus);
@@ -1157,7 +1179,8 @@ std::string PhysicalSession::diagnosticState() const {
     text+=" twinCounters={B4="+std::to_string(twinB4CounterFrames_)+"/"+std::to_string(runtimeTargetFrames_)+
         " lastB4="+std::to_string(runtimeTargetSource_)+"/"+std::to_string(runtimeTargetBytes_)+" AA81="+std::to_string(twinAa81Decoded_)+
         "/"+std::to_string(twinAa81Seen_)+" lastAA81="+std::to_string(twinAa81LastProtocol_)+"/"+
-        std::to_string(twinAa81LastBytes_)+" setup="+std::to_string(telemetrySetup_)+" shown="+
+        std::to_string(twinAa81LastBytes_)+" setup="+std::to_string(telemetrySetup_)+
+        " directRefresh="+std::to_string(pairedDirectRefreshSent_)+" shown="+
         (!counter ? "none" : twinB4Counters_ && counter==&*twinB4Counters_ ? "B4" : "AA81")+"}";
     text+=" twinLatch="+std::to_string(twinObserved_)+" A7={seen="+std::to_string(twinReplySeen_)+
         " bytes="+std::to_string(twinReplyBytes_)+" accepted="+std::to_string(twinReplyAccepted_)+
@@ -1460,6 +1483,21 @@ void PhysicalSession::tick(uint64_t now) {
             } else {
                 singleAutoFollowup_=SingleAutoFollowup::None;
                 if(send(0xaa,{0x13,1})) diagnostic("Auto Load vendor state refresh sent");
+                return;
+            }
+        }
+        // The normal sweep can occupy every paced turn on a slow link. Give
+        // the captured AA13 state refresh one priority turn for a confirmed
+        // direct Twin load. A fresh direct motor read must agree with the
+        // current loaded report. Pending controls retain their own ordering.
+        if(!pairedDirectRefreshSent_ && !busy() && twinCounterContext() && directMotor_ &&
+           directMotor_->at>twinTopologyAt_ && fresh(autoLoadStatus)==0 &&
+           (!pairedRefreshAt_ || now_-pairedRefreshAt_>=pairedRefreshIntervalMs)) {
+            const auto motor=freshMotorMode();
+            if((motor==1 || motor==5) && freshDirectMotorMode()==motor) {
+                pairedDirectRefreshSent_=true;
+                pairedRefreshPending_=false;pairedRefreshAt_=now_;
+                if(send(0xaa,{0x13,1})) diagnostic("Twin Live refresh sent");
                 return;
             }
         }

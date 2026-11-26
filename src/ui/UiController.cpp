@@ -13,10 +13,10 @@ constexpr uint32_t soft = 0x96a7bd, amber = 0xffc374;
 void color(lv_obj_t* obj, uint32_t c) { style::set_text_color(obj, lv_color_hex(c), 0); }
 void value(lv_obj_t* obj, const std::string& text) { if (obj && text != lv_label_get_text(obj)) lv_label_set_text(obj, text.c_str()); }
 int percentOf(int n, int max) { return max > 0 ? std::clamp(n*1000/max, 0, 1000) : 0; }
-std::string deviceNames(const std::string& first,const std::string& second) {
+}
+std::string UiController::deviceNames(const std::string& first,const std::string& second) {
     if(first.empty()) return second;
     return second.empty() ? first : first+" + "+second;
-}
 }
 lv_obj_t* UiController::label(lv_obj_t* parent, const std::string& text, int w, int y, const lv_font_t* font) {
     auto* obj = lv_label_create(parent); value(obj, text); lv_obj_set_width(obj, w);
@@ -39,7 +39,6 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                 b->ui->weightHoldActive_=true;
                 const auto r=b->ui->app_.report();
                 b->ui->weightUnloadGesture_=!b->ui->app_.fresh() || r.loaded || r.autoLoadArmed || b->ui->app_.pending();
-                b->ui->weightAutoLoadGesture_=!b->ui->weightUnloadGesture_ && r.autoLoadSupported;
             }
             else if(code==LV_EVENT_RELEASED || code==LV_EVENT_PRESS_LOST) b->ui->weightHoldActive_=false;
         }
@@ -62,8 +61,8 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                 diagnostic("Six-second debug hold recognized on release");
                 lv_indev_wait_release(b->ui->touch_);return;
             }
+            const auto r=b->ui->app_.report();
             if(b->action==Weight) {
-                const auto r=b->ui->app_.report();
                 // Unload/cancel takes precedence over gesture classification,
                 // including when a loaded/armed press becomes unloaded before
                 // release. A hold can never turn that cancellation into Load.
@@ -71,9 +70,12 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                     diagnostic("Weight release unloads/cancels current request");
                     b->ui->app_.unload();return;
                 }
-                if(elapsed>=autoLoadHintMs && (!b->ui->weightAutoLoadGesture_ || elapsed<autoLoadHoldMs)) {
+                if(elapsed>=autoLoadHintMs && elapsed<autoLoadHoldMs) {
                     diagnostic("Weight hold cancelled before Auto Load threshold");return;
                 }
+            }
+            if(b->action!=Unload && b->ui->touchPressTwin_!=(r.twin || r.twinDetected)) {
+                diagnostic("Touch release cancelled after topology change");return;
             }
             const bool held=supportsHold && elapsed>=(b->action==Weight ? autoLoadHoldMs : controlHoldMs);
             diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(held)+" durationMs="+std::to_string(elapsed));
@@ -258,6 +260,8 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         }
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
         if(p.pressed && !s->touchDown_) {
+            const auto r=s->app_.report();
+            s->touchPressTwin_=r.twin || r.twinDetected;
             s->touchStartX_=x;s->touchStartY_=y;s->touchMoved_=false;s->modeGestureUntil_=0;
             s->touchStartedAt_=s->touchEventAt_;s->debugConsumed_=s->debugMoved_=false;
         }
@@ -441,7 +445,7 @@ void UiController::updateLiveNavigation(const TrainingReport& r) {
         autoLiveDevice_=app_.selectedDevice();
         autoLiveArmedSeen_=autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
     }
-    if(!app_.fresh() || !r.loadStateKnown) return;
+    if(!app_.selectionReady() || !app_.fresh() || !r.loadStateKnown) return;
     const bool single=r.twinKnown && !r.twin && !r.twinDetected;
     const bool twin=r.twinKnown && r.twin && r.currentTwinRole==CurrentTwinRole::Master;
     const bool supportedAutoProfile=single || twin;
@@ -479,14 +483,18 @@ void UiController::updateLiveNavigation(const TrainingReport& r) {
         autoLiveWorkoutPhase_=phase;autoLiveSetEndRevision_=r.setEndRevision;
         if(endedBeforeFirstSet || began) autoLiveAwaitingSet_=false;
     }
-    if(r.loaded && r.setActive.value_or(true) && r.telemetryValid &&
-        r.repsStarted.value_or(false) && page_==Screen::Main) navigate(Screen::Live);
+    // Twin counters can arrive after loading or be absent on this runtime
+    // stream. A direct load can open Live from confirmed controller state.
+    const bool directTwin=twin && !autoLiveCompletionConsumed_;
+    const bool activeRep=r.setActive.value_or(true) && r.telemetryValid && r.repsStarted.value_or(false);
+    if(r.loaded && !r.autoLoadArmed && page_==Screen::Main &&
+        (activeRep || (directTwin && app_.readbackFresh()))) navigate(Screen::Live);
     // A paired Auto session can still report an armed phase while the first
     // set is coming through. Keep the Live presentation (and its cancel tap)
     // while following the actual machine state. A confirmed unload ends it.
     const bool waitingForTwinAuto=twin && r.autoLoadArmed && autoLiveAwaitingSet_;
     if(((!r.loaded && !waitingForTwinAuto) || endedBeforeFirstSet ||
-        (r.setActive==false && !autoLiveAwaitingSet_)) && page_==Screen::Live) {
+        (r.setActive==false && !autoLiveAwaitingSet_ && !directTwin)) && page_==Screen::Live) {
         diagnostic("Live ended loaded="+std::to_string(r.loaded)+" armed="+std::to_string(r.autoLoadArmed)+
             " twin="+std::to_string(twin)+" phase="+std::to_string(phase)+
             " auto="+(r.autoLoadPhase ? std::to_string(*r.autoLoadPhase) : "unknown"));
@@ -498,7 +506,7 @@ void UiController::readTouch() {
     lv_indev_read(touch_);
 }
 void UiController::navigate(Screen page) {
-    weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=false;
+    weightHoldActive_=weightUnloadGesture_=false;
     if(page!=Screen::Updates) {updateCheckPending_=false;updateCheckMessage_.clear();}
     if(page==Screen::Live && batteryAlertDialog_) closeBatteryAlert(false);
     const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
@@ -718,7 +726,7 @@ void UiController::build() {
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
-    weightHoldActive_=weightAutoLoadGesture_=weightUnloadGesture_=autoFeedbackVisible_=false;
+    weightHoldActive_=weightUnloadGesture_=autoFeedbackVisible_=false;
     center_ = battery_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
@@ -1244,9 +1252,12 @@ void UiController::updateAutoLoadFeedback() {
     const auto r=app_.report();
     const auto now=hardware_.nowMs();
     const auto elapsed=touchEventAt_>=touchStartedAt_ ? touchEventAt_-touchStartedAt_ : 0;
-    const bool holding=weightHoldActive_ && weightAutoLoadGesture_ && touchDown_ && !touchMoved_ && !wakeTouch_ && !debugConsumed_ &&
-        elapsed>=autoLoadHintMs && elapsed<debugHoldMs && app_.fresh() && !r.loaded && !r.autoLoadArmed &&
-        !app_.pending() && r.autoLoadSupported;
+    // Read support as the hold progresses. A readback missing on touch-down
+    // can arrive before release, and the app checks permission at release.
+    const bool holdingWeight=weightHoldActive_ && !weightUnloadGesture_ && touchDown_ && !touchMoved_ && !wakeTouch_ && !debugConsumed_ &&
+        touchPressTwin_==(r.twin || r.twinDetected) && elapsed>=autoLoadHintMs && elapsed<debugHoldMs &&
+        app_.fresh() && !r.loaded && !r.autoLoadArmed && !app_.pending();
+    const bool holding=holdingWeight && r.autoLoadSupported;
     const bool starting=app_.autoLoadRequested() && !r.loaded && !r.autoLoadArmed;
     const bool armed=app_.fresh() && r.autoLoadArmed;
     const bool visible=(holding || starting || armed) && !debugDialog_ && !debugPending_;
@@ -1282,7 +1293,13 @@ void UiController::updateAutoLoadFeedback() {
         lv_obj_set_style_transform_scale(weight_,scale,0);
     }
     autoFeedbackVisible_=visible;
-    if(!visible) return;
+    if(!visible) {
+        if(holdingWeight && !r.autoLoadSupported && !debugDialog_ && !debugPending_) {
+            value(message_,"Auto Load unavailable");
+            color(message_,soft);
+        }
+        return;
+    }
 
     value(autoLoadTitle_,"AUTO LOAD");
     style::set_arc_color(autoLoadArc_,lv_color_hex(accent()),LV_PART_INDICATOR);
@@ -1507,6 +1524,16 @@ void UiController::tick() {
         if (!touchDown_ && signature != deviceSignature_) { deviceSignature_ = signature; rebuild_ = true; }
     }
     const auto r = app_.report();
+    const bool inputTwin=r.twin || r.twinDetected;
+    const bool inputScopeChanged=inputTwin!=lastInputTwin_;
+    lastInputTwin_=inputTwin;
+    if(inputScopeChanged) {
+        // A topology update can keep the same screen and BLE endpoint. Drop
+        // unsent editor work and unread gestures from the old weight scope.
+        editDirty_=returnAfterEdit_=false;
+        rotaryAdjustment_.reset();
+        if(!touchDown_ && hardware_.touch().hasPending()) hardware_.touch().discardPending();
+    }
     if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
         // Coalesce consecutive rotary events for 150 ms. A report never creates
         // an edit or retry; only a new input event can set editDirty_.
@@ -1538,7 +1565,7 @@ void UiController::tick() {
     if (pressed && !wasSleeping && !batteryAlertDialog_ && !debugDialog_ && page_ == Screen::Devices && runtime_) {
         modeGestureUntil_ = now+3000; modeGestureClicks_ = 0;
     }
-    if (delta && !wasSleeping && !batteryAlertDialog_ && !debugDialog_ && !debugDisconnectPending_) {
+    if (delta && !inputScopeChanged && !wasSleeping && !batteryAlertDialog_ && !debugDialog_ && !debugDisconnectPending_) {
         diagnostic("Dial delta="+std::to_string(delta)+" screen="+std::to_string(int(page_)));
         rotate(delta);
     }
@@ -1547,7 +1574,12 @@ void UiController::tick() {
         else if (debugDialog_ || debugDisconnectPending_) { if(app_.connected()) unloadFromDebugDialog(); }
         else if (page_ == Screen::Presets) act(ChoosePreset,"",false);
         else if (page_ == Screen::PresetNotice) act(Unload,"",false);
-        else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) app_.toggleWeight();
+        else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) {
+            // Keep the rotary unload path, but don't turn a queued press into
+            // a new load on the just-adopted pair.
+            if(!inputScopeChanged) app_.toggleWeight();
+            else if(!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()) app_.unload();
+        }
     }
     // Keep unload visible while loaded, pending, armed, or connected with unknown state.
     const bool mustStayAwake = batteryAlertDialog_ || restNotice_ || debugDialog_ || (reports_ && reports_->status().busy()) || (updates_ && updates_->status().busy()) || (app_.connected() && (!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()));
