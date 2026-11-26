@@ -298,6 +298,8 @@ void MockTransport::poll(uint64_t now) {
     if(!state.loaded || state.autoLoadArmed || state.moving || state.held) state.completedRepWindow=false;
     state.motionAtMs=now;++state.motionRevision;
     state.repActive=state.loaded && (state.moving || state.held);
+    // The simulator exposes explicit movement and completed-rep actions.
+    if(state.twin) state.twinRepActive=state.loaded && (state.moving || state.repsStarted.value_or(false));
     state.receivedAtMs = now; ++state.revision; reported_ = state;
     device_.weightLbs = uint16_t(std::lround(state.settings.weight / double(ticksPerUnit(state.unit)) * (state.unit == WeightUnit::Kilograms ? 2.2046226218 : 1.0)));
     device_.loaded = state.loaded;

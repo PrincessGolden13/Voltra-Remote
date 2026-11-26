@@ -75,6 +75,8 @@ public:
     void toggleWeight();
     void unload();
     void autoLoad();
+    static const char* autoLoadUnavailableText(const TrainingReport&);
+    bool checkingTwinAfterWorkoutExit() const { return session_.checkingTwinAfterWorkoutExit(); }
     void toggleModifier(bool magic);
     bool applyModifier(bool magic, MagicMode mode, int value, bool percent);
     DropSettings drops() const;

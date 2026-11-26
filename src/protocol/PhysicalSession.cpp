@@ -18,6 +18,11 @@ constexpr uint16_t lastCoworkerRole=21560,peerAutoLoadStatus=21569;
 // Measured wire weight, not the changing target shown by the main VOLTRA LCD.
 // Keep one isolated diagnostic probe; never substitute it for the live target.
 constexpr uint16_t liveWireWeight=0x3e83;
+// Android da514d2 parameter catalog: signed motor target in 0.1 lb. The
+// controller LCD's combined Twin value has not been matched to this field.
+constexpr uint16_t twinMotorTargetProbe=20859;
+constexpr unsigned twinMotorTargetReadLimit=3;
+constexpr uint64_t twinMotorTargetReadSpacingMs=750;
 constexpr uint64_t liveTargetFreshMs=500;
 constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentricPercent=21456;
 // kirby6365/voltra_remote 8e1ea1c: polled uint8 switches, absent from older CSV.
@@ -67,6 +72,10 @@ constexpr uint64_t twinCounterDisplayMs=10000;
 // A bounded unloaded transaction can contain several individually confirmed
 // writes. Keep critical polls ahead of it; never retry a timed-out step.
 constexpr uint64_t settingsDeadlineMs=10000, criticalPollIntervalMs=1300;
+// A joining device can leave Weight Training before it reports its Twin role.
+// Observe the relationship for a limited time before treating it as a normal exit.
+constexpr uint64_t workoutExitTwinWindowMs=8000, workoutExitIdlePollMs=500;
+constexpr unsigned workoutExitTwinReads=6;
 // Read-only initial activation discovery is part of bootstrap readiness. A
 // missing reply gets a small paced budget, never an unbounded priority loop.
 constexpr unsigned activationInitialReadAttempts=3;
@@ -114,7 +123,7 @@ int width(uint16_t id) {
     case lastCoworkerRole: case peerAutoLoadStatus: return 1;
     case 0x3e82: case 0x3e83: case 0x3e86: case 0x3e87: case 0x3e88: case 0x3e89:
     case 0x506a: case 21268: case 21476: case 21534: case 0x53c8: case 20873: case 20874:
-    case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377:
+    case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377: case twinMotorTargetProbe:
     case 21002: case 21003: case 21004: return 2; // BLE interval reports, Android capture.
     case 20590: case 21023: case 0x5165: case 0x5355: case 0x53cf:
     case 21028: case 21722: case 21456: case 21224: case telemetrySubscribe: return 4;
@@ -161,7 +170,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
-    values_.clear();directMotor_.reset();followerIdle_.reset();mountReleasedAt_.reset();seen_.clear();report_={};firmware_.clear();
+    values_.clear();directMotor_.reset();directIdle_.reset();directWorkout_.reset();mountReleasedAt_.reset();seen_.clear();report_={};firmware_.clear();
     twinStatus_.reset();primaryPeer_.reset();primaryRouteRevoked_=false;pairedMotorFamily_.reset();twinStatusAt_=twinTopologyAt_=twinPollAt_=0;
     twinObserved_=twinReplyOwnMatch_=twinReplyAccepted_=twinReplySeen_=false;twinReplyBytes_=0;
     twinReplyDiagnostic_.clear();twinDiagnosticAt_=0;
@@ -170,16 +179,23 @@ void PhysicalSession::connectionChanged(bool connected) {
     pairedRefreshAt_=0;pairedRefreshPending_=pairedDirectRefreshSent_=false;
     singleAutoFollowup_=SingleAutoFollowup::None;
     liveWeightProbed_=false;runtimeTarget_.reset();
+    twinMotorTargetReads_=twinMotorTargetReplies_=0;
+    twinMotorTargetPending_=false;
+    twinMotorTargetReadAt_.reset();twinMotorTargetMin_.reset();twinMotorTargetMax_.reset();
     runtimeTargetFrames_=0;runtimeTargetSource_=0;runtimeTargetBytes_=0;runtimeTargetShapeValid_=false;
     waitingWrite_.reset();
     writes_.clear();target_.reset();telemetrySubscribed_=false;entryHandled_=targetClockPending_=false;
-    trainingSeen_=false;
+    trainingSeen_=standaloneTrainingSeen_=twinReentryPending_=twinReentryAllowed_=false;
+    standaloneTwinJoinedAt_.reset();
+    workoutExitCheck_.reset();
     targetImmediate_=false;
     telemetryAt_=unitSwitchAt_=0;commandFailed_=false;intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
-    twinB4Counters_.reset();twinAa81Counters_.reset();
+    clearTwinDisplayTelemetry();
+    twinAa81Tails_={};
     twinB4CounterFrames_=twinAa81Seen_=twinAa81Decoded_=0;
     twinAa81LastBytes_=twinAa81LastProtocol_=0;
+    twinAa80Seen_=twinAa80Decoded_=0;twinAa80LastBytes_=0;twinAa80LastStatus_=-1;
     closedSet_.reset();setEndRevision_=setEndedAt_=0;
     motionAt_=motionRevision_=repAt_=repRevision_=telemetryLogAt_=0;
     motionPosition_=motionVelocity_=motionForce_=0;motionPhase_=0;completedRep_=0;repSet_.reset();intentLoaded_=false;liveIntent_.reset();
@@ -240,7 +256,7 @@ bool PhysicalSession::settingsReady() const {
 }
 bool PhysicalSession::controlContextReady() const {
     const auto u=fresh(unit),maximum=fresh(maxForce);
-    return !readOnlyProbe_ && connected_ && accepted_ && (standalone() || primaryTwinFresh()) &&
+    return !readOnlyProbe_ && !workoutExitCheck_ && connected_ && accepted_ && (standalone() || primaryTwinFresh()) &&
         fresh(workout)==1 && u && (*u==0 || *u==1) && maximum && *maximum>0 &&
         fresh(base).has_value() && fresh(childLock)==0 && updateAllowsControls() && modifiersKnown() && controlObservationsCurrent();
 }
@@ -332,10 +348,18 @@ bool PhysicalSession::primaryTwinFresh() const {
         twinStatus_->peer==*primaryPeer_;
 }
 bool PhysicalSession::twinHandoffIdle() const {
-    return !busy() && currentTwinRole()==CurrentTwinRole::Follower && followerIdle_ &&
-        followerIdle_->at>twinTopologyAt_ && now_>=followerIdle_->at && now_-followerIdle_->at<=stateFreshMs &&
-        fresh(motor)==followerIdle_->value && fresh(autoLoadStatus)==0 && fresh(workout)==1 &&
+    const auto mode=fresh(workout);
+    return !busy() && currentTwinRole()==CurrentTwinRole::Follower && directIdleCurrent() &&
+        directIdle_->at>twinTopologyAt_ && (mode==1 || (mode==0 && directWorkoutCurrent() && directWorkout_->at>twinTopologyAt_)) &&
         (!workoutStatus_ || *workoutStatus_==0 || *workoutStatus_==1 || *workoutStatus_==3);
+}
+bool PhysicalSession::directIdleCurrent() const {
+    return directIdle_ && now_>=directIdle_->at && now_-directIdle_->at<=stateFreshMs &&
+        fresh(motor)==directIdle_->value && fresh(autoLoadStatus)==0;
+}
+bool PhysicalSession::directWorkoutCurrent() const {
+    return directWorkout_ && now_>=directWorkout_->at && now_-directWorkout_->at<=stateFreshMs &&
+        fresh(workout)==directWorkout_->value && freshDirectMotorMode() && freshDirectMotorMode()==freshMotorMode();
 }
 bool PhysicalSession::primaryRouteKnown() const {
     return !primaryRouteRevoked_ && connected_ && accepted_ && selectedAddress_ && primaryPeer_.has_value();
@@ -344,13 +368,18 @@ void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
     if(primaryPeer_ || busy()) cancelWrites(reason);
     primaryRouteRevoked_=primaryRouteRevoked_ || primaryPeer_.has_value();
     primaryPeer_.reset();pairedMotorFamily_.reset();runtimeTarget_.reset();
-    followerIdle_.reset();
+    directIdle_.reset();directWorkout_.reset();
     pairedRefreshPending_=pairedDirectRefreshSent_=false;pairedRefreshAt_=0;
     singleAutoFollowup_=SingleAutoFollowup::None;
     clearRepBoundary();automaticWeightWindow_.reset();
     pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
     deviceSet_.reset();deviceRep_.reset();telemetryAt_=0;
+    clearTwinDisplayTelemetry();
+    twinAa81Tails_={};
+}
+void PhysicalSession::clearTwinDisplayTelemetry() {
     twinB4Counters_.reset();twinAa81Counters_.reset();
+    twinRepPhase_.reset();twinWorkoutPhase_.reset();
 }
 bool PhysicalSession::twinCounterContext() const {
     return !readOnlyProbe_ && primaryTwinFresh() && report_.loadStateKnown && report_.loaded &&
@@ -500,6 +529,11 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
             f.command==0xaa && !f.payload.empty() && f.payload.front()==0x81) {
             ++twinAa81Seen_;twinAa81LastBytes_=f.payload.size();twinAa81LastProtocol_=f.protocol;
         }
+        if(accepted_ && twinObserved_ && f.sender==0x10 && f.receiver==0xaa &&
+           f.command==0xaa && !f.payload.empty() && f.payload.front()==0x80) {
+            ++twinAa80Seen_;twinAa80LastBytes_=f.payload.size();
+            twinAa80LastStatus_=f.payload.size()>=5 ? f.payload[4] : -1;
+        }
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa || f.sender!=0x10) continue;
         // Status, parameter pushes and vendor telemetry are observations, not ACKs.
         // Reused sequences must not hide role loss, inactive status or motion
@@ -586,13 +620,18 @@ void PhysicalSession::apply(const Frame& f) {
                 decoded->peer!=twinStatus_->peer;
             if(changed) {
                 twinTopologyAt_=now_;
-                followerIdle_.reset();
+                directIdle_.reset();directWorkout_.reset();
+                if(scopeChanged && standaloneTrainingSeen_ && !standaloneTwinJoinedAt_ &&
+                   decoded->state==twinStatusPaired && decoded->role!=TwinStatusRole::Unknown)
+                    standaloneTwinJoinedAt_=now_;
                 runtimeTarget_.reset();
                 clearRepBoundary();automaticWeightWindow_.reset();
                 singleAutoFollowup_=SingleAutoFollowup::None;
                 motionAt_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
                 if(busy() && !unloading()) cancelWrites("Waiting for VOLTRA connection state");
                 if(scopeChanged) {
+                    clearTwinDisplayTelemetry();
+                    twinAa81Tails_={};
                     deviceSet_.reset();deviceRep_.reset();telemetryAt_=repAt_=0;
                     completedRep_=0;repSet_.reset();boundarySet_.reset();completedSets_.reset();completedReps_.reset();
                     workoutStatus_.reset();closedSet_.reset();setEndedAt_=setEndRevision_=0;
@@ -609,7 +648,9 @@ void PhysicalSession::apply(const Frame& f) {
             // Invalid or wrong-device topology invalidates the previous live
             // proof without erasing the connection's detected-Twin latch.
             twinStatus_.reset();
-            followerIdle_.reset();
+            clearTwinDisplayTelemetry();
+            twinAa81Tails_={};
+            directIdle_.reset();directWorkout_.reset();
             runtimeTarget_.reset();
             clearRepBoundary();
             if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
@@ -665,7 +706,7 @@ void PhysicalSession::apply(const Frame& f) {
         // Only retain presence for a paired identifier; do not log/persist it.
         decoded[id]=id==pairedDevice ? int64_t(value!=0) :
             (id==chainsPercent || id==eccentricPercent) ? int32_t(value) :
-            (id==eccentric || id==0x3e83) ? int16_t(value) : int64_t(value);
+            (id==eccentric || id==liveWireWeight || id==twinMotorTargetProbe) ? int16_t(value) : int64_t(value);
     }
     if(at!=p.size()) return;
     if(f.command==0x0f) {
@@ -675,6 +716,20 @@ void PhysicalSession::apply(const Frame& f) {
     }
     bool acknowledgedMagic=false,acknowledgedEccentric=false,motorObserved=false;
     for(const auto& pair:decoded) {
+        if(pair.first==twinMotorTargetProbe) {
+            // Isolated, solicited read only. No cache entry feeds any control
+            // or display, and a late response after unload is ignored.
+            if(f.command==0x0f && count==1 && twinMotorTargetPending_ && twinMotorTargetReadAt_ &&
+               *twinMotorTargetReadAt_>twinTopologyAt_ && now_>=*twinMotorTargetReadAt_ &&
+               now_-*twinMotorTargetReadAt_<=motionFreshMs && twinCounterContext()) {
+                twinMotorTargetPending_=false;
+                const int value=int(pair.second);
+                twinMotorTargetMin_=std::min(value,twinMotorTargetMin_.value_or(value));
+                twinMotorTargetMax_=std::max(value,twinMotorTargetMax_.value_or(value));
+                ++twinMotorTargetReplies_;
+            }
+            continue;
+        }
         if(pair.first==motor) {
             if(f.command==0x0f) directMotor_=Observed{pair.second,now_};
             // Ignore only the documented stale loaded-idle echo; genuine
@@ -758,12 +813,13 @@ void PhysicalSession::apply(const Frame& f) {
     // while cached status 14 still described the preceding loaded sequence.
     // Unload completes only on a direct response containing BOTH reset values;
     // never combine a motor push/read with an older cached status (even 0).
-    if(followerIdle_ && (fresh(motor)!=followerIdle_->value || fresh(autoLoadStatus)!=0 || fresh(workout)!=1))
-        followerIdle_.reset();
-    if(f.command==0x0f && currentTwinRole()==CurrentTwinRole::Follower && now_>twinTopologyAt_ &&
-       motorObserved && decoded.count(autoLoadStatus) && decoded.at(autoLoadStatus)==0) {
+    if(directIdle_ && (fresh(motor)!=directIdle_->value || fresh(autoLoadStatus)!=0)) directIdle_.reset();
+    if(directWorkout_ && (fresh(workout)!=directWorkout_->value || freshDirectMotorMode()!=freshMotorMode()))
+        directWorkout_.reset();
+    if(f.command==0x0f && motorObserved && decoded.count(workout)) directWorkout_=Observed{decoded.at(workout),now_};
+    if(f.command==0x0f && motorObserved && decoded.count(autoLoadStatus) && decoded.at(autoLoadStatus)==0) {
         const auto raw=decoded.at(motor);
-        if(raw==0 || raw==4 || raw==pairedUnloaded) followerIdle_=Observed{raw,now_};
+        if(raw==0 || raw==4 || raw==pairedUnloaded) directIdle_=Observed{raw,now_};
     }
     if(f.command==0x0f && primaryTwinFresh() && now_>twinTopologyAt_ && motorObserved &&
        decoded.count(autoLoadStatus) && decoded.at(autoLoadStatus)==0) {
@@ -799,9 +855,34 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     // Paired B4 is separately decoded. Standalone phase/completed-rep words
     // must not manufacture paired completion or automatic drop events.
     if(twinObserved_) {
+        const bool displayContext=twinCounterContext() && now_>twinTopologyAt_;
         if(const auto counters=decodeExtendedTwinCounters(f)) {
             ++twinAa81Decoded_;
-            if(twinCounterContext()) twinAa81Counters_=TimedTwinCounters{{counters->set,counters->rep},now_};
+            if(displayContext) {
+                twinAa81Counters_=TimedTwinCounters{{counters->set,counters->rep},now_};
+                if(!twinWorkoutPhase_ || twinWorkoutPhase_==TwinWorkoutPhase::InProgress)
+                    twinRepPhase_=Observed{counters->phase,now_};
+                // Albert c4f2884 notes an optional two-byte Twin trailer.
+                // The exact 68-byte Steven profile is validated above, but
+                // its last word is not confirmed as a target or in any unit.
+                if(counters->phase==1 || counters->phase==3)
+                    twinAa81Tails_[counters->phase==1?0:1]=TwinAa81Tail{counters->set,counters->rep,u16(p,66),now_};
+            }
+        } else if(f.type==0x04 && p.size()==39 &&
+                  p[0]==0x80 && p[1]==0x25 && p[2]==1 && p[3]==0) {
+            // Steven 1c14860 documents workout status in the same flow that
+            // recognizes paired 81/42 reps. Require our exact Weight Training
+            // shape. Status 2 can precede the first rep. Keep it out of the
+            // standalone control, drop and rest logic.
+            const auto phase=p[4]<=uint8_t(TwinWorkoutPhase::Unloading)
+                ? std::optional<TwinWorkoutPhase>(static_cast<TwinWorkoutPhase>(p[4])) : std::nullopt;
+            if(phase) ++twinAa80Decoded_;
+            if(displayContext) {
+                if(phase!=TwinWorkoutPhase::InProgress || (twinWorkoutPhase_ && phase!=twinWorkoutPhase_))
+                    twinRepPhase_.reset();
+                if(phase!=twinWorkoutPhase_) diagnostic("Twin workout status="+std::to_string(p[4]));
+                twinWorkoutPhase_=phase;
+            }
         }
         return;
     }
@@ -1017,10 +1098,13 @@ void PhysicalSession::updateReport() {
         return;
     }
     trainingSeen_=true;
+    if(!readOnlyProbe_ && standalone()) standaloneTrainingSeen_=true;
+    // A Weight Training read after verified pairing settles the new scope.
+    if(primaryTwinFresh() && values_[workout].at>twinTopologyAt_) standaloneTrainingSeen_=false;
     report_.loadStateKnown=standalone() || primaryTwinFresh();
     const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==autoComplete);
     if(report_.loadStateKnown && (!loaded || !wasLoaded)) {
-        twinB4Counters_.reset();twinAa81Counters_.reset();
+        clearTwinDisplayTelemetry();
     }
     if(report_.loadStateKnown && loaded && !wasLoaded) {
         deviceSet_.reset();deviceRep_.reset();repSet_.reset();completedRep_=0;
@@ -1051,9 +1135,15 @@ void PhysicalSession::updateReport() {
         report_.maxWeight=resolveWeightLimit(limits,report_.unit).ticks;
         report_.minWeight=standalone() ? voltraISingleMinimum(report_.unit) : 0;
     }
-    report_.autoLoadSupported=(standalone() || primaryTwinFresh()) && fresh(autoLoadEnabled)==1 && fresh(autoLoadSafetyEnabled)==1;
-    if(primaryTwinFresh()) for(const auto id:{autoLoadEnabled,autoLoadSafetyEnabled})
-        report_.autoLoadSupported=report_.autoLoadSupported && values_.count(id) && values_.at(id).at>twinTopologyAt_;
+    const auto autoLoadFlag=[&](uint16_t id) -> std::optional<bool> {
+        const auto value=fresh(id);
+        if(value!=0 && value!=1) return {};
+        if(!standalone() && (!primaryTwinFresh() || values_.at(id).at<=twinTopologyAt_)) return {};
+        return value==1;
+    };
+    report_.autoLoadEnabled=autoLoadFlag(autoLoadEnabled);
+    report_.autoLoadSafetyEnabled=autoLoadFlag(autoLoadSafetyEnabled);
+    report_.autoLoadSupported=report_.autoLoadEnabled==true && report_.autoLoadSafetyEnabled==true;
     report_.autoUnloadHoldSeconds.reset();
     if(const auto delay=fresh(autoUnloadHoldTime); delay && *delay>=0 && *delay<=10)
         report_.autoUnloadHoldSeconds=int(*delay);
@@ -1105,7 +1195,15 @@ void PhysicalSession::updateReport() {
 }
 TrainingReport PhysicalSession::trainingReport() const {
     auto result=report_;
+    if(!fresh(autoLoadEnabled) || (!standalone() && !primaryTwinFresh())) result.autoLoadEnabled.reset();
+    if(!fresh(autoLoadSafetyEnabled) || (!standalone() && !primaryTwinFresh())) result.autoLoadSafetyEnabled.reset();
+    result.autoLoadSupported=result.autoLoadSupported && result.autoLoadEnabled==true && result.autoLoadSafetyEnabled==true;
     if(const auto* counters=twinCountersForDisplay()) result.twinDisplayCounters=counters->value;
+    if(twinCounterContext()) {
+        result.twinWorkoutPhase=twinWorkoutPhase_;
+        if(twinRepPhase_ && twinRepPhase_->at>twinTopologyAt_ && now_>=twinRepPhase_->at &&
+           now_-twinRepPhase_->at<=motionFreshMs) result.twinRepActive=twinRepPhase_->value!=0;
+    }
     result.completedRepWindow=result.completedRepWindow && completedRepWindow_;
     if(!motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) result.completedRepWindow=false;
     result.currentTwinRole=currentTwinRole();
@@ -1179,9 +1277,21 @@ std::string PhysicalSession::diagnosticState() const {
     text+=" twinCounters={B4="+std::to_string(twinB4CounterFrames_)+"/"+std::to_string(runtimeTargetFrames_)+
         " lastB4="+std::to_string(runtimeTargetSource_)+"/"+std::to_string(runtimeTargetBytes_)+" AA81="+std::to_string(twinAa81Decoded_)+
         "/"+std::to_string(twinAa81Seen_)+" lastAA81="+std::to_string(twinAa81LastProtocol_)+"/"+
-        std::to_string(twinAa81LastBytes_)+" setup="+std::to_string(telemetrySetup_)+
+        std::to_string(twinAa81LastBytes_)+" AA80="+std::to_string(twinAa80Decoded_)+"/"+std::to_string(twinAa80Seen_)+
+        " lastAA80="+std::to_string(twinAa80LastBytes_)+"/"+std::to_string(twinAa80LastStatus_)+" setup="+std::to_string(telemetrySetup_)+
         " directRefresh="+std::to_string(pairedDirectRefreshSent_)+" shown="+
         (!counter ? "none" : twinB4Counters_ && counter==&*twinB4Counters_ ? "B4" : "AA81")+"}";
+    if(twinAa81Tails_[0] || twinAa81Tails_[1]) {
+        const auto sample=[&](const auto& value) {
+            return value ? std::to_string(value->set)+"/"+std::to_string(value->rep)+"/"+
+                std::to_string(value->word)+"@"+std::to_string(now_>=value->at ? now_-value->at : 0)+"ms" : "missing";
+        };
+        text+=" aa81Tail={pull="+sample(twinAa81Tails_[0])+" return="+sample(twinAa81Tails_[1])+"}";
+    }
+    if(twinMotorTargetReads_) {
+        text+=" target20859="+std::to_string(twinMotorTargetReplies_)+"/"+std::to_string(twinMotorTargetReads_);
+        if(twinMotorTargetMin_) text+="["+std::to_string(*twinMotorTargetMin_)+","+std::to_string(*twinMotorTargetMax_)+"]";
+    }
     text+=" twinLatch="+std::to_string(twinObserved_)+" A7={seen="+std::to_string(twinReplySeen_)+
         " bytes="+std::to_string(twinReplyBytes_)+" accepted="+std::to_string(twinReplyAccepted_)+
         " ownMatch="+std::to_string(twinReplyOwnMatch_)+" state="+(twinStatus_ ? std::to_string(twinStatus_->state) : "unknown")+
@@ -1350,6 +1460,7 @@ TransportResult PhysicalSession::setLoaded(bool loaded) {
     }
     // Explicit unload remains available even if state is unknown or another request is pending.
     entryHandled_=true; // Cancel any connection-time mode entry too.
+    twinReentryPending_=false;
     if(twinObserved_ && !primaryRouteKnown()) {
         diagnostic("Twin unload refused: no established primary route");
         cancelWrites("Use VOLTRA to unload");
@@ -1364,7 +1475,7 @@ TransportResult PhysicalSession::triggerAutoLoad() {
     const auto ready=readiness();
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if(busy() || !ready.ready || !ready.twinSafe || !settingsReady() || !activated_ ||
-       !report_.autoLoadSupported || fresh(autoLoadStatus)!=0 || fresh(base).value_or(0)<ready.minWeightLbs ||
+       !trainingReport().autoLoadSupported || fresh(autoLoadStatus)!=0 || fresh(base).value_or(0)<ready.minWeightLbs ||
        !weightOnIncrement(report_,report_.settings.weight)) {
         status_=ready.reason.empty() ? "Auto Load unavailable" : ready.reason;return TransportResult::Unsupported;
     }
@@ -1401,19 +1512,84 @@ bool PhysicalSession::enterTrainingOnConnect() {
     if(entryHandled_ || busy()) return false;
     const auto mode=fresh(workout),m=freshMotorMode();
     if(!mode || !m) return false;
-    if(*mode==1) {entryHandled_=true;return false;}
+    if(*mode==1) {entryHandled_=true;twinReentryPending_=false;return false;}
     // User-authorized connection setup: enter from the idle home screen only.
     // Never interrupt another workout, unload automatically, or issue a load.
     if(*mode!=0 || (*m!=0 && *m!=4)) {
         entryHandled_=true;status_="Finish current workout on VOLTRA";return false;
     }
     if((!standalone() && !primaryTwinFresh()) || fresh(childLock)!=0) return false;
+    if(twinReentryPending_ && (!twinReentryAllowed_ || !primaryTwinFresh() || !directWorkoutCurrent() ||
+       directWorkout_->at<=twinTopologyAt_ || !directIdleCurrent() || directIdle_->at<directWorkout_->at)) return false;
     if(!updateAllowsControls()) {status_=updateBlockReason();return false;}
-    entryHandled_=true;status_="Opening Weight Training...";
+    entryHandled_=true;twinReentryPending_=false;status_="Opening Weight Training...";
     // Android da514d2 enterWeightTrainingPayload: 20400 uint8 = 1.
     // One attempt per connection, confirmed by mode readback, never retried.
     writeParameter(workout,1,1);
     return true;
+}
+bool PhysicalSession::handleWorkoutExit() {
+    if(readOnlyProbe_ || !trainingSeen_) return false;
+    const auto mode=fresh(workout),motorState=freshMotorMode();
+    const bool idleExit=mode && *mode!=1 && (motorState==0 || motorState==4) &&
+        values_[motor].at>=values_[workout].at;
+    if(!workoutExitCheck_) {
+        if(!idleExit) return false;
+        // A7 can arrive first. Carry the joining scope only briefly, and
+        // require new live role/idle evidence before acting on it.
+        const bool recentlyJoined=standaloneTwinJoinedAt_ && now_>=*standaloneTwinJoinedAt_ &&
+            now_-*standaloneTwinJoinedAt_<workoutExitTwinWindowMs;
+        if(mode==0 && (standaloneTrainingSeen_ || recentlyJoined)) {
+            workoutExitCheck_=WorkoutExitCheck{now_,values_[workout].at,0};
+            if(!unloading()) cancelWrites("Checking for Twin");
+            diagnostic("Idle Weight Training exit; checking current Twin role");
+        } else {
+            // Ordinary mode changes, including on a settled Twin, keep the
+            // original exit behavior. Never disconnect on unknown/loaded motor.
+            cancelWrites("VOLTRA left Weight Training; reconnect");
+            connectionFailure_=true;transport_.disconnect();return true;
+        }
+    }
+    const auto check=*workoutExitCheck_;
+    const bool expired=now_<check.startedAt || now_-check.startedAt>=workoutExitTwinWindowMs;
+    const bool idle=mode && directIdleCurrent() && directIdle_->at>=values_[workout].at && !unloading();
+    const bool primary=primaryTwinFresh() && twinStatusAt_>=check.observedAt;
+    const bool resumedSingle=mode==1 && standalone() && twinStatusFresh() && twinStatus_->state==twinStatusAlone &&
+        twinStatusAt_>=check.observedAt && directWorkoutCurrent() && directWorkout_->at>=check.observedAt && report_.loadStateKnown;
+    if(resumedSingle) {
+        workoutExitCheck_.reset();
+        entryHandled_=true;
+        updateReport();
+        diagnostic("Standalone Weight Training resumed on VOLTRA");
+    } else if(!expired && primary && (mode==1 || (mode==0 && idle && directIdle_->at>twinTopologyAt_ &&
+              directWorkoutCurrent() && directWorkout_->at>twinTopologyAt_))) {
+        // Fresh same-link primary. If it is still home, resume only the normal
+        // guarded one-time training entry, after leaving this read-only check.
+        workoutExitCheck_.reset();
+        standaloneTrainingSeen_=false;
+        standaloneTwinJoinedAt_.reset();
+        trainingSeen_=entryHandled_=mode==1;
+        twinReentryPending_=mode==0;
+        updateReport();
+        diagnostic("Twin controller confirmed after Weight Training exit");
+    } else if(expired && idle) {
+        cancelWrites("VOLTRA left Weight Training; reconnect");
+        connectionFailure_=true;transport_.disconnect();return true;
+    }
+    return false;
+}
+void PhysicalSession::pollWorkoutExit() {
+    auto& check=*workoutExitCheck_;
+    if(now_>=check.startedAt && now_-check.startedAt<workoutExitTwinWindowMs &&
+       check.topologyReads<workoutExitTwinReads && (!check.topologyReads || now_-twinPollAt_>=criticalPollIntervalMs)) {
+        ++check.topologyReads;
+        twinPollAt_=now_;
+        send(twinStatusCommand,{});
+    } else if(!pollAt_[0] || now_-pollAt_[0]>=workoutExitIdlePollMs) {
+        // Renew the direct motor, workout and Auto reset observation. No
+        // workout entry, settings write or motor action runs on this path.
+        pollState(0);
+    } else if(!pollAt_[2] || now_-pollAt_[2]>=criticalPollIntervalMs) pollState(2);
 }
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
@@ -1422,16 +1598,7 @@ void PhysicalSession::tick(uint64_t now) {
     if(connectionClockPending_) {connectedAt_=now_;connectionClockPending_=false;}
     if(!readOnlyProbe_ && twinObserved_ && !primaryTwinFresh() && busy() && !unloading())
         cancelWrites("Waiting for VOLTRA connection state");
-    // A fault/manual exit can end Weight Training without dropping the GATT
-    // link. Return to selection only after confirmed unload; unknown/loaded
-    // state must retain the immediately accessible unload target. No retry,
-    // automatic mode re-entry, load, or queued settings survives this exit.
-    const auto mode=fresh(workout),motorState=freshMotorMode();
-    if(!readOnlyProbe_ && trainingSeen_ && mode && *mode!=1 && motorState && (*motorState==0 || *motorState==4) &&
-       values_[motor].at>=values_[workout].at) {
-        cancelWrites("VOLTRA left Weight Training; reconnect");
-        connectionFailure_=true;transport_.disconnect();return;
-    }
+    if(handleWorkoutExit()) return;
     // Input arrives after the previous protocol tick, possibly after a blocking
     // GATT operation. Start quiet time on this fresh loop instead of backdating it.
     if(target_ && targetClockPending_) {targetAt_=now;targetClockPending_=false;}
@@ -1448,6 +1615,7 @@ void PhysicalSession::tick(uint64_t now) {
     } else if(bootstrap_==1) {if(send(0xff,{0,0xaa},0xaa,0xd2,0x08)) ++bootstrap_;}
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {
+        if(workoutExitCheck_ && !readOnlyProbe_) {pollWorkoutExit();return;}
         // A read-only selection or Devices probe needs topology first. Request
         // it once before activation and the broader parameter sweep. Later A7
         // polls retain the normal cadence; this never grants control by itself.
@@ -1513,6 +1681,17 @@ void PhysicalSession::tick(uint64_t now) {
         // an unsupported request must not monopolize the state scheduler.
         if(!twinPollAt_ || now_-twinPollAt_>=criticalPollIntervalMs) {
             twinPollAt_=now_;send(twinStatusCommand,{});return;
+        }
+        if(!busy() && twinCounterContext() && twinAa81Counters_ &&
+           now_>=twinAa81Counters_->at && now_-twinAa81Counters_->at<=motionFreshMs &&
+           twinMotorTargetReads_<twinMotorTargetReadLimit &&
+           (!twinMotorTargetReadAt_ || now_-*twinMotorTargetReadAt_>=twinMotorTargetReadSpacingMs)) {
+            // Optional and isolated behind control-state deadlines. Unsupported
+            // motors cannot cause a required state read to fail.
+            ++twinMotorTargetReads_;
+            twinMotorTargetReadAt_=now_;twinMotorTargetPending_=true;
+            if(!read({twinMotorTargetProbe})) twinMotorTargetPending_=false;
+            return;
         }
         if(!readOnlyProbe_ && primaryTwinFresh() && (pairedRefreshPending_ ||
            (report_.loadStateKnown && report_.loaded && (!pairedRefreshAt_ || now_-pairedRefreshAt_>=pairedRefreshIntervalMs)))) {

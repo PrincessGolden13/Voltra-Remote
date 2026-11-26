@@ -16,6 +16,8 @@ struct TrainingSettings {
     Modifier magic, eccentric;
 };
 struct TwinDisplayCounters { int set, rep; };
+// Device-reported display lifecycle. Separate from control and drop evidence.
+enum class TwinWorkoutPhase : uint8_t { Unloaded=0, Loading=1, InProgress=2, Resting=3, Unloading=4 };
 struct TrainingReport {
     TrainingSettings settings;
     WeightUnit unit = WeightUnit::Pounds;
@@ -47,6 +49,8 @@ struct TrainingReport {
     // an active motor or permission to issue an automatic drop.
     bool separateTwinDisplayCounters=false;
     std::optional<TwinDisplayCounters> twinDisplayCounters;
+    std::optional<TwinWorkoutPhase> twinWorkoutPhase;
+    std::optional<bool> twinRepActive;
     std::optional<bool> repsStarted;
     std::optional<bool> setActive; // Actual device workout phase, not a local timer.
     std::optional<bool> resting; // Confirmed between-set rest, distinct from a weight-induced statistics close.
@@ -59,6 +63,9 @@ struct TrainingReport {
     int weightIncrement = 1; // Smallest absolute-setting step in display ticks; not the base floor.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
+    // Exact current configuration readbacks used only to explain an unavailable
+    // hold. Missing or out-of-scope fields have no value.
+    std::optional<bool> autoLoadEnabled, autoLoadSafetyEnabled;
     bool liveModifierAmountsSupported = false; // Same curve and units; never a load/reassertion.
     // Explicit base-only dial edits while loaded and idle. Separate from the
     // automatic drop capability; a paired source must observe both channels.
