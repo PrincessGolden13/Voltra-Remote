@@ -27,6 +27,7 @@ public:
     bool commandFailed() const override { return commandFailed_; }
     const std::string& status() const override { return status_; }
     std::string diagnosticState() const override;
+    DeviceEndObservation endObservation(uint64_t now) const override;
     SessionReadiness readiness() const override;
     TrainingReport trainingReport() const override;
     TransportResult setWeight(uint16_t) override;
@@ -47,6 +48,7 @@ private:
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::optional<Observed> directMotor_;
+    std::optional<uint64_t> mountReleasedAt_;
     std::optional<DeviceAddress> selectedAddress_;
     std::optional<TwinStatus> twinStatus_;
     std::optional<DeviceAddress> primaryPeer_;

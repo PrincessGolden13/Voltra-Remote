@@ -47,7 +47,8 @@ constexpr uint16_t fitnessRestTime=21377; // Android da514d2 catalog: uint16 sec
 // training-control documents seconds and zero=off. Read only, never a write.
 constexpr uint16_t autoUnloadHoldTime=21525;
 // Black, Oct 24: user released/resecured mount, 2 -> 1 -> 2.
-constexpr int securedMount=2;
+// See docs/DROPSETS_UNITS_2026_10_24.md. Do not interpret other values.
+constexpr int securedMount=2, releasedMount=1;
 // Android da514d2 paramInfo.csv defines EP_VOID_LOCK's default as 0; Black's
 // successful Oct 24 profile reported 6. Nov 18 report bb697e8f shows fresh 0
 // being refused despite the other known readiness fields. This exact allowlist
@@ -157,7 +158,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     diagnosticFrames_=diagnosticVersions_=0;
     connectedAt_=now_;lastWrite_=reportRevision_=0;
     for(auto& parser:parsers_) parser.reset();fragmentAt_={};
-    values_.clear();directMotor_.reset();seen_.clear();report_={};firmware_.clear();
+    values_.clear();directMotor_.reset();mountReleasedAt_.reset();seen_.clear();report_={};firmware_.clear();
     twinStatus_.reset();primaryPeer_.reset();primaryRouteRevoked_=false;pairedMotorFamily_.reset();twinStatusAt_=twinTopologyAt_=twinPollAt_=0;
     twinObserved_=twinReplyOwnMatch_=twinReplyAccepted_=twinReplySeen_=false;twinReplyBytes_=0;
     twinReplyDiagnostic_.clear();twinDiagnosticAt_=0;
@@ -651,6 +652,15 @@ void PhysicalSession::apply(const Frame& f) {
         }
         const auto previous=values_.find(pair.first);
         const bool changed=previous==values_.end() || previous->second.value!=pair.second;
+        if(pair.first==mountLock) {
+            if(pair.second!=releasedMount) mountReleasedAt_.reset();
+            else if(fresh(mountLock)==securedMount && (standalone() ||
+                (primaryTwinFresh() && previous!=values_.end() && previous->second.at>twinTopologyAt_))) {
+                // The validated parameter frame belongs to the selected unit.
+                // For Twin, require the same live own-matched primary epoch.
+                mountReleasedAt_=now_;
+            }
+        }
         const bool controlContext=pair.first==base || pair.first==unit || pair.first==motor || pair.first==workout ||
             pair.first==autoLoadStatus || pair.first==chains || pair.first==eccentric || pair.first==chainsPercent ||
             pair.first==eccentricPercent || pair.first==inverse || pair.first==mountain || pair.first==extraMode ||
@@ -1129,6 +1139,12 @@ std::string PhysicalSession::diagnosticState() const {
         " motionAgeMs="+(motionAt_ ? std::to_string(now_>=motionAt_ ? now_-motionAt_ : 0) : "missing");
     return text;
 }
+DeviceEndObservation PhysicalSession::endObservation(uint64_t now) const {
+    if(!connected_ || !accepted_ || !mountReleasedAt_ || now<*mountReleasedAt_ ||
+        now-*mountReleasedAt_>stateFreshMs || fresh(mountLock)!=releasedMount) return DeviceEndObservation::None;
+    if(!standalone() && (!primaryTwinFresh() || *mountReleasedAt_<=twinTopologyAt_)) return DeviceEndObservation::None;
+    return DeviceEndObservation::MountLockReleased;
+}
 TransportResult PhysicalSession::setWeight(uint16_t pounds) {
     auto settings=report_.settings;
     if(twinObserved_) {
@@ -1363,6 +1379,12 @@ void PhysicalSession::tick(uint64_t now) {
     } else if(bootstrap_==1) {if(send(0xff,{0,0xaa},0xaa,0xd2,0x08)) ++bootstrap_;}
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {
+        // A read-only selection or Devices probe needs topology first. Request
+        // it once before activation and the broader parameter sweep. Later A7
+        // polls retain the normal cadence; this never grants control by itself.
+        if(readOnlyProbe_ && !twinPollAt_) {
+            twinPollAt_=now_;send(twinStatusCommand,{});return;
+        }
         // Steven's captured bootstrap reads AB01 before ordinary state sweeps.
         // Do not put the first activation observation behind optional work,
         // continuous edits, or a saturated critical-poll schedule. This is a

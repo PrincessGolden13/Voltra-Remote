@@ -2,8 +2,8 @@
 
 Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
 screen for six seconds. No debug hint appears before three seconds; then it says
-**Keep holding to send a debug log**. The remote
-shows **SEND disconnects Bluetooth and uploads over Wi-Fi**. Tap SEND to save the
+**Keep holding to send a debug log**. The dialog says **Wi-Fi connection required.**
+and **Sending disconnects Bluetooth from VOLTRA.** Tap SEND to save the
 report and release Bluetooth automatically, or CLOSE to dismiss without sending.
 There is no separate Bluetooth confirmation or manual-disconnect step. Sending
 does not unload the VOLTRA. Waking a sleeping screen consumes the first
@@ -17,8 +17,8 @@ delay as time held. Lost, stale or moved samples remain cancelled.
 Drift up to 10% of the display's short side is allowed for debugging; larger
 movement cancels. Control taps keep their stricter movement limits. Unload
 remains available on the dialog when connected: its larger target acts on initial
-contact, and pressing the dial also unloads rather than toggling load. The dialog
-shows pending, device-reported unloaded, unknown or error status. Background page
+contact, and pressing the dial sends an unload request. After an unload request,
+the dialog shows the outcome or waits for confirmation. Background page
 rebuilds do not discard dialog touches. Load refusals also have a
 Send debug log button and stay visible until dismissed.
 
@@ -99,6 +99,11 @@ buckets store an hourly address hash, not a raw IP. Reports older than 90 days,
 expired tickets and expired rate buckets are deleted when another ticket is
 requested; there is no background deletion scheduler. Hosting access logs are
 separate from application report contents. Treat submitted text as untrusted data.
+
+The one-report queue is local to each remote. The inbox keeps separate reports
+under independently generated IDs, so reports from different owners do not
+replace each other. It does not use a hardware serial number, MAC or IP address
+as a report key. An idle inbox prunes expired rows on its next submission request.
 
 The report API/schema sources are in `services/debug-inbox`. The hosted Vinext
 source, database migration and deployment build are kept in the Site's source

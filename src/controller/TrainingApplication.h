@@ -29,6 +29,9 @@ public:
     bool selectionReady() const;
     bool selectionReadOnlyView() const { return selectionReadOnlyView_; }
     bool selectionFailed() const { return selectionPhase_==SelectionPhase::Failed; }
+    bool establishedConnectionEnded() const { return connectionEnd_!=ConnectionEnd::None; }
+    const char* connectionEndNotice() const;
+    bool suggestDisconnectOtherBluetooth() const { return suggestDisconnectOtherBluetooth_; }
     bool canRetrySelection() const;
     bool retrySelection();
     bool tryAutomaticSelection();
@@ -40,12 +43,12 @@ public:
     const std::vector<DeviceEntry>& devices() const { return devices_; }
     const std::string& name() const { static const std::string empty; return topologyProbeActive_ ? empty : name_; }
     std::string diagnosticState() const {
-        // The debug uploader bounds this context to 2048 bytes. Keep both
-        // read-only candidate snapshots first, before long previous failures.
-        return (selectionTrace_.empty() ? std::string{} : "selectionProbes={"+selectionTrace_+"} ")+
+        // Preserve the latest reason and link state before candidate snapshots
+        // that can fill the uploader's 2048-byte context.
+        return "lastConnectionFailure={"+lastConnectionFailure_+"} "+
             (selectionFirstFailure_.empty() ? std::string{} : "firstConnectionFailure={"+selectionFirstFailure_+"} ")+
-            "lastConnectionFailure={"+lastConnectionFailure_+"} "+
-            (connected() ? session_.diagnosticState() : selectionTrace_.empty() ? "lastClosedSession={"+lastClosedSession_+"}" : std::string{})+
+            (connected() ? session_.diagnosticState() : "lastClosedSession={"+lastClosedSession_+"}")+
+            (selectionTrace_.empty() ? std::string{} : " selectionProbes={"+selectionTrace_+"}")+
             " lastFailure={"+lastControlFailure_+"}";
     }
     uint64_t loadRefusalRevision() const { return loadRefusalRevision_; }
@@ -110,23 +113,32 @@ private:
     DeviceId selected_;
     std::string name_, message_, presetError_;
     std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_,lastConnectionFailure_;
+    enum class ConnectionEnd { None, Unknown, PeerEnded, WorkoutExited, MountLockReleased };
+    ConnectionEnd connectionEnd_=ConnectionEnd::None;
+    bool suggestDisconnectOtherBluetooth_=false;
     enum class SelectionPhase { Idle, Resolving, Ready, Failed };
     SelectionPhase selectionPhase_=SelectionPhase::Idle;
     uint64_t selectionStartedAt_=0,selectionEndpointStartedAt_=0,selectionReadAt_=0;
     bool selectionReading_=false;
     bool selectionEndpointAccepted_=false,selectionFirstAccepted_=false;
-    bool selectionFirstFailedBeforeAcceptance_=false,selectionFirstFailureTyped_=false;
+    bool selectionFirstFailedBeforeAcceptance_=false;
+    BleConnectionStage selectionFirstFailureStage_=BleConnectionStage::None;
     std::vector<DeviceId> selectionProbed_;
     DeviceId selectionPeerCandidate_;
     DeviceId selectionFirstEndpoint_,selectionExpectedPeer_,selectionResolvedPeer_;
     bool selectionFirstPeerObserved_=false,selectionResolvedTwin_=false;
     bool selectionReadOnlyView_=false;
+    bool userSelected_=false;
+    DeviceId recoveryFollower_;
     bool waitingForControlFreshness_=false;
     DeviceId retrySelectionCandidate_;
     std::string selectionTrace_,selectionFirstFailure_;
-    bool beginSelectionEndpoint(const DeviceId&);
+    bool startSelection(const DeviceId&, bool userSelected);
+    bool beginSelectionEndpoint(const DeviceId&, BleConnectionPolicy = BleConnectionPolicy::Standard,
+                                const std::string& peerName = {});
     bool runSelection();
-    void failSelection(const std::string&);
+    void failSelection(const std::string&, BleConnectionStage stage=BleConnectionStage::None,
+                       ConnectionEnd end=ConnectionEnd::None);
     void traceSelectionEndpoint();
     bool retainSelectionControl(bool requireControl=true);
     uint64_t loadRefusalRevision_=0;
@@ -150,7 +162,8 @@ private:
     uint64_t topologyProbeStartedAt_=0,latestAdvertisedAt_=0;
     std::optional<uint64_t> topologyReadAt_;
     std::vector<DeviceId> latestAdvertised_;
-    std::map<DeviceId,uint64_t> topologyProbedAt_;
+    struct TopologyProbeHistory { uint64_t at; bool confirmedAlone; };
+    std::map<DeviceId,TopologyProbeHistory> topologyProbes_;
     DeviceId reachableSelectionEndpoint(const DeviceId&) const;
     void startTopologyProbe();
     void tickTopologyProbe();

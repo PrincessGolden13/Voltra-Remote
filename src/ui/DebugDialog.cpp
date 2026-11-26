@@ -16,10 +16,9 @@ void UiController::openDebugDialog() {
     lv_obj_set_style_border_width(debugDialog_,0,0);lv_obj_set_style_pad_all(debugDialog_,0,0);
     lv_obj_remove_flag(debugDialog_,LV_OBJ_FLAG_SCROLLABLE);
     label(debugDialog_,"DEBUG REPORT",width_*3/4,height_/6);
-    debugText_=label(debugDialog_,"Up to "+std::to_string(EventLog::capacity)+
-        " events and control status.\nNo passwords or device IDs.\n\nSEND disconnects Bluetooth\nand uploads over Wi-Fi.\nDisconnecting does not unload.",
-        width_*80/100,height_*24/100);
-    lv_obj_set_height(debugText_,height_*27/100);
+    debugText_=label(debugDialog_,"Wi-Fi connection required.\nSending disconnects Bluetooth from VOLTRA.",
+        width_*78/100,height_*31/100);
+    lv_obj_set_height(debugText_,height_*20/100);
     lv_label_set_long_mode(debugText_,LV_LABEL_LONG_DOT);
     debugControlStatus_=label(debugDialog_,"",width_*76/100,height_*51/100);
     lv_obj_set_height(debugControlStatus_,height_/10);
@@ -93,18 +92,18 @@ void UiController::updateDebugDialog() {
         lv_obj_remove_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
     } else if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
     if(!debugDialog_) return;
-    const auto r=app_.report();
-    std::string controlStatus="Bluetooth disconnected.";
-    if(app_.connected()) {
-        lv_obj_remove_flag(debugUnload_,LV_OBJ_FLAG_HIDDEN);
-        controlStatus=app_.pending() ? (debugUnloadRequested_ ? "Unload requested; awaiting VOLTRA." : "Control request pending.") :
-            app_.fresh() && !r.loaded && !r.autoLoadArmed ? "VOLTRA reports unloaded." :
-            debugUnloadRequested_ && !app_.message().empty() ? app_.message() :
-            !app_.fresh() ? "State unknown. UNLOAD is available." :
-            r.autoLoadArmed ? "Auto Load armed. UNLOAD cancels." : "VOLTRA loaded. UNLOAD is available.";
-    } else {
-        lv_obj_add_flag(debugUnload_,LV_OBJ_FLAG_HIDDEN);
-        if(debugUnloadRequested_) controlStatus="Bluetooth disconnected; unload cannot be confirmed.";
+    const bool connected=app_.connected();
+    if(connected) lv_obj_remove_flag(debugUnload_,LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(debugUnload_,LV_OBJ_FLAG_HIDDEN);
+    std::string controlStatus;
+    if(debugUnloadRequested_) {
+        if(!connected) controlStatus="Disconnected. Unload unconfirmed.";
+        else if(app_.pending()) controlStatus="Waiting for VOLTRA to unload.";
+        else {
+            const auto r=app_.report();
+            if(app_.fresh() && r.loadStateKnown && !r.loaded && !r.autoLoadArmed) controlStatus="VOLTRA reports unloaded.";
+            else controlStatus=app_.message().empty() ? "Unload unconfirmed." : app_.message();
+        }
     }
     if(controlStatus!=lv_label_get_text(debugControlStatus_)) lv_label_set_text(debugControlStatus_,controlStatus.c_str());
     const auto status=reports_ ? reports_->status() : ReportStatus{};
@@ -115,15 +114,14 @@ void UiController::updateDebugDialog() {
         lv_label_set_text(debugSendLabel_,"RETRY");
         lv_obj_remove_flag(debugSend_,LV_OBJ_FLAG_HIDDEN);
     }
-    std::string text=reports_ ? status.message : "Simulator: report delivery is disabled.";
-    if(debugDisconnectPending_) text="Report saved.\nWaiting for the control request\nbefore disconnecting Bluetooth.\nWi-Fi delivery follows automatically.";
+    std::string text=reports_ ? status.message : "Report delivery is unavailable in Simulator.";
+    if(debugDisconnectPending_) text="Report saved.\nWaiting for VOLTRA before sending.";
     else if(status.phase==ReportPhase::Queued && wifi_) {
         const auto w=wifi_->status();
-        if(!w.saved) text="Report saved.\nSet up Wi-Fi in Settings to send.";
-        else if(w.setupActive) text="Report saved.\nFinish Wi-Fi setup to send.";
-        else if(!w.connected) text="Report saved. Waiting for Wi-Fi.\n"+w.message;
-    }
-    if(!status.id.empty()) text+="\nReport: "+status.id;
+        if(w.setupActive) text="Report saved.\nFinish Wi-Fi setup to send.";
+        else if(!w.saved) text="Report saved.\nSet up Wi-Fi in Settings to send.";
+        else if(!w.connected) text="Report saved. Waiting for Wi-Fi.";
+    } else if(status.phase==ReportPhase::Sent) text="Report sent.\nCode: "+status.id;
     if(text!=lv_label_get_text(debugText_)) lv_label_set_text(debugText_,text.c_str());
 }
 }
