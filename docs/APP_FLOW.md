@@ -1,3 +1,9 @@
+> November 26 v0.4.24. An idle exit from Weight Training gets a bounded Twin
+> check before closing the connection. A direct Twin load stays on Adjust
+> until fresh rep activity. Rest or set end returns to Adjust while loaded.
+> Known disabled Auto Load settings get a short reason. See
+> TWIN_LIFECYCLE_2026_11_26.md.
+>
 > November 26 v0.4.23. A connected single that joins Twin transitions to its
 > verified controller. Keep the live link if it becomes primary. Wait for
 > a fresh local idle read before following a verified follower's controller

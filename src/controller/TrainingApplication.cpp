@@ -228,7 +228,7 @@ void TrainingApplication::refreshConnectedTwinSelection(bool afterProtocolPoll) 
     if(selectionPhase_!=SelectionPhase::Ready || selectionResolvedTwin_ || !connected() || !session_.accepted()) return;
     const auto r=report();
     if(!twinTransitionPending_) {
-        if(!r.twinDetected && !r.twin) return;
+        if(!r.twinDetected && !r.twin && !session_.checkingTwinAfterWorkoutExit()) return;
         twinTransitionPending_=true;
         cancelControlIntents();
         // Standalone drop/set presentation belongs to the prior scope too.
@@ -236,9 +236,14 @@ void TrainingApplication::refreshConnectedTwinSelection(bool afterProtocolPoll) 
         restSince_.reset();restSetRevision_=0;
         confirmedDropWeight_.reset();observedLoaded_=false;
         message_.clear();
-        diagnostic("Twin transition observed on selected connection");
+        diagnostic("Checking selected connection for Twin transition");
     }
     if(!afterProtocolPoll) return;
+    if(!session_.checkingTwinAfterWorkoutExit() && r.twinKnown && !r.twinDetected && !r.twin && fresh()) {
+        twinTransitionPending_=false;
+        message_.clear();
+        return;
+    }
     // A pairing indication disables standalone controls immediately. Keep
     // reading the accepted link until its current role and partner are known.
     observeTwin(r);
@@ -278,7 +283,7 @@ bool TrainingApplication::retainSelectionControl(bool requireControl) {
     refreshConnectedTwinSelection(false);
     if(resolvingSelection() || selectionFailed()) return false;
     if(selectionReady()) {
-        const bool controlsFresh=!selectionReadOnlyView_ && !twinTransitionPending_ && (!selectionResolvedTwin_ ||
+        const bool controlsFresh=!selectionReadOnlyView_ && !twinTransitionPending_ && !session_.checkingTwinAfterWorkoutExit() && (!selectionResolvedTwin_ ||
             (twinPermissionFresh() && fresh() && readbackFresh()));
         if(!controlsFresh) {
             cancelControlIntents();
@@ -719,7 +724,7 @@ bool TrainingApplication::runSelection() {
         // The protocol has just polled on this tick's clock. Only this path
         // can use a fresh local-idle proof to move the Bluetooth link.
         refreshConnectedTwinSelection(true);
-        return !retainSelectionControl(false) || twinTransitionPending_;
+        return !retainSelectionControl(false) || twinTransitionPending_ || session_.checkingTwinAfterWorkoutExit();
     }
     if(selectionPhase_!=SelectionPhase::Resolving) return false;
     const bool recovering=!recoveryFollower_.empty();
@@ -1000,7 +1005,8 @@ void TrainingApplication::toggleWeight() {
 }
 void TrainingApplication::unload() {
     if(!retainSelectionControl(false)) return;
-    if(selectionReadOnlyView_ || ((selectionResolvedTwin_ || twinTransitionPending_) && !report().unloadRouteKnown)) {
+    const auto r=report();
+    if(selectionReadOnlyView_ || ((selectionResolvedTwin_ || r.twinDetected || r.twin) && !r.unloadRouteKnown)) {
         message_="Use VOLTRA to unload";recordControlFailure(message_);return;
     }
     diagnostic("Unload requested");
@@ -1014,6 +1020,11 @@ void TrainingApplication::unload() {
     diagnostic("Unload request result="+std::to_string(int(result)));
     if(result!=TransportResult::Accepted) recordControlFailure(message_.empty() ? "Unload request not accepted" : message_);
 }
+const char* TrainingApplication::autoLoadUnavailableText(const TrainingReport& r) {
+    if(r.autoLoadEnabled==false) return "Auto Load off on VOLTRA";
+    if(r.autoLoadSafetyEnabled==false) return "Safety Check off on VOLTRA";
+    return "Auto Load unavailable";
+}
 void TrainingApplication::autoLoad() {
     if(!retainSelectionControl()) return;
     diagnostic("Explicit Auto Load action");
@@ -1022,7 +1033,7 @@ void TrainingApplication::autoLoad() {
     }
     const auto r = report(); const auto e = session_.readiness();
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
-        message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; recordLoadRefusal();return;
+        message_ = e.reason.empty() ? autoLoadUnavailableText(r) : e.reason; recordLoadRefusal();return;
     }
     const auto result = session_.triggerAutoLoad();
     // A new explicit Auto Load starts a new execution sequence, preserving the
@@ -1376,6 +1387,7 @@ void TrainingApplication::tick(uint64_t now) {
     // Cancel stale permissions before polling can dispatch a queued intent;
     // retain an established unload route while polling renews its live state.
     if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl(false)) return;
+    session_.allowTwinWorkoutReentry(!maintenance_ && selectionPhase_==SelectionPhase::Ready && selectionResolvedTwin_);
     controller_.tick(now);
     if(topologyProbeActive_) {tickTopologyProbe();return;}
     refreshTwinDevices();

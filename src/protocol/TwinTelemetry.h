@@ -21,8 +21,8 @@ struct TwinRuntime {
 // mapping is crossed: 0x12 has set/rep counts; 0x11's extra words are ranges.
 // Standalone B4, extended AA81 and unknown variants remain separate profiles.
 std::optional<TwinRuntime> decodeTwinRuntime(const Frame&);
-// Extended Twin AA81 exposes the controller's reported set/rep fields. It
-// supplies display counters only; no phase, target or control evidence.
-struct TwinReportedCounters { uint16_t set, rep; };
+// Extended Twin AA81 exposes the reported counters and rep phase for display.
+// It supplies no target or resistance-control evidence.
+struct TwinReportedCounters { uint16_t set, rep; uint8_t phase; };
 std::optional<TwinReportedCounters> decodeExtendedTwinCounters(const Frame&);
 }

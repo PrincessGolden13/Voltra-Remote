@@ -106,12 +106,13 @@ private:
     uint64_t lastTickMs_ = 0;
     RotaryAdjustment rotaryAdjustment_;
     bool touchDown_ = false, touchMoved_ = false, touchPressTwin_ = false;
+    bool touchScopeInvalid_ = false;
     int touchStartX_ = 0, touchStartY_ = 0;
     RemoteConfigurationStore* store_ = nullptr;
     RemoteConfiguration config_;
     int presetIndex_ = 0, activePreset_ = -1, pendingPreset_ = -1, settingsField_ = 0;
     bool draftPercent_ = true, editDirty_ = false, returnAfterEdit_ = false;
-    bool lastInputTwin_ = false;
+    bool lastInputTwin_ = false, lastInputCheckingWorkout_ = false;
     uint64_t editedAt_ = 0;
     lv_obj_t* unitChoices_[2]{};
     void edited();

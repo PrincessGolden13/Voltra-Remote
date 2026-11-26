@@ -29,6 +29,12 @@ public:
     // Fresh local idle proof for leaving a selected follower. It grants no
     // control permission on either member of the pair.
     virtual bool twinHandoffIdle() const { return false; }
+    // Hold an idle standalone connection under observation after it leaves
+    // Weight Training, while checking for a newly joined Twin relationship.
+    virtual bool checkingTwinAfterWorkoutExit() const { return false; }
+    // The application has adopted the same-link primary and can use normal
+    // idle workout entry after the read-only check. No load is authorized.
+    virtual void allowTwinWorkoutReentry(bool) {}
     virtual void notification(const std::string&,const Bytes&) {}
     virtual void tick(uint64_t) {}
     virtual bool accepted() const { return true; }

@@ -74,8 +74,8 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                     diagnostic("Weight hold cancelled before Auto Load threshold");return;
                 }
             }
-            if(b->action!=Unload && b->ui->touchPressTwin_!=(r.twin || r.twinDetected)) {
-                diagnostic("Touch release cancelled after topology change");return;
+            if(b->action!=Unload && (b->ui->touchScopeInvalid_ || b->ui->touchPressTwin_!=(r.twin || r.twinDetected))) {
+                diagnostic("Touch release cancelled after workout or topology change");return;
             }
             const bool held=supportsHold && elapsed>=(b->action==Weight ? autoLoadHoldMs : controlHoldMs);
             diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(held)+" durationMs="+std::to_string(elapsed));
@@ -262,6 +262,7 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         if(p.pressed && !s->touchDown_) {
             const auto r=s->app_.report();
             s->touchPressTwin_=r.twin || r.twinDetected;
+            s->touchScopeInvalid_=s->app_.checkingTwinAfterWorkoutExit();
             s->touchStartX_=x;s->touchStartY_=y;s->touchMoved_=false;s->modeGestureUntil_=0;
             s->touchStartedAt_=s->touchEventAt_;s->debugConsumed_=s->debugMoved_=false;
         }
@@ -367,8 +368,10 @@ void UiController::updateBatteryAlert(uint64_t now) {
         }
     }
     const auto report=app_.report();
-    const bool activeSet=app_.fresh() && report.loaded && report.setActive!=false &&
-        (report.repsStarted.value_or(false) || report.repActive.value_or(false) || report.moving);
+    const bool twinInProgress=!report.twinWorkoutPhase || report.twinWorkoutPhase==TwinWorkoutPhase::InProgress;
+    const bool activeSet=app_.fresh() && report.loaded && report.setActive!=false && twinInProgress &&
+        (report.twinRepActive.value_or(false) || report.repsStarted.value_or(false) ||
+         report.repActive.value_or(false) || report.moving);
     const auto modal=[](Screen screen) {
         return screen==Screen::Reset || screen==Screen::Wifi || screen==Screen::Updates ||
             screen==Screen::SavePreset || screen==Screen::OverridePreset || screen==Screen::PresetNotice ||
@@ -457,7 +460,10 @@ void UiController::updateLiveNavigation(const TrainingReport& r) {
         autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
     }
     if(!supportedAutoProfile) autoLiveAwaitingSet_=false;
-    const int phase=r.setActive==true ? 2 : r.resting==true ? 3 : r.setEnding==true ? 4 : 0;
+    const int phase=twin ? (r.twinWorkoutPhase ? int(*r.twinWorkoutPhase) : 0) :
+        (r.setActive==true ? 2 : r.resting==true ? 3 : r.setEnding==true ? 4 : 0);
+    const bool twinSetEnded=twin && (r.twinWorkoutPhase==TwinWorkoutPhase::Resting ||
+        r.twinWorkoutPhase==TwinWorkoutPhase::Unloading);
     // A device may leave Auto motor mode before its completion field is read.
     // In either case it must independently confirm known loaded state first.
     constexpr int singleAutoCompletion=14, twinAutoCompletion=15;
@@ -476,25 +482,26 @@ void UiController::updateLiveNavigation(const TrainingReport& r) {
         // at completion must not bounce Live; require a newly observed boundary.
         // Twin B4 counts do not indicate workout boundaries. A calibration
         // count or counter reset cannot end this presentation by itself.
-        endedBeforeFirstSet=((phase==3 || phase==4) && phase!=autoLiveWorkoutPhase_) ||
+        endedBeforeFirstSet=((twin ? twinSetEnded : phase==3 || phase==4) && phase!=autoLiveWorkoutPhase_) ||
             (single && r.setEndRevision && r.setEndRevision!=autoLiveSetEndRevision_);
-        const bool began=(phase==2 && phase!=autoLiveWorkoutPhase_) ||
-            (single && r.telemetryValid && r.repsStarted.value_or(false));
+        const bool began=single && ((phase==2 && phase!=autoLiveWorkoutPhase_) ||
+            (r.telemetryValid && r.repsStarted.value_or(false)));
         autoLiveWorkoutPhase_=phase;autoLiveSetEndRevision_=r.setEndRevision;
         if(endedBeforeFirstSet || began) autoLiveAwaitingSet_=false;
     }
-    // Twin counters can arrive after loading or be absent on this runtime
-    // stream. A direct load can open Live from confirmed controller state.
-    const bool directTwin=twin && !autoLiveCompletionConsumed_;
-    const bool activeRep=r.setActive.value_or(true) && r.telemetryValid && r.repsStarted.value_or(false);
-    if(r.loaded && !r.autoLoadArmed && page_==Screen::Main &&
-        (activeRep || (directTwin && app_.readbackFresh()))) navigate(Screen::Live);
+    // Twin status 2 alone is also reported immediately after loading. Wait
+    // for the controller's live rep phase before admitting a loaded set.
+    const bool twinRepStarted=r.twinRepActive==true && app_.readbackFresh() &&
+        (!r.twinWorkoutPhase || r.twinWorkoutPhase==TwinWorkoutPhase::InProgress);
+    const bool activeRep=twin ? twinRepStarted :
+        r.setActive.value_or(true) && r.telemetryValid && r.repsStarted.value_or(false);
+    if(r.loaded && !r.autoLoadArmed && page_==Screen::Main && activeRep) navigate(Screen::Live);
     // A paired Auto session can still report an armed phase while the first
     // set is coming through. Keep the Live presentation (and its cancel tap)
     // while following the actual machine state. A confirmed unload ends it.
     const bool waitingForTwinAuto=twin && r.autoLoadArmed && autoLiveAwaitingSet_;
     if(((!r.loaded && !waitingForTwinAuto) || endedBeforeFirstSet ||
-        (r.setActive==false && !autoLiveAwaitingSet_ && !directTwin)) && page_==Screen::Live) {
+        ((twin ? twinSetEnded : r.setActive==false) && !autoLiveAwaitingSet_)) && page_==Screen::Live) {
         diagnostic("Live ended loaded="+std::to_string(r.loaded)+" armed="+std::to_string(r.autoLoadArmed)+
             " twin="+std::to_string(twin)+" phase="+std::to_string(phase)+
             " auto="+(r.autoLoadPhase ? std::to_string(*r.autoLoadPhase) : "unknown"));
@@ -1254,7 +1261,7 @@ void UiController::updateAutoLoadFeedback() {
     const auto elapsed=touchEventAt_>=touchStartedAt_ ? touchEventAt_-touchStartedAt_ : 0;
     // Read support as the hold progresses. A readback missing on touch-down
     // can arrive before release, and the app checks permission at release.
-    const bool holdingWeight=weightHoldActive_ && !weightUnloadGesture_ && touchDown_ && !touchMoved_ && !wakeTouch_ && !debugConsumed_ &&
+    const bool holdingWeight=weightHoldActive_ && !weightUnloadGesture_ && touchDown_ && !touchScopeInvalid_ && !touchMoved_ && !wakeTouch_ && !debugConsumed_ &&
         touchPressTwin_==(r.twin || r.twinDetected) && elapsed>=autoLoadHintMs && elapsed<debugHoldMs &&
         app_.fresh() && !r.loaded && !r.autoLoadArmed && !app_.pending();
     const bool holding=holdingWeight && r.autoLoadSupported;
@@ -1295,7 +1302,7 @@ void UiController::updateAutoLoadFeedback() {
     autoFeedbackVisible_=visible;
     if(!visible) {
         if(holdingWeight && !r.autoLoadSupported && !debugDialog_ && !debugPending_) {
-            value(message_,"Auto Load unavailable");
+            value(message_,TrainingApplication::autoLoadUnavailableText(r));
             color(message_,soft);
         }
         return;
@@ -1525,14 +1532,17 @@ void UiController::tick() {
     }
     const auto r = app_.report();
     const bool inputTwin=r.twin || r.twinDetected;
-    const bool inputScopeChanged=inputTwin!=lastInputTwin_;
+    const bool checkingWorkout=app_.checkingTwinAfterWorkoutExit();
+    const bool inputScopeChanged=inputTwin!=lastInputTwin_ || checkingWorkout!=lastInputCheckingWorkout_;
     lastInputTwin_=inputTwin;
+    lastInputCheckingWorkout_=checkingWorkout;
     if(inputScopeChanged) {
         // A topology update can keep the same screen and BLE endpoint. Drop
         // unsent editor work and unread gestures from the old weight scope.
         editDirty_=returnAfterEdit_=false;
         rotaryAdjustment_.reset();
-        if(!touchDown_ && hardware_.touch().hasPending()) hardware_.touch().discardPending();
+        if(touchDown_) touchScopeInvalid_=true;
+        else if(hardware_.touch().hasPending()) hardware_.touch().discardPending();
     }
     if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
         // Coalesce consecutive rotary events for 150 ms. A report never creates
@@ -1572,7 +1582,9 @@ void UiController::tick() {
     if (pressed && !wasSleeping) {
         if(batteryAlertDialog_) { /* The modal's explicit buttons own input. */ }
         else if (debugDialog_ || debugDisconnectPending_) { if(app_.connected()) unloadFromDebugDialog(); }
-        else if (page_ == Screen::Presets) act(ChoosePreset,"",false);
+        else if (page_ == Screen::Presets) {
+            if(!inputScopeChanged) act(ChoosePreset,"",false);
+        }
         else if (page_ == Screen::PresetNotice) act(Unload,"",false);
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) {
             // Keep the rotary unload path, but don't turn a queued press into

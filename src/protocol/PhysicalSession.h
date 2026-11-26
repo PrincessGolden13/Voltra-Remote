@@ -20,6 +20,8 @@ public:
     bool setReadOnlyProbe(bool) override;
     bool readOnlyProbe() const override { return readOnlyProbe_; }
     bool twinHandoffIdle() const override;
+    bool checkingTwinAfterWorkoutExit() const override { return workoutExitCheck_.has_value(); }
+    void allowTwinWorkoutReentry(bool allowed) override { twinReentryAllowed_=allowed; }
     void notification(const std::string&,const Bytes&) override;
     void tick(uint64_t) override;
     bool accepted() const override { return accepted_; }
@@ -49,7 +51,8 @@ private:
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::optional<Observed> directMotor_;
-    std::optional<Observed> followerIdle_;
+    std::optional<Observed> directIdle_; // Motor and Auto reset in the same parameter response.
+    std::optional<Observed> directWorkout_; // Workout and motor in the same parameter response.
     std::optional<uint64_t> mountReleasedAt_;
     std::optional<DeviceAddress> selectedAddress_;
     std::optional<TwinStatus> twinStatus_;
@@ -77,6 +80,12 @@ private:
     enum class SingleAutoFollowup { None, ReadStatus, RefreshStream };
     SingleAutoFollowup singleAutoFollowup_=SingleAutoFollowup::None;
     bool liveWeightProbed_=false;
+    // Bounded diagnostic read of the catalogued motor target. Its pair scope
+    // is unknown, so it never supplies a displayed weight or control input.
+    unsigned twinMotorTargetReads_=0,twinMotorTargetReplies_=0;
+    std::optional<uint64_t> twinMotorTargetReadAt_;
+    bool twinMotorTargetPending_=false;
+    std::optional<int> twinMotorTargetMin_,twinMotorTargetMax_;
     // The terse runtime target belongs to one exact standalone loaded context.
     // A settings/core/topology transition cannot reuse an earlier rep's target.
     struct RuntimeTargetObservation {
@@ -109,9 +118,18 @@ private:
     std::optional<int> deviceSet_, deviceRep_, completedSets_, completedReps_;
     struct TimedTwinCounters { TwinDisplayCounters value; uint64_t at; };
     std::optional<TimedTwinCounters> twinB4Counters_,twinAa81Counters_;
+    std::optional<Observed> twinRepPhase_;
+    std::optional<TwinWorkoutPhase> twinWorkoutPhase_;
+    // Uninterpreted AA81 suffix for diagnostics only. Retained across unload.
+    struct TwinAa81Tail { uint16_t set,rep,word; uint64_t at; };
+    std::array<std::optional<TwinAa81Tail>,2> twinAa81Tails_{};
+    void clearTwinDisplayTelemetry();
     unsigned twinB4CounterFrames_=0,twinAa81Seen_=0,twinAa81Decoded_=0;
     size_t twinAa81LastBytes_=0;
     uint16_t twinAa81LastProtocol_=0;
+    unsigned twinAa80Seen_=0,twinAa80Decoded_=0;
+    size_t twinAa80LastBytes_=0;
+    int twinAa80LastStatus_=-1;
     bool twinCounterContext() const;
     const TimedTwinCounters* twinCountersForDisplay() const;
     std::optional<int> closedSet_;
@@ -147,7 +165,14 @@ private:
     bool telemetrySubscribed_=false, commandFailed_=false;
     bool entryHandled_=false, targetClockPending_=false;
     bool targetImmediate_=false;
-    bool trainingSeen_=false;
+    bool trainingSeen_=false,standaloneTrainingSeen_=false,twinReentryPending_=false,twinReentryAllowed_=false;
+    std::optional<uint64_t> standaloneTwinJoinedAt_;
+    struct WorkoutExitCheck { uint64_t startedAt,observedAt; unsigned topologyReads; };
+    std::optional<WorkoutExitCheck> workoutExitCheck_;
+    bool directIdleCurrent() const;
+    bool directWorkoutCurrent() const;
+    bool handleWorkoutExit();
+    void pollWorkoutExit();
     std::optional<int64_t> fresh(uint16_t) const;
     std::optional<int64_t> freshMotorMode() const;
     std::optional<int64_t> freshDirectMotorMode() const;
