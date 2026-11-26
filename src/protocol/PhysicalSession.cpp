@@ -61,6 +61,9 @@ constexpr int defaultVoidLock=0, observedVoidLock=6;
 constexpr int otaIdleStatus=0, otaUpdateAvailableStatus=0x0105;
 constexpr int cableZeroToleranceCm=1; // Integer-cm quantization; source capture 37/38 cm at rest.
 constexpr uint64_t stateFreshMs=2000, writeConfirmationMs=3000;
+// Display counters arrive less frequently than motion. Expire each source
+// independently without changing the control/readiness freshness windows.
+constexpr uint64_t twinCounterDisplayMs=10000;
 // A bounded unloaded transaction can contain several individually confirmed
 // writes. Keep critical polls ahead of it; never retry a timed-out step.
 constexpr uint64_t settingsDeadlineMs=10000, criticalPollIntervalMs=1300;
@@ -174,6 +177,9 @@ void PhysicalSession::connectionChanged(bool connected) {
     targetImmediate_=false;
     telemetryAt_=unitSwitchAt_=0;commandFailed_=false;intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
+    twinB4Counters_.reset();twinAa81Counters_.reset();
+    twinB4CounterFrames_=twinAa81Seen_=twinAa81Decoded_=0;
+    twinAa81LastBytes_=twinAa81LastProtocol_=0;
     closedSet_.reset();setEndRevision_=setEndedAt_=0;
     motionAt_=motionRevision_=repAt_=repRevision_=telemetryLogAt_=0;
     motionPosition_=motionVelocity_=motionForce_=0;motionPhase_=0;completedRep_=0;repSet_.reset();intentLoaded_=false;liveIntent_.reset();
@@ -337,6 +343,20 @@ void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
     clearRepBoundary();automaticWeightWindow_.reset();
     pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
     deviceSet_.reset();deviceRep_.reset();telemetryAt_=0;
+    twinB4Counters_.reset();twinAa81Counters_.reset();
+}
+bool PhysicalSession::twinCounterContext() const {
+    return !readOnlyProbe_ && primaryTwinFresh() && report_.loadStateKnown && report_.loaded &&
+        !report_.autoLoadArmed && report_.revision && now_>=report_.receivedAtMs && now_-report_.receivedAtMs<=stateFreshMs;
+}
+const PhysicalSession::TimedTwinCounters* PhysicalSession::twinCountersForDisplay() const {
+    if(!twinCounterContext()) return nullptr;
+    const auto current=[&](const auto& counter) {
+        return counter && counter->at>twinTopologyAt_ && now_>=counter->at && now_-counter->at<=twinCounterDisplayMs;
+    };
+    if(current(twinB4Counters_)) return &*twinB4Counters_;
+    if(current(twinAa81Counters_)) return &*twinAa81Counters_;
+    return nullptr;
 }
 bool PhysicalSession::controlObservationsCurrent(bool loading) const {
     if(standalone()) return true;
@@ -467,6 +487,12 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
             if(runtime || pairedRuntime) apply(f);
             continue;
         }
+        // Observe the shape of even unrecognized Twin AA81 packets. Only a
+        // fully validated frame below is allowed to supply display counters.
+        if(accepted_ && twinObserved_ && f.sender==0x10 && f.receiver==0xaa &&
+            f.command==0xaa && !f.payload.empty() && f.payload.front()==0x81) {
+            ++twinAa81Seen_;twinAa81LastBytes_=f.payload.size();twinAa81LastProtocol_=f.protocol;
+        }
         if(f.protocol!=wire::protocolId || f.receiver!=0xaa || f.sender!=0x10) continue;
         // Status, parameter pushes and vendor telemetry are observations, not ACKs.
         // Reused sequences must not hide role loss, inactive status or motion
@@ -502,11 +528,14 @@ void PhysicalSession::apply(const Frame& f) {
                 pairedMotionUsableForEdit_=sample->localForceTenthsLb!=0xffff && sample->peerForceTenthsLb!=0xffff &&
                     sample->localPositionMm!=0xffff && sample->peerPositionMm!=0xffff;
                 if(sample->setCount && sample->repCount) {
+                    ++twinB4CounterFrames_;
                     telemetryAt_=now_;deviceSet_=*sample->setCount;deviceRep_=*sample->repCount;
                 }
                 // B4 counts have no phase/completion discriminator. They must
                 // not renew completed-rep events or trigger Stairs/RP drops.
                 updateReport();
+                if(sample->setCount && sample->repCount && twinCounterContext())
+                    twinB4Counters_=TimedTwinCounters{{*sample->setCount,*sample->repCount},now_};
             }
             return;
         }
@@ -747,7 +776,13 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     const auto& p=f.payload;
     // Paired B4 is separately decoded. Standalone phase/completed-rep words
     // must not manufacture paired completion or automatic drop events.
-    if(twinObserved_) return;
+    if(twinObserved_) {
+        if(const auto counters=decodeExtendedTwinCounters(f)) {
+            ++twinAa81Decoded_;
+            if(twinCounterContext()) twinAa81Counters_=TimedTwinCounters{{counters->set,counters->rep},now_};
+        }
+        return;
+    }
     // SDK 79f6c55's on-device validated AA subtypes. Per-rep means are NOT
     // stationary-cable telemetry. No locally invented rep/set/rest counters.
     if(p.size()==61 && p[0]==0x82 && p[1]==0x3b) {
@@ -962,6 +997,9 @@ void PhysicalSession::updateReport() {
     trainingSeen_=true;
     report_.loadStateKnown=standalone() || primaryTwinFresh();
     const bool loaded=*m==1 || *m==5 || *m==39 || (knownAuto && *autoState==autoComplete);
+    if(report_.loadStateKnown && (!loaded || !wasLoaded)) {
+        twinB4Counters_.reset();twinAa81Counters_.reset();
+    }
     if(report_.loadStateKnown && loaded && !wasLoaded) {
         deviceSet_.reset();deviceRep_.reset();repSet_.reset();completedRep_=0;
         boundarySet_.reset();
@@ -1045,6 +1083,7 @@ void PhysicalSession::updateReport() {
 }
 TrainingReport PhysicalSession::trainingReport() const {
     auto result=report_;
+    if(const auto* counters=twinCountersForDisplay()) result.twinDisplayCounters=counters->value;
     result.completedRepWindow=result.completedRepWindow && completedRepWindow_;
     if(!motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) result.completedRepWindow=false;
     result.currentTwinRole=currentTwinRole();
@@ -1052,6 +1091,7 @@ TrainingReport PhysicalSession::trainingReport() const {
     result.unloadRouteKnown=!readOnlyProbe_ && primaryRouteKnown();
     if(primaryPeer_) result.twinPeerAddress=formatDeviceAddress(*primaryPeer_);
     if(twinObserved_) {
+        result.separateTwinDisplayCounters=true;
         result.twinStatusFresh=twinStatusFresh();
         if(!result.twinStatusFresh) {
             result.twin=result.twinKnown=result.readbackKnown=result.combinedWeightKnown=false;
@@ -1113,6 +1153,12 @@ std::string PhysicalSession::diagnosticState() const {
         " readOnlyProbe="+std::to_string(readOnlyProbe_)+" primaryRouteRevoked="+std::to_string(primaryRouteRevoked_)+" currentTwinRole="+
         (role==CurrentTwinRole::Master ? "master" : role==CurrentTwinRole::Follower ? "follower" : "unknown");
     text+=" directMotor="+(directMotor_ ? std::to_string(directMotor_->value)+"@"+std::to_string(now_>=directMotor_->at ? now_-directMotor_->at : 0)+"ms" : "missing");
+    const auto* counter=twinCountersForDisplay();
+    text+=" twinCounters={B4="+std::to_string(twinB4CounterFrames_)+"/"+std::to_string(runtimeTargetFrames_)+
+        " lastB4="+std::to_string(runtimeTargetSource_)+"/"+std::to_string(runtimeTargetBytes_)+" AA81="+std::to_string(twinAa81Decoded_)+
+        "/"+std::to_string(twinAa81Seen_)+" lastAA81="+std::to_string(twinAa81LastProtocol_)+"/"+
+        std::to_string(twinAa81LastBytes_)+" setup="+std::to_string(telemetrySetup_)+" shown="+
+        (!counter ? "none" : twinB4Counters_ && counter==&*twinB4Counters_ ? "B4" : "AA81")+"}";
     text+=" twinLatch="+std::to_string(twinObserved_)+" A7={seen="+std::to_string(twinReplySeen_)+
         " bytes="+std::to_string(twinReplyBytes_)+" accepted="+std::to_string(twinReplyAccepted_)+
         " ownMatch="+std::to_string(twinReplyOwnMatch_)+" state="+(twinStatus_ ? std::to_string(twinStatus_->state) : "unknown")+

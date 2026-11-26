@@ -105,6 +105,13 @@ private:
     std::optional<TrainingSettings> target_;
     uint64_t targetAt_=0, telemetryAt_=0;
     std::optional<int> deviceSet_, deviceRep_, completedSets_, completedReps_;
+    struct TimedTwinCounters { TwinDisplayCounters value; uint64_t at; };
+    std::optional<TimedTwinCounters> twinB4Counters_,twinAa81Counters_;
+    unsigned twinB4CounterFrames_=0,twinAa81Seen_=0,twinAa81Decoded_=0;
+    size_t twinAa81LastBytes_=0;
+    uint16_t twinAa81LastProtocol_=0;
+    bool twinCounterContext() const;
+    const TimedTwinCounters* twinCountersForDisplay() const;
     std::optional<int> closedSet_;
     uint64_t setEndRevision_=0, setEndedAt_=0;
     std::optional<WeightUnit> intentUnit_;

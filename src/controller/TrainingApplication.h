@@ -26,6 +26,7 @@ public:
     // Cached navigation metadata must never authorize resistance commands.
     DeviceId selectionDevice(const DeviceId&) const;
     bool resolvingSelection() const { return selectionPhase_==SelectionPhase::Resolving; }
+    const std::string& selectionStatus() const { return selectionStatus_.empty() ? message() : selectionStatus_; }
     bool selectionReady() const;
     bool selectionReadOnlyView() const { return selectionReadOnlyView_; }
     bool selectionFailed() const { return selectionPhase_==SelectionPhase::Failed; }
@@ -133,6 +134,7 @@ private:
     bool waitingForControlFreshness_=false;
     DeviceId retrySelectionCandidate_;
     std::string selectionTrace_,selectionFirstFailure_;
+    std::string selectionStatus_; // Device names are for the screen, not diagnostics.
     bool startSelection(const DeviceId&, bool userSelected);
     bool beginSelectionEndpoint(const DeviceId&, BleConnectionPolicy = BleConnectionPolicy::Standard,
                                 const std::string& peerName = {});

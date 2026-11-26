@@ -15,6 +15,7 @@ struct TrainingSettings {
     MagicMode magicMode = MagicMode::Chains;
     Modifier magic, eccentric;
 };
+struct TwinDisplayCounters { int set, rep; };
 struct TrainingReport {
     TrainingSettings settings;
     WeightUnit unit = WeightUnit::Pounds;
@@ -42,6 +43,10 @@ struct TrainingReport {
     // runtime register 16003. Paired target scope remains unknown.
     std::optional<int> liveTargetTenthsLb;
     uint64_t liveTargetAtMs=0;
+    // Independent display feed. These counters do not imply a set boundary,
+    // an active motor or permission to issue an automatic drop.
+    bool separateTwinDisplayCounters=false;
+    std::optional<TwinDisplayCounters> twinDisplayCounters;
     std::optional<bool> repsStarted;
     std::optional<bool> setActive; // Actual device workout phase, not a local timer.
     std::optional<bool> resting; // Confirmed between-set rest, distinct from a weight-induced statistics close.

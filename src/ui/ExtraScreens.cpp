@@ -114,12 +114,12 @@ void UiController::buildExtra() {
         style::set_bg_color(holdBar_,lv_color_hex(accent()),LV_PART_INDICATOR);
         style::set_bg_opa(holdBar_,LV_OPA_COVER,LV_PART_INDICATOR);
         lv_bar_set_range(holdBar_,0,1000);lv_obj_add_flag(holdBar_,LV_OBJ_FLAG_HIDDEN);
-        const auto counters=app_.displayCounters(); const auto d=app_.drops();
+        const auto d=app_.drops();
         const int count=d.enabled && d.mode == DropMode::RestPause ? 3 : 2;
         const char* captions[]={"SET","REP","DROPS"};
         for(int i=0;i<count;++i) {
             const int x=width_*(16+i*68/count)/100, w=width_*68/(100*count);
-            auto* caption=label(face_,i==0 && !counters.set ? "" : captions[i],w,height_*72/100,medium);
+            auto* caption=label(face_,captions[i],w,height_*72/100,medium);
             style::set_align(caption,LV_ALIGN_TOP_LEFT); lv_obj_set_x(caption,x);
             liveValues_[i]=label(face_,"",w,height_*77/100,width_ < 400 ? &lv_font_montserrat_28 : &lv_font_montserrat_36);
             style::set_align(liveValues_[i],LV_ALIGN_TOP_LEFT); lv_obj_set_x(liveValues_[i],x);
@@ -289,7 +289,7 @@ void UiController::updateExtra() {
         style::set_text_color(weight_,lv_color_hex(liveWeightFresh ? white : dim),0);
         style::set_text_color(nextWeight_,lv_color_hex(dropCue ? accent() : 0xf5f8ff),0);
         const auto counters=app_.displayCounters();
-        text(liveValues_[0],counters.set ? std::to_string(*counters.set) : "");
+        text(liveValues_[0],counters.set ? std::to_string(*counters.set) : "--");
         text(liveValues_[1],counters.rep ? std::to_string(*counters.rep) : "--");
         text(liveValues_[2],known ? std::to_string(app_.dropsCompleted())+"/"+std::to_string(d.drops) : "--");
         const auto control=controlFeedback();

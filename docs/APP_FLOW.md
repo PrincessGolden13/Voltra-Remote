@@ -1,3 +1,7 @@
+> Devices shows the selected VOLTRA name while connecting. A known Twin shows
+> both names during discovery and handoff; unavailable names use a generic
+> label. Names are presentation only and do not appear in the debug log.
+>
 > v0.4.21 extends the confirmed Auto Load handoff to Twin. The verified
 > controller's loaded completion opens Live before the first rep. Calibration
 > counts and a reported return to Auto Load armed can keep Live during the
@@ -36,7 +40,8 @@
 > A fresh Alone response splits a group; a fresh paired response joins/updates it.
 > Manual selection cancels the background session. Start discovery at a currently
 > advertising member before an absent remembered primary, then resolve the live
-> control route. Use only "Connecting...", without per-device Checking screens.
+> control route. Keep connection progress on one screen without per-device
+> Checking screens.
 > Send the protocol hello immediately after locating its write channel, before
 > notification descriptor work. See TWIN_DISCOVERY_2026_11_22.md. This does not
 > authorize a presumed secondary relay or treat saved roles as control permission.
