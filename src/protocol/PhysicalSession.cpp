@@ -1363,6 +1363,12 @@ void PhysicalSession::tick(uint64_t now) {
     } else if(bootstrap_==1) {if(send(0xff,{0,0xaa},0xaa,0xd2,0x08)) ++bootstrap_;}
     else if(bootstrap_==2) {Bytes payload{0x81,0x10};payload.insert(payload.end(),identity_.begin(),identity_.end());if(send(0x27,payload)) ++bootstrap_;}
     else if(accepted_) {
+        // A read-only selection or Devices probe needs topology first. Request
+        // it once before activation and the broader parameter sweep. Later A7
+        // polls retain the normal cadence; this never grants control by itself.
+        if(readOnlyProbe_ && !twinPollAt_) {
+            twinPollAt_=now_;send(twinStatusCommand,{});return;
+        }
         // Steven's captured bootstrap reads AB01 before ordinary state sweeps.
         // Do not put the first activation observation behind optional work,
         // continuous edits, or a saturated critical-poll schedule. This is a

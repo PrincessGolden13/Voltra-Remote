@@ -8,13 +8,18 @@
 namespace voltra {
 namespace {
 // Radio-link policy only: never retry a protocol or resistance command.
-// One radio budget per requested connection, including retry delays. Splitting
-// it allows a timed-out GAP initiation one fresh attempt without longer waits.
-constexpr uint32_t connectionBudgetMs=10000, connectionAttemptMs=4500, connectionRetryDelayMs=500, mtuWaitMs=1000;
+struct RadioPolicy {
+    uint32_t budgetMs, attemptMs;
+    unsigned maximumAttempts;
+};
+constexpr RadioPolicy standardRadio{10000,4500,3};
+// The longer window covers the ~50 s recovery observed in Steven's capture.
+// Backoff and individual attempts share this bound.
+constexpr RadioPolicy recoveryRadio{55000,10000,7};
+constexpr uint32_t standardRetryDelayMs=500, recoveryFirstDelayMs=1500, recoveryMaxDelayMs=15000, mtuWaitMs=1000;
 // Allow the pinned stack's terminal callback to return before client reuse.
 // This is a radio handoff policy, not a VOLTRA command or readiness delay.
 constexpr uint32_t clientSettleMs=100;
-constexpr unsigned connectionAttempts=3;
 // Type knowledge is retained for this boot, independently of radio presence.
 // RSSI/connectable observations stop being current after the app's 15 s grace.
 constexpr uint64_t observationFreshMs=15000;
@@ -115,7 +120,14 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     uint64_t radioObservedAt=0;
     unsigned attempts=0;
     uint64_t now=0, retryAt=0, attemptAt=0, radioStartedAt=0, linkUpAt=0, handoffUntil=0;
-    uint32_t attemptLimitMs=connectionAttemptMs;
+    uint32_t attemptLimitMs=standardRadio.attemptMs;
+    bool extendedRecovery=false;
+    const RadioPolicy& radioPolicy() const { return extendedRecovery ? recoveryRadio : standardRadio; }
+    uint32_t retryDelay() const {
+        if(!extendedRecovery) return standardRetryDelayMs;
+        const unsigned shift=std::min(4u,attempts ? attempts-1 : 0);
+        return std::min(recoveryFirstDelayMs<<shift,recoveryMaxDelayMs);
+    }
     bool timeoutRetryUsed=false;
     bool terminalObserved=true,mtuReady=false;
     BleConnectionFailure failure;
@@ -153,7 +165,7 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         log("BLE connect failure stage="+std::to_string(int(stage))+" code="+std::to_string(reason)+
             " timeout="+std::to_string(timedOut)+" attempt="+std::to_string(failedAttempts)+
             " radioMs="+std::to_string(elapsed)+
-            "/"+std::to_string(connectionBudgetMs)+
+            "/"+std::to_string(radioPolicy().budgetMs)+
             (failedAttempts && stage!=BleConnectionStage::Teardown ? radioDetail() : ""));
     }
     // Stack callbacks only publish events. Application callbacks run in poll().
@@ -220,7 +232,7 @@ bool NimBleTransport::begin() {
     impl_->scanner->setMaxResults(0);
     impl_->client=NimBLEDevice::createClient();
     if(impl_->client) {
-        impl_->client->setConnectTimeout(connectionAttemptMs);
+        impl_->client->setConnectTimeout(standardRadio.attemptMs);
         // 15–30 ms connection interval, zero latency, 10 s supervision timeout.
         // Generic BLE timing; VOLTRA may negotiate a different interval.
         impl_->client->setConnectionParams(12,24,0,supervisionTimeoutUnits);
@@ -278,6 +290,9 @@ void NimBleTransport::clearConnectionFailure() {
     if(linkAlive()) impl_->failure={};
 }
 TransportResult NimBleTransport::connect(const DeviceId& id) {
+    return connect(id,BleConnectionPolicy::Standard);
+}
+TransportResult NimBleTransport::connect(const DeviceId& id,BleConnectionPolicy policy) {
     impl_->failure={};
     if(!impl_->client) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
     if(!validDeviceId(id) && !validAddress(id)) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
@@ -294,6 +309,7 @@ TransportResult NimBleTransport::connect(const DeviceId& id) {
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
     impl_->target=target;
+    impl_->extendedRecovery=policy==BleConnectionPolicy::RecoverKnownEndpoint;
     impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;impl_->timeoutRetryUsed=false;
     // Accepted means queued; onConnection reports completion/failure later.
     return TransportResult::Accepted;
@@ -425,6 +441,7 @@ TransportResult NimBleTransport::write(const std::string& uuid,const Bytes& byte
     return ok ? TransportResult::Accepted : TransportResult::Failed;
 }
 void NimBleTransport::poll(uint64_t now) {
+    const auto policy=impl_->radioPolicy();
     {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->now=now;}
     if(impl_->linkOverflow.exchange(false)) {
         const bool pending=impl_->connecting;
@@ -460,14 +477,16 @@ void NimBleTransport::poll(uint64_t now) {
         impl_->fail(impl_->connected ? BleConnectionStage::Link : BleConnectionStage::Radio,event.reason,hostTimeout);
         if(impl_->connected) {disconnect();return;}
         if(impl_->connecting && impl_->attempts) {
-            const bool retryable=event.reason==establishmentFailure || (hostTimeout && !impl_->timeoutRetryUsed);
-            const auto radioElapsed=now>=impl_->radioStartedAt ? now-impl_->radioStartedAt : connectionBudgetMs;
-            if(retryable && impl_->attempts<connectionAttempts && radioElapsed+connectionRetryDelayMs<connectionBudgetMs) {
+            const bool retryable=event.reason==establishmentFailure ||
+                (hostTimeout && (impl_->extendedRecovery || !impl_->timeoutRetryUsed));
+            const auto radioElapsed=now>=impl_->radioStartedAt ? now-impl_->radioStartedAt : policy.budgetMs;
+            const auto delayMs=impl_->retryDelay();
+            if(retryable && impl_->attempts<policy.maximumAttempts && radioElapsed+delayMs<policy.budgetMs) {
                 if(hostTimeout) impl_->timeoutRetryUsed=true;
-                impl_->retryAt=now+connectionRetryDelayMs;
+                impl_->retryAt=now+delayMs;
                 impl_->log("BLE connect retry code="+std::to_string(event.reason)+" afterMs="+
-                    std::to_string(connectionRetryDelayMs)+" radioMs="+std::to_string(radioElapsed)+
-                    "/"+std::to_string(connectionBudgetMs));
+                    std::to_string(delayMs)+" radioMs="+std::to_string(radioElapsed)+
+                    "/"+std::to_string(policy.budgetMs));
             } else {
                 impl_->connecting=false;
                 if(impl_->connection) impl_->connection(false);
@@ -479,7 +498,7 @@ void NimBleTransport::poll(uint64_t now) {
     if(!impl_->terminalObserved && (impl_->cancelling || (!impl_->connecting && !impl_->connected)) &&
        impl_->client && impl_->client->isConnected()) impl_->client->disconnect();
     if(impl_->connecting) {
-        if(!impl_->attempts && now>=impl_->retryAt && now-impl_->retryAt>connectionBudgetMs+mtuWaitMs) {
+        if(!impl_->attempts && now>=impl_->retryAt && now-impl_->retryAt>standardRadio.budgetMs+mtuWaitMs) {
             // An old cancellation can fail to deliver a callback. Bound the
             // queued request by the existing connect+MTU deadline, without
             // pretending the old radio procedure has ended or reusing it.
@@ -488,7 +507,7 @@ void NimBleTransport::poll(uint64_t now) {
             impl_->connecting=false;
             if(impl_->connection) impl_->connection(false);
         }
-        else if(impl_->attempts && !impl_->linkObserved && now-impl_->radioStartedAt>=connectionBudgetMs) {
+        else if(impl_->attempts && !impl_->linkObserved && now-impl_->radioStartedAt>=policy.budgetMs) {
             // A missing terminal callback cannot authorize another attempt.
             // Cancel while retaining the radio owner until its real teardown.
             impl_->fail(BleConnectionStage::Radio,0,true);
@@ -512,15 +531,15 @@ void NimBleTransport::poll(uint64_t now) {
                     ++impl_->radioGeneration;impl_->resolveRadioTarget();
                     impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;impl_->terminalObserved=false;
                     if(!impl_->attempts) impl_->radioStartedAt=now;
-                    impl_->attemptLimitMs=std::min<uint32_t>(connectionAttemptMs,
-                        uint32_t(connectionBudgetMs-(now-impl_->radioStartedAt)));
+                    impl_->attemptLimitMs=std::min<uint32_t>(policy.attemptMs,
+                        uint32_t(policy.budgetMs-(now-impl_->radioStartedAt)));
                     impl_->attemptAt=now;++impl_->attempts;launch=true;
                 }
             }
             if(launch) {
-                impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(connectionAttempts)+
+                impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(policy.maximumAttempts)+
                     " limitMs="+std::to_string(impl_->attemptLimitMs)+" radioMs="+
-                    std::to_string(now-impl_->radioStartedAt)+"/"+std::to_string(connectionBudgetMs)+impl_->radioDetail());
+                    std::to_string(now-impl_->radioStartedAt)+"/"+std::to_string(policy.budgetMs)+impl_->radioDetail());
                 impl_->client->setConnectTimeout(impl_->attemptLimitMs);
                 const auto previousError=impl_->client->getLastError();
                 if(!impl_->client->connect(impl_->radioTarget,true,true,true)) {

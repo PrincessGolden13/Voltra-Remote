@@ -12,12 +12,18 @@ constexpr size_t maximumDiscoveredDevices=64;
 // the latest scan's advertisers, one endpoint per window. Existing short radio
 // retries fit inside that window; discovery adds no retry layer of its own.
 constexpr uint64_t topologyProbeIntervalMs=15000,topologyPresentationMs=30000;
+// Recheck a confirmed standalone endpoint at the next eligible scan. It can
+// become paired while Devices remains open. Failed probes keep the slower rate.
+constexpr uint64_t standaloneTopologyProbeIntervalMs=discoveryIntervalMs;
 constexpr uint64_t topologyConnectDeadlineMs=4500,topologyReadDeadlineMs=3000;
 constexpr uint64_t motionFreshMs=500;
 constexpr uint64_t restPauseBarDelayMs=250; // User-requested visual threshold.
-// Read-only endpoint discovery is bounded and never retries an endpoint. Allow
-// BLE connection/bootstrap time, then six seconds for independent role evidence.
+// The ordinary read-only path visits each candidate at most once. Allow BLE
+// connection/bootstrap time, then six seconds for independent role evidence.
 constexpr uint64_t selectionDeadlineMs=30000,selectionReadDeadlineMs=6000;
+// Allow the deliberate known-controller recovery its radio budget, previous
+// link teardown, fresh GATT setup and read-only Twin verification.
+constexpr uint64_t twinRecoveryDeadlineMs=75000;
 const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 }
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
@@ -115,9 +121,12 @@ void TrainingApplication::startTopologyProbe() {
     for(const auto& id:latestAdvertised_) {
         const auto found=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id;});
         if(found==devices_.end()) continue;
-        const auto previous=topologyProbedAt_.find(id);
-        if(previous!=topologyProbedAt_.end() && now_>=previous->second && now_-previous->second<topologyProbeIntervalMs) continue;
-        const uint64_t at=previous==topologyProbedAt_.end() ? 0 : previous->second;
+        const auto previous=topologyProbes_.find(id);
+        if(previous!=topologyProbes_.end()) {
+            const auto interval=previous->second.confirmedAlone ? standaloneTopologyProbeIntervalMs : topologyProbeIntervalMs;
+            if(now_>=previous->second.at && now_-previous->second.at<interval) continue;
+        }
+        const uint64_t at=previous==topologyProbes_.end() ? 0 : previous->second.at;
         if(!candidate || at<oldest) {candidate=&*found;oldest=at;}
     }
     if(!candidate || !session_.setReadOnlyProbe(true)) return;
@@ -129,12 +138,12 @@ void TrainingApplication::startTopologyProbe() {
     session_.setSelectedAddress(transport_.deviceAddress(selected_));
 }
 void TrainingApplication::markTopologyProbed(const DeviceId& id) {
-    if(topologyProbedAt_.size()>=maximumDiscoveredDevices && !topologyProbedAt_.count(id)) {
-        const auto oldestEntry=std::min_element(topologyProbedAt_.begin(),topologyProbedAt_.end(),
-            [](const auto& a,const auto& b){return a.second<b.second;});
-        topologyProbedAt_.erase(oldestEntry);
+    if(topologyProbes_.size()>=maximumDiscoveredDevices && !topologyProbes_.count(id)) {
+        const auto oldestEntry=std::min_element(topologyProbes_.begin(),topologyProbes_.end(),
+            [](const auto& a,const auto& b){return a.second.at<b.second.at;});
+        topologyProbes_.erase(oldestEntry);
     }
-    topologyProbedAt_[id]=now_;
+    topologyProbes_[id]={now_,false};
 }
 void TrainingApplication::tickTopologyProbe() {
     if(!topologyDiscoveryEnabled_ || maintenance_ || discoveryPaused_ || !session_.readOnlyProbe()) {
@@ -147,11 +156,13 @@ void TrainingApplication::tickTopologyProbe() {
     const bool current=session_.accepted() && r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000;
     const bool known=current && (r.twinLinkState==0 || (r.twinLinkState==0x12 && !r.twinPeerId.empty()));
     if(known) {
+        const bool alone=r.twinLinkState==0;
+        topologyProbes_[selected_].confirmedAlone=alone;
         observeTwin(r);
         // One current pair response describes both members, so don't connect
         // to the second member merely to repeat the same topology query.
-        if(r.twinLinkState==0x12 && !r.twinPeerId.empty()) markTopologyProbed(r.twinPeerId);
-        diagnostic("Device topology probe refreshed");
+        if(!alone) markTopologyProbed(r.twinPeerId);
+        diagnostic(alone ? "Devices topology confirmed single" : "Devices topology confirmed Twin");
         stopTopologyProbe();return;
     }
     if(now_<*topologyReadAt_ || now_-*topologyReadAt_>=topologyReadDeadlineMs) stopTopologyProbe();
@@ -210,14 +221,31 @@ bool TrainingApplication::retainSelectionControl(bool requireControl) {
         }
         return true;
     }
+    const bool lostLink=selectionPhase_==SelectionPhase::Ready && !connected();
+    auto stage=BleConnectionStage::None;
+    std::string reason="VOLTRA connection changed; reconnect";
+    if(lostLink) {
+        reason="VOLTRA connection lost; reconnect";
+        const auto failure=transport_.connectionFailure();
+        const auto& protocolReason=session_.status();
+        stage=failure.stage;
+        // A typed transport event is authoritative. When it has no link code,
+        // keep a specific protocol cause such as a failed write or mode exit.
+        if(stage!=BleConnectionStage::None) reason=controller_.feedback();
+        if((stage==BleConnectionStage::None || (stage==BleConnectionStage::Link && !failure.reason)) &&
+            !protocolReason.empty() && protocolReason!="Connection lost") reason=protocolReason;
+        const auto& snapshot=controller_.endedSessionSnapshot();
+        lastClosedSession_=("at="+std::to_string(now_)+" transportStage="+std::to_string(int(stage))+
+            " code="+std::to_string(failure.reason)+" "+snapshot).substr(0,800);
+    }
     session_.setReadOnlyProbe(true);
     cancelControlIntents();
-    if(selectionPhase_==SelectionPhase::Ready) failSelection("VOLTRA connection changed; reconnect");
+    if(selectionPhase_==SelectionPhase::Ready) failSelection(reason,stage);
     return false;
 }
 bool TrainingApplication::canRetrySelection() const {
     if(maintenance_ || resolvingSelection() || connected() || controller_.connecting() || retrySelectionCandidate_.empty()) return false;
-    const auto endpoint=selectionDevice(retrySelectionCandidate_);
+    const auto endpoint=reachableSelectionEndpoint(retrySelectionCandidate_);
     return std::any_of(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==endpoint && (d.online || remembered(d.id));});
 }
 bool TrainingApplication::retrySelection() {
@@ -298,7 +326,9 @@ void TrainingApplication::observeTwin(const TrainingReport& r) {
     };
     if(r.twinLinkState==0) {
         if(detach(selected_)) saveTwinNavigation();
-    } else if(!r.twinPeerId.empty()) {
+    } else if(r.twinLinkState==0x12 && !r.twinPeerId.empty()) {
+        // Transitional identity alone can inform a foreground read-only route,
+        // but must not display a newly paired tile or replace confirmed grouping.
         const auto old=twinLinks_.find(selected_),peer=twinLinks_.find(r.twinPeerId);
         // Keep the endpoint that established this relationship. Selecting the
         // other circle must not silently open a second/follower session. This
@@ -317,16 +347,14 @@ void TrainingApplication::observeTwin(const TrainingReport& r) {
         else if(currentRole && r.currentTwinRole==CurrentTwinRole::Follower) selection=r.twinPeerId;
         const bool replaceOwn=old!=twinLinks_.end() && old->second.peer!=r.twinPeerId;
         const bool replacePeer=peer!=twinLinks_.end() && peer->second.peer!=selected_;
-        const bool paired=r.twinLinkState==0x12;
-        const bool navigationKnown=paired || (old!=twinLinks_.end() && !replaceOwn && old->second.navigationKnown);
         const bool metadataChanged=replaceOwn || replacePeer || old==twinLinks_.end() || peer==twinLinks_.end() ||
             old->second.peerName!=r.twinPeerName || peer->second.peerName!=name_ ||
-            old->second.selection!=selection || old->second.navigationKnown!=navigationKnown;
+            old->second.selection!=selection || !old->second.navigationKnown;
         if(replaceOwn) detach(selected_);
         if(replacePeer) detach(r.twinPeerId);
         if(!twinLinks_.count(selected_) && twinLinks_.size()+2>maximumRememberedDevices) return;
-        twinLinks_[selected_]={r.twinPeerId,r.twinPeerName,r.twinAtMs,paired,selection,navigationKnown};
-        twinLinks_[r.twinPeerId]={selected_,name_,r.twinAtMs,paired,selection,navigationKnown};
+        twinLinks_[selected_]={r.twinPeerId,r.twinPeerName,r.twinAtMs,true,selection,true};
+        twinLinks_[r.twinPeerId]={selected_,name_,r.twinAtMs,true,selection,true};
         if(metadataChanged) saveTwinNavigation();
     }
 }
@@ -467,7 +495,7 @@ bool TrainingApplication::tryAutomaticSelection() {
     const auto endpoint=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==reachable && d.online;});
     if(endpoint==devices_.end()) return false;
     automaticSelection_ = false; // One startup attempt; never fight manual navigation.
-    return select(endpoint->id);
+    return startSelection(endpoint->id,false);
 }
 void TrainingApplication::scan() {
     if (maintenance_ || discoveryPaused_ || radioInUse() || resolvingSelection() || scanPending_) return;
@@ -519,35 +547,49 @@ void TrainingApplication::refreshDiscovery(const std::vector<Advertisement>& fou
     topologyProbeDue_=true;
 }
 bool TrainingApplication::select(const DeviceId& id) {
+    return startSelection(id,true);
+}
+bool TrainingApplication::startSelection(const DeviceId& id, bool userSelected) {
     if(maintenance_) return false;
     const auto endpoint=reachableSelectionEndpoint(id);
     const auto it = std::find_if(devices_.begin(), devices_.end(), [&](const auto& d) { return d.id == endpoint && (d.online || remembered(d.id)); });
     if (it == devices_.end()) return false; // An inactive tap has no side effects.
     leave();
+    userSelected_=userSelected;
     selectionPhase_=SelectionPhase::Resolving;selectionStartedAt_=now_;
     selectionFirstEndpoint_=endpoint;
     retrySelectionCandidate_=logicalDeviceId(id);
     selectionTrace_.clear();selectionFirstFailure_.clear();
     const auto link=twinLinks_.find(endpoint);
     if(link!=twinLinks_.end()) selectionPeerCandidate_=link->second.peer;
-    if(!beginSelectionEndpoint(endpoint)) {failSelection(message_);return false;}
+    if(!beginSelectionEndpoint(endpoint)) {failSelection(message_,transport_.connectionFailure().stage);return false;}
     return true;
 }
-bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id) {
-    if(selectionProbed_.size()>=2 || std::find(selectionProbed_.begin(),selectionProbed_.end(),id)!=selectionProbed_.end()) return false;
+bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id, BleConnectionPolicy policy,
+                                                  const std::string& peerName) {
+    const bool recovering=policy==BleConnectionPolicy::RecoverKnownEndpoint;
+    if(!recovering && (selectionProbed_.size()>=2 ||
+       std::find(selectionProbed_.begin(),selectionProbed_.end(),id)!=selectionProbed_.end())) return false;
     const auto it=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id && (d.online || remembered(id));});
     const auto saved=std::find_if(recent_.begin(),recent_.end(),[&](const auto& d){return d.id==id;});
-    if(it==devices_.end() && saved==recent_.end()) {message_="Paired VOLTRA is unavailable";return false;}
-    const DeviceEntry chosen=it!=devices_.end() ? *it : *saved;
+    DeviceEntry chosen;
+    if(it!=devices_.end()) chosen=*it;
+    else if(saved!=recent_.end()) chosen=*saved;
+    else if(recovering) {
+        // Fresh follower status supplies identity. The transport still
+        // requires a known radio address type before attempting a connection.
+        chosen.id=id;
+        chosen.name=peerName.empty() ? "VOLTRA" : peerName;
+    } else {message_="Paired VOLTRA is unavailable";return false;}
     if(!session_.setReadOnlyProbe(true)) {message_="Connection checking is unavailable";return false;}
     selectionProbed_.push_back(id);selectionEndpointStartedAt_=now_;selectionReading_=false;selectionReadAt_=0;
     selectionEndpointAccepted_=false;
     connectingDevice_.reset();
     selected_=chosen.id;name_=chosen.name;
-    if(!controller_.connect(chosen.id)) {message_=controller_.feedback();return false;}
+    if(!controller_.connect(chosen.id,policy)) {message_=controller_.feedback();return false;}
     session_.setSelectedAddress(transport_.deviceAddress(chosen.id));
     connectingDevice_=chosen;
-    message_="Connecting...";
+    message_=recovering ? "Connecting to Twin..." : "Connecting...";
     return true;
 }
 void TrainingApplication::traceSelectionEndpoint() {
@@ -568,18 +610,28 @@ void TrainingApplication::traceSelectionEndpoint() {
     selectionTrace_+=snapshot;
     if(selectionTrace_.size()>1450) selectionTrace_.resize(1450);
 }
-void TrainingApplication::failSelection(const std::string& reason) {
+void TrainingApplication::failSelection(const std::string& reason,BleConnectionStage stage) {
     const auto failure=reason.empty() ? std::string("Could not identify the paired controller") : reason;
     traceSelectionEndpoint();
     const auto elapsed=now_>=selectionStartedAt_ ? now_-selectionStartedAt_ : 0;
     lastConnectionFailure_=("at="+std::to_string(now_)+" elapsedMs="+std::to_string(elapsed)+" reason="+failure).substr(0,180);
     diagnostic("Connection selection failed: "+failure);
     leave();message_=failure;selectionPhase_=SelectionPhase::Failed;
+    // A failed GAP connection can have several causes. Give troubleshooting
+    // advice separately from the actual stage and code recorded above.
+    suggestDisconnectOtherBluetooth_=stage==BleConnectionStage::Radio;
 }
 bool TrainingApplication::runSelection() {
     if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl(false);
     if(selectionPhase_!=SelectionPhase::Resolving) return false;
-    if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=selectionDeadlineMs) {
+    const bool recovering=!recoveryFollower_.empty();
+    const auto deadline=recovering ? twinRecoveryDeadlineMs : selectionDeadlineMs;
+    if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=deadline) {
+        if(recovering) {
+            if(controller_.connecting()) failSelection("Bluetooth radio connection timed out",BleConnectionStage::Radio);
+            else failSelection("Could not verify the paired controller");
+            return true;
+        }
         // An observed topology contradiction remains more specific than a
         // timer or an earlier radio failure, including on the deadline tick.
         const auto r=report();
@@ -589,23 +641,26 @@ bool TrainingApplication::runSelection() {
            (selectionFirstPeerObserved_ && selected_!=selectionExpectedPeer_))) {
             failSelection("VOLTRA pair changed while connecting");return true;
         }
-        failSelection(selectionFirstFailureTyped_ ? selectionFirstFailure_ : "Could not identify the paired controller");return true;
+        const auto stage=selectionFirstFailureStage_;
+        failSelection(stage!=BleConnectionStage::None ? selectionFirstFailure_ : "Could not identify the paired controller",stage);
+        return true;
     }
     if(controller_.connecting()) return true;
     if(!connected()) {
         const auto failure=transport_.connectionFailure();
+        if(recovering) {failSelection(controller_.feedback(),failure.stage);return true;}
         if(selectionFirstFailure_.empty()) {
             selectionFirstFailure_=std::string(controller_.feedback()).substr(0,160);
-            selectionFirstFailureTyped_=failure.stage!=BleConnectionStage::None;
+            selectionFirstFailureStage_=failure.stage;
         }
         if(selectionProbed_.size()==1 && !selectionFirstAccepted_ && failure.stage!=BleConnectionStage::None)
             selectionFirstFailedBeforeAcceptance_=true;
         if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
-            failSelection(message_);return true;
+            failSelection(message_,transport_.connectionFailure().stage);return true;
         }
-        failSelection(controller_.feedback());return true;
+        failSelection(controller_.feedback(),failure.stage);return true;
     }
     if(!selectionReading_) {selectionReadAt_=now_;selectionReading_=true;}
     if(session_.accepted()) {
@@ -619,7 +674,11 @@ bool TrainingApplication::runSelection() {
         now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && !r.twinPeerId.empty();
     const bool paired=identityFresh && r.twinDetected && r.twin && r.twinKnown && r.twinLinkState==0x12;
     if(identityFresh) {
-        if(selectionProbed_.size()==1) {
+        if(recovering) {
+            if(!sameDeviceIdentity(r.twinPeerId,recoveryFollower_)) {
+                failSelection("VOLTRA pair changed while connecting");return true;
+            }
+        } else if(selectionProbed_.size()==1) {
             selectionExpectedPeer_=r.twinPeerId;selectionFirstPeerObserved_=true;
             selectionPeerCandidate_=r.twinPeerId;
         } else if(r.twinPeerId!=selectionFirstEndpoint_ ||
@@ -656,17 +715,36 @@ bool TrainingApplication::runSelection() {
     }
     const bool follower=paired && r.currentTwinRole==CurrentTwinRole::Follower && r.twinRoleAtMs!=0 &&
         now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
-    if(follower && selectionProbed_.size()==2 && selectionFirstFailedBeforeAcceptance_ && selectionFirstFailureTyped_ &&
+    if(recovering) {
+        if(follower || now_-selectionReadAt_>=selectionReadDeadlineMs)
+            failSelection("Could not verify the paired controller");
+        return true;
+    }
+    const bool verifiedPeerPreviouslyFailed=selectionProbed_.size()==2 && selectionFirstFailedBeforeAcceptance_ &&
+        selectionFirstFailureStage_==BleConnectionStage::Radio && r.twinPeerId==selectionFirstEndpoint_;
+    if(userSelected_ && follower && (selectionProbed_.size()==1 || verifiedPeerPreviouslyFailed)) {
+        // Steven's known-address recovery targets the controller only. This
+        // follows current own-matched follower evidence and permits no writes
+        // until the controller reports the reciprocal, freshly verified pair.
+        traceSelectionEndpoint();
+        recoveryFollower_=selected_;
+        selectionStartedAt_=now_;
+        diagnostic("Twin controller recovery started");
+        if(!beginSelectionEndpoint(r.twinPeerId,BleConnectionPolicy::RecoverKnownEndpoint,r.twinPeerName))
+            failSelection(message_,transport_.connectionFailure().stage);
+        return true;
+    }
+    if(follower && selectionProbed_.size()==2 && selectionFirstFailedBeforeAcceptance_ && selectionFirstFailureStage_!=BleConnectionStage::None &&
        r.twinPeerId==selectionFirstEndpoint_) {
         // The peer is identified, but its earlier connection failed. Preserve
         // that real failure; revisiting it here would stack another retry loop.
-        failSelection(selectionFirstFailure_);return true;
+        failSelection(selectionFirstFailure_,selectionFirstFailureStage_);return true;
     }
     if(follower || now_-selectionReadAt_>=selectionReadDeadlineMs) {
         if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
-            failSelection(message_);return true;
+            failSelection(message_,transport_.connectionFailure().stage);return true;
         }
         failSelection(paired ? "Could not identify the paired controller" : "Could not read VOLTRA state");return true;
     }
@@ -689,9 +767,12 @@ void TrainingApplication::leave(bool preserveFailure) {
     if(topologyProbeActive_) stopTopologyProbe();
     if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
+    if(!preserveFailure) suggestDisconnectOtherBluetooth_=false;
     automaticSelection_ = false;
     selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionEndpointStartedAt_=selectionReadAt_=0;selectionReading_=false;
-    selectionEndpointAccepted_=selectionFirstAccepted_=selectionFirstFailedBeforeAcceptance_=selectionFirstFailureTyped_=false;
+    userSelected_=false;recoveryFollower_.clear();
+    selectionEndpointAccepted_=selectionFirstAccepted_=selectionFirstFailedBeforeAcceptance_=false;
+    selectionFirstFailureStage_=BleConnectionStage::None;
     selectionProbed_.clear();selectionPeerCandidate_.clear();
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
     selectionFirstPeerObserved_=selectionResolvedTwin_=false;

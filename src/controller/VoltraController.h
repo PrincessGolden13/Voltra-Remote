@@ -15,7 +15,7 @@ public:
     ~VoltraController();
     VoltraController(const VoltraController&) = delete;
     VoltraController& operator=(const VoltraController&) = delete;
-    bool connect(const DeviceId&);
+    bool connect(const DeviceId&, BleConnectionPolicy = BleConnectionPolicy::Standard);
     bool connecting() const { return connecting_; }
     void disconnect();
     void tick(uint64_t nowMs);
@@ -28,6 +28,7 @@ public:
     bool weightFresh() const;
     LoadState loadState() const;
     const char* feedback() const { return feedback_.c_str(); }
+    const std::string& endedSessionSnapshot() const { return endedSessionSnapshot_; }
     bool controlPending() const { return pendingLoad_.has_value() || requested_.status == CommandStatus::Pending; }
     bool loadRequested() const { return pendingLoad_ == true; }
 private:
@@ -48,6 +49,7 @@ private:
     uint64_t sentAt_ = 0;
     static constexpr uint64_t commandTimeoutMs = 3000;
     std::string feedback_ = "Turn wheel to adjust weight";
+    std::string endedSessionSnapshot_;
     const char* report(const char* text) { feedback_ = text; return feedback_.c_str(); }
     bool failConnection(const char* fallback);
 };

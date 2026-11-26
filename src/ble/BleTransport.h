@@ -4,6 +4,7 @@
 #include <optional>
 namespace voltra {
 enum class BleConnectionStage { None, Setup, Teardown, Radio, Services, Characteristics, Subscription, Link, Notifications };
+enum class BleConnectionPolicy { Standard, RecoverKnownEndpoint };
 struct BleConnectionFailure {
     BleConnectionStage stage=BleConnectionStage::None;
     int reason=0; // A reported host/controller code; zero means unavailable.
@@ -41,6 +42,9 @@ public:
     // Accepted may mean queued. onConnection(true/false) delivers link outcome;
     // neither acceptance nor a link establishes a VOLTRA protocol session.
     virtual TransportResult connect(const DeviceId&) = 0;
+    // Both policies use the exact requested endpoint. Only the connection
+    // attempt budget changes on adapters that support recovery.
+    virtual TransportResult connect(const DeviceId& id, BleConnectionPolicy) { return connect(id); }
     virtual void disconnect() = 0;
     virtual std::vector<std::string> discoverServices() = 0;
     // UUID-filtered discovery avoids enumerating unrelated services before a

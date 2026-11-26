@@ -22,6 +22,7 @@ public:
     bool linkAlive() const override;
     void clearConnectionFailure() override;
     TransportResult connect(const DeviceId&) override;
+    TransportResult connect(const DeviceId&, BleConnectionPolicy) override;
     void disconnect() override;
     std::vector<std::string> discoverServices() override;
     bool discoverService(const std::string&) override;
