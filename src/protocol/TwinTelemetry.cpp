@@ -30,4 +30,19 @@ std::optional<TwinRuntime> decodeTwinRuntime(const Frame& f) {
     }
     return sample;
 }
+std::optional<TwinReportedCounters> decodeExtendedTwinCounters(const Frame& f) {
+    // Steven 1c14860 docs/PROTOCOL.md:97–102 and parse_rep_telemetry:
+    // the captured master 81 42 prefix keeps an 8-bit set and a BE16 rep.
+    // Do not substitute Albert's conflicting synthetic LE16 AA81 layout.
+    constexpr size_t twinRepPayloadBytes=68;
+    constexpr uint8_t extendedRepSubtype=0x81, extendedRepLength=0x42, maximumRepPhase=3;
+    constexpr uint16_t maximumRepCount=10000;
+    const auto& p=f.payload;
+    if(f.type!=0x04 || f.sender!=0x10 || f.receiver!=0xaa || f.protocol!=wire::protocolId ||
+        f.command!=0xaa || p.size()!=twinRepPayloadBytes || p[0]!=extendedRepSubtype ||
+        p[1]!=extendedRepLength || p[2]>maximumRepPhase) return {};
+    const auto rep=uint16_t(uint16_t(p[4])<<8 | p[5]);
+    if(rep>maximumRepCount) return {};
+    return TwinReportedCounters{p[3],rep};
+}
 }

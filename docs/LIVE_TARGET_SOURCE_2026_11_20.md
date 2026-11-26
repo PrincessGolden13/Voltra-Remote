@@ -30,3 +30,13 @@ freshness is independent of settings polls. Twin targets remain unavailable;
 no local target is doubled into a pair total. This read-only telemetry change
 does not enable resistance commands, alter subscription rates or establish
 physical compatibility with the owner's VOLTRAs.
+
+## Twin Live counters in v0.4.22
+
+The Live display also reads the captured Twin `AA 81 42` subtype documented in
+[Steven's protocol notes](https://github.com/stevenpoint/voltra_remote/blob/1c14860b53b805a789b8bed2095e63443e355d7d/docs/PROTOCOL.md#L95-L102).
+It uses the controller's set byte and big-endian rep count. B4 source `0x12`
+takes priority while fresh. Both sources require a current loaded primary and
+expire independently. This path supplies display counts only. The owner's
+Twin Auto Load flow still needs a physical counter check. The matching live
+target for a Twin is still UNVERIFIED.

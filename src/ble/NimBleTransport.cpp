@@ -17,6 +17,8 @@ constexpr RadioPolicy standardRadio{10000,4500,3};
 // Backoff and individual attempts share this bound.
 constexpr RadioPolicy recoveryRadio{55000,10000,7};
 constexpr uint32_t standardRetryDelayMs=500, recoveryFirstDelayMs=1500, recoveryMaxDelayMs=15000, mtuWaitMs=1000;
+// Refresh the exact endpoint's radio route in the existing retry gaps.
+constexpr uint32_t recoveryScanMs=1200;
 // Allow the pinned stack's terminal callback to return before client reuse.
 // This is a radio handoff policy, not a VOLTRA command or readiness delay.
 constexpr uint32_t clientSettleMs=100;
@@ -67,6 +69,7 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     std::mutex mutex;
     std::map<std::string,Advertisement> advertisements;
     std::vector<std::string> scanServices;
+    std::string recoveryScanTarget;
     struct ObservedRadio {
         NimBLEAddress address;
         int rssi=0;
@@ -92,17 +95,19 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         const bool matches=scanServices.empty() || std::any_of(a.services.begin(),a.services.end(),[&](const auto& uuid) {
             return std::find(scanServices.begin(),scanServices.end(),uuid)!=scanServices.end();
         });
-        if(!matches && !observedRadios.count(canonical)) return;
+        if(!recoveryScanTarget.empty() && canonical!=recoveryScanTarget) return;
+        if(!matches && canonical!=recoveryScanTarget && !observedRadios.count(canonical)) return;
         if(observedRadios.size()>=maximumObservedRadios && !observedRadios.count(canonical)) {
             // Old neighbours cannot prevent learning a newer target/type.
             const auto oldest=std::min_element(observedRadios.begin(),observedRadios.end(),
                 [](const auto& a,const auto& b){return a.second.order<b.second.order;});
-            advertisements.erase(oldest->first);
+            if(recoveryScanTarget.empty()) advertisements.erase(oldest->first);
             observedRadios.erase(oldest);
         }
         // The callback uses the last poll's monotonic clock under this mutex.
         // A stalled application makes the observation older, never falsely fresh.
         observedRadios[canonical]={address,d->getRSSI(),d->isConnectable(),now,++observationOrder};
+        if(!recoveryScanTarget.empty()) return; // Keep the completed Devices result intact.
         auto& saved=advertisements[canonical];saved.id=a.id;
         if(!a.name.empty()) saved.name=a.name;
         for(const auto& uuid:a.services)
@@ -114,14 +119,17 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     bool connected=false;
     unsigned diagnosticRx=0,diagnosticTx=0;
     bool connecting=false, radioBusy=false, linkObserved=false, cancelling=false;
-    NimBLEAddress target,radioTarget;
+    std::string targetAddress;
+    std::optional<NimBLEAddress> target;
+    NimBLEAddress radioTarget;
     bool radioTypeObserved=false,radioConnectable=false;
     int radioRssi=0;
     uint64_t radioObservedAt=0;
     unsigned attempts=0;
     uint64_t now=0, retryAt=0, attemptAt=0, radioStartedAt=0, linkUpAt=0, handoffUntil=0;
     uint32_t attemptLimitMs=standardRadio.attemptMs;
-    bool extendedRecovery=false;
+    bool extendedRecovery=false,recoveryScanDue=false,recoveryScanActive=false;
+    uint64_t recoveryObservationOrder=0;
     const RadioPolicy& radioPolicy() const { return extendedRecovery ? recoveryRadio : standardRadio; }
     uint32_t retryDelay() const {
         if(!extendedRecovery) return standardRetryDelayMs;
@@ -131,15 +139,50 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     bool timeoutRetryUsed=false;
     bool terminalObserved=true,mtuReady=false;
     BleConnectionFailure failure;
-    void resolveRadioTarget() {
+    bool resolveRadioTarget() {
         // Called under mutex only when a physical attempt may start. Keep the
         // original logical target unchanged; late events retain their old owner.
-        radioTarget=target;radioTypeObserved=false;
-        const auto observed=observedRadios.find(target.toString());
-        if(observed==observedRadios.end()) return;
+        radioTypeObserved=false;
+        const auto observed=observedRadios.find(targetAddress);
+        if(observed==observedRadios.end()) {
+            if(!target) return false;
+            radioTarget=*target;
+            return true;
+        }
         radioTarget=observed->second.address;radioTypeObserved=true;
         radioRssi=observed->second.rssi;radioConnectable=observed->second.connectable;
         radioObservedAt=observed->second.at;
+        return true;
+    }
+    bool scanRecoveryRoute() {
+        if(recoveryScanActive) {
+            bool seen=false;
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                const auto observed=observedRadios.find(targetAddress);
+                seen=observed!=observedRadios.end() && observed->second.order>recoveryObservationOrder;
+                recoveryScanTarget.clear();
+            }
+            log(seen ? "BLE recovery scan saw exact endpoint" : "BLE recovery scan did not see endpoint");
+            recoveryScanActive=false;
+        }
+        if(!recoveryScanDue) return false;
+        recoveryScanDue=false;
+        // Subsequent windows fit inside the existing backoff.
+        const uint64_t remaining=retryAt>now ? retryAt-now : 0;
+        const auto duration=attempts ? std::min<uint64_t>(recoveryScanMs,remaining) : recoveryScanMs;
+        if(!duration) return false;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            recoveryScanTarget=targetAddress;
+            recoveryObservationOrder=observationOrder;
+        }
+        recoveryScanActive=scanner->start(uint32_t(duration),false,true);
+        if(!recoveryScanActive) {
+            {std::lock_guard<std::mutex> lock(mutex);recoveryScanTarget.clear();}
+            log("BLE recovery scan could not start");
+        }
+        return recoveryScanActive;
     }
     std::string radioDetail() const {
         const bool validAge=radioTypeObserved && now>=radioObservedAt;
@@ -158,7 +201,7 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
         // Setup can fail before a new logical request starts; never report the
         // previous physical owner's type as that invalid request's metadata.
         if(failedAttempts) {
-            failure.logicalAddressType=target.getType();
+            failure.logicalAddressType=target ? target->getType() : -1;
             failure.radioAddressType=radioTarget.getType();
             failure.observedRadioType=radioTypeObserved;
         }
@@ -249,7 +292,7 @@ void NimBleTransport::setScanServices(const std::vector<std::string>& services) 
 std::vector<Advertisement> NimBleTransport::scan() {
     if(!impl_->scanner || impl_->connected || impl_->connecting || impl_->radioBusy || impl_->scanner->isScanning()) return {};
     impl_->scanner->clearResults();
-    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->advertisements.clear();}
+    {std::lock_guard<std::mutex> lock(impl_->mutex);impl_->recoveryScanTarget.clear();impl_->advertisements.clear();}
     const bool started=impl_->scanner->start(2000,false,true); // Async: complete window before auto-selection.
     if(!started) impl_->log("BLE scan could not start");
     return {};
@@ -296,20 +339,25 @@ TransportResult NimBleTransport::connect(const DeviceId& id,BleConnectionPolicy 
     impl_->failure={};
     if(!impl_->client) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
     if(!validDeviceId(id) && !validAddress(id)) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
-    NimBLEAddress target;
+    const auto address=deviceAddress(id);
+    const bool extended=policy==BleConnectionPolicy::RecoverKnownEndpoint;
+    std::optional<NimBLEAddress> target;
     if(validAddress(id)) {
         bool observed=false;
         {
             std::lock_guard<std::mutex> lock(impl_->mutex);
-            const auto found=impl_->observedRadios.find(deviceAddress(id));
+            const auto found=impl_->observedRadios.find(address);
             if(found!=impl_->observedRadios.end()) {target=found->second.address;observed=true;}
         }
-        if(!observed) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
-    } else target=NimBLEAddress(id.substr(0,17),uint8_t(id[18]-'0'));
+        if(!observed && !extended) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
+    } else target=NimBLEAddress(address,uint8_t(id[18]-'0'));
+    if(address.empty()) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
+    impl_->targetAddress=address;
     impl_->target=target;
-    impl_->extendedRecovery=policy==BleConnectionPolicy::RecoverKnownEndpoint;
+    impl_->extendedRecovery=extended;
+    impl_->recoveryScanDue=extended;
     impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;impl_->timeoutRetryUsed=false;
     // Accepted means queued; onConnection reports completion/failure later.
     return TransportResult::Accepted;
@@ -318,13 +366,20 @@ void NimBleTransport::disconnect() {
     impl_->connecting=false;
     impl_->cancelledGeneration=impl_->radioGeneration.load();
     if(impl_->scanner && impl_->scanner->isScanning()) impl_->scanner->stop();
+    const bool scanStopped=!impl_->scanner || !impl_->scanner->isScanning();
+    impl_->recoveryScanDue=impl_->recoveryScanActive=false;
     if(!impl_->cancelling && !impl_->terminalObserved && impl_->client && (impl_->radioBusy || impl_->client->isConnected() || ble_gap_conn_active())) {
         impl_->cancelling=true;
         if(impl_->client->isConnected()) impl_->client->disconnect();
         else impl_->client->cancelConnect();
     }
     ++impl_->generation;
-    { std::lock_guard<std::mutex> lock(impl_->mutex); impl_->received.clear(); }
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        impl_->received.clear();
+        // If cancel failed, keep filtering this short window until it drains.
+        if(scanStopped) impl_->recoveryScanTarget.clear();
+    }
     impl_->overflow=false;
     impl_->diagnosticRx=impl_->diagnosticTx=0;
     impl_->characteristics.clear();
@@ -484,6 +539,7 @@ void NimBleTransport::poll(uint64_t now) {
             if(retryable && impl_->attempts<policy.maximumAttempts && radioElapsed+delayMs<policy.budgetMs) {
                 if(hostTimeout) impl_->timeoutRetryUsed=true;
                 impl_->retryAt=now+delayMs;
+                impl_->recoveryScanDue=impl_->extendedRecovery;
                 impl_->log("BLE connect retry code="+std::to_string(event.reason)+" afterMs="+
                     std::to_string(delayMs)+" radioMs="+std::to_string(radioElapsed)+
                     "/"+std::to_string(policy.budgetMs));
@@ -520,21 +576,31 @@ void NimBleTransport::poll(uint64_t now) {
         // the client's connection handle. Drain both the callback and handle
         // before reuse; an immediate reselect must not race the closing link.
         else if(impl_->terminalObserved && !impl_->cancelling && !impl_->radioBusy && !impl_->client->isConnected() && !ble_gap_conn_active() &&
-                now>=impl_->retryAt && now>=impl_->handoffUntil) {
-            bool launch=false;
+                !impl_->scanner->isScanning() && now>=impl_->handoffUntil) {
+            if(impl_->scanRecoveryRoute() || now<impl_->retryAt) return;
+            bool launch=false,targetMissing=false;
             {
                 std::lock_guard<std::mutex> lock(impl_->mutex);
                 // Drain all callbacks belonging to the previous radio owner
                 // before publishing a new owner. A queued logical selection
                 // alone can never retag an old terminal event.
                 if(impl_->linkEvents.empty() && !impl_->linkOverflow) {
-                    ++impl_->radioGeneration;impl_->resolveRadioTarget();
-                    impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;impl_->terminalObserved=false;
-                    if(!impl_->attempts) impl_->radioStartedAt=now;
-                    impl_->attemptLimitMs=std::min<uint32_t>(policy.attemptMs,
-                        uint32_t(policy.budgetMs-(now-impl_->radioStartedAt)));
-                    impl_->attemptAt=now;++impl_->attempts;launch=true;
+                    if(impl_->resolveRadioTarget()) {
+                        ++impl_->radioGeneration;
+                        impl_->mtuReady=false;impl_->linkObserved=false;impl_->radioBusy=true;impl_->terminalObserved=false;
+                        if(!impl_->attempts) impl_->radioStartedAt=now;
+                        impl_->attemptLimitMs=std::min<uint32_t>(policy.attemptMs,
+                            uint32_t(policy.budgetMs-(now-impl_->radioStartedAt)));
+                        impl_->attemptAt=now;++impl_->attempts;launch=true;
+                    } else targetMissing=true;
                 }
+            }
+            if(targetMissing) {
+                impl_->log("BLE recovery has no observed address type");
+                impl_->fail(BleConnectionStage::Setup);
+                impl_->connecting=false;
+                if(impl_->connection) impl_->connection(false);
+                return;
             }
             if(launch) {
                 impl_->log("BLE connecting attempt "+std::to_string(impl_->attempts)+"/"+std::to_string(policy.maximumAttempts)+

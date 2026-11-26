@@ -28,6 +28,12 @@ constexpr uint64_t selectionDeadlineMs=30000,selectionReadDeadlineMs=6000;
 // link teardown, fresh GATT setup and read-only Twin verification.
 constexpr uint64_t twinRecoveryDeadlineMs=75000;
 const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
+std::string connectingStatus(const std::string& name,const std::string& peer={}) {
+    const std::string device=name.empty() ? "VOLTRA" : name;
+    if(peer.empty()) return "Connecting to "+device+"...";
+    if(device=="VOLTRA" && peer=="VOLTRA") return "Connecting to Twin...";
+    return "Connecting to "+device+" and "+peer+"...";
+}
 }
 TrainingApplication::TrainingApplication(BleTransport& t, VoltraController& c, ControlSession& s, DeviceMemory* m, std::vector<DeviceEntry> knownDevices, bool automaticSelection)
     : transport_(t), controller_(c), session_(s), memory_(m), knownDevices_(std::move(knownDevices)), automaticSelection_(automaticSelection) {
@@ -461,7 +467,12 @@ std::optional<int> TrainingApplication::restSeconds() const {
 }
 TrainingApplication::DisplayCounters TrainingApplication::displayCounters() const {
     const auto r=report();
-    if(!fresh() || !r.telemetryValid) return {};
+    if(!fresh()) return {};
+    if(r.separateTwinDisplayCounters) {
+        if(!r.twinDisplayCounters) return {};
+        return {r.twinDisplayCounters->set,r.twinDisplayCounters->rep,r.completedSets,r.lastSetReps};
+    }
+    if(!r.telemetryValid) return {};
     if(!dropProgress_.visible) return {r.setNumber,int(r.rep),r.completedSets,r.lastSetReps};
     if(!dropProgress_.valid) return {};
     const int set=dropProgress_.completedSets+(dropProgress_.active ? 1 : 0);
@@ -604,11 +615,20 @@ bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id, BleConnecti
     selectionProbed_.push_back(id);selectionEndpointStartedAt_=now_;selectionReading_=false;selectionReadAt_=0;
     selectionEndpointAccepted_=false;
     connectingDevice_.reset();
+    // Keep both known names on screen during handoff. The display names
+    // are independent of which physical endpoint is being attempted.
+    const bool knownHandoff=recovering || (selectionFirstPeerObserved_ &&
+        sameDeviceIdentity(selected_,selectionFirstEndpoint_) && sameDeviceIdentity(id,selectionExpectedPeer_));
+    const auto& displayName=recovering && (chosen.name.empty() || chosen.name=="VOLTRA") && !peerName.empty()
+        ? peerName : chosen.name;
+    selectionStatus_=knownHandoff && sameDeviceIdentity(selected_,selectionFirstEndpoint_)
+        ? connectingStatus(name_,displayName)
+        : connectingStatus(displayName,knownHandoff ? name_ : chosen.twinPeer);
     selected_=chosen.id;name_=chosen.name;
     if(!controller_.connect(chosen.id,policy)) {message_=controller_.feedback();return false;}
     session_.setSelectedAddress(transport_.deviceAddress(chosen.id));
     connectingDevice_=chosen;
-    message_=recovering ? "Connecting to Twin..." : "Connecting...";
+    message_="Connecting...";
     return true;
 }
 void TrainingApplication::traceSelectionEndpoint() {
@@ -690,8 +710,8 @@ bool TrainingApplication::runSelection() {
     const auto r=report();
     // Full fresh identity can nominate a read-only candidate while link-state
     // semantics remain unknown. It cannot promote that candidate to controls.
-    const bool identityFresh=session_.accepted() && r.twinStatusFresh &&
-        now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && !r.twinPeerId.empty();
+    const bool topologyFresh=session_.accepted() && r.twinStatusFresh && now_>=r.twinAtMs && now_-r.twinAtMs<=2000;
+    const bool identityFresh=topologyFresh && !r.twinPeerId.empty();
     const bool paired=identityFresh && r.twinDetected && r.twin && r.twinKnown && r.twinLinkState==0x12;
     if(identityFresh) {
         if(recovering) {
@@ -706,6 +726,12 @@ bool TrainingApplication::runSelection() {
             failSelection("VOLTRA pair changed while connecting");return true;
         }
     }
+    if(paired) {
+        const auto peerName=r.twinPeerName.empty() ? "VOLTRA" : r.twinPeerName;
+        selectionStatus_=sameDeviceIdentity(r.twinPeerId,selectionFirstEndpoint_)
+            ? connectingStatus(peerName,name_) : connectingStatus(name_,peerName);
+    }
+    else if(topologyFresh && r.twinLinkState==0) selectionStatus_=connectingStatus(name_);
     if(session_.accepted()) {observeTwin(r);refreshTwinDevices();}
     const bool roleFresh=paired && r.currentTwinRole==CurrentTwinRole::Master && r.twinRoleAtMs!=0 &&
         now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
@@ -731,7 +757,7 @@ bool TrainingApplication::runSelection() {
                 saveTwinNavigation();refreshTwinDevices();
             }
         }
-        selectionPhase_=SelectionPhase::Ready;message_.clear();return false;
+        selectionPhase_=SelectionPhase::Ready;message_.clear();selectionStatus_.clear();return false;
     }
     const bool follower=paired && r.currentTwinRole==CurrentTwinRole::Follower && r.twinRoleAtMs!=0 &&
         now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
@@ -790,6 +816,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     if(!preserveFailure) {suggestDisconnectOtherBluetooth_=false;connectionEnd_=ConnectionEnd::None;}
     automaticSelection_ = false;
     selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionEndpointStartedAt_=selectionReadAt_=0;selectionReading_=false;
+    selectionStatus_.clear();
     userSelected_=false;recoveryFollower_.clear();
     selectionEndpointAccepted_=selectionFirstAccepted_=selectionFirstFailedBeforeAcceptance_=false;
     selectionFirstFailureStage_=BleConnectionStage::None;

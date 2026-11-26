@@ -748,8 +748,9 @@ void UiController::build() {
     if (int(page_) >= int(Screen::Presets)) { buildExtra(); return; }
     if (page_ == Screen::Devices) {
         if(app_.resolvingSelection()) {
-            message_=label(face_,app_.message(),width_*76/100,height_*38/100,medium);
-            lv_label_set_long_mode(message_,LV_LABEL_LONG_WRAP);
+            message_=label(face_,app_.selectionStatus(),width_*76/100,height_*38/100,medium);
+            lv_obj_set_height(message_,height_*21/100);
+            lv_label_set_long_mode(message_,LV_LABEL_LONG_DOT);
             color(message_,soft);
             button(face_,"Cancel",width_*32/100,height_*62/100,width_*36/100,height_*12/100,DismissConnection);
             return;
@@ -1084,7 +1085,8 @@ void UiController::update() {
 #endif
     value(battery_, batteryText);
     if (page_ == Screen::Devices) {
-        value(message_, app_.message().empty() ? (app_.devices().empty() ? "Searching for VOLTRAs..." : "") : app_.message());
+        if(app_.resolvingSelection()) value(message_,app_.selectionStatus());
+        else value(message_, app_.message().empty() ? (app_.devices().empty() ? "Searching for VOLTRAs..." : "") : app_.message());
         return;
     }
     const auto r = app_.report();
