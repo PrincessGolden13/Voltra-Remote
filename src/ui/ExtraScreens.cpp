@@ -261,6 +261,8 @@ void UiController::updateExtra() {
     }
     if(page_ == Screen::Live) {
         const auto d=app_.drops();
+        const bool twin=r.twin || r.twinDetected;
+        text(title_,twin ? deviceNames(app_.name(),r.twinPeerName) : app_.name());
         text(status_,"");
         const bool known=app_.fresh() && r.telemetryValid;
         const auto now=hardware_.nowMs();
@@ -296,6 +298,7 @@ void UiController::updateExtra() {
         const auto feedback=app_.dropPending() && control.empty() ? std::string("Setting drop...") : control;
         text(message_,!app_.fresh() ? "State unavailable" :
             r.loadStateKnown && r.autoLoadArmed && feedback.empty() ? "Auto Load / tap to cancel" :
+            twin ? feedback :
             !liveWeightFresh ? (feedback.empty() ? "Waiting for live load" : feedback) :
             !known && !autoLiveAwaitingSet_ && feedback.empty() ? "Rep data unavailable" : feedback);
         const auto remaining=app_.restPauseRemainingPermille();

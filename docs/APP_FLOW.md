@@ -1,3 +1,11 @@
+> November 26 v0.4.23. A connected single that joins Twin transitions to its
+> verified controller. Keep the live link if it becomes primary. Wait for
+> a fresh local idle read before following a verified follower's controller
+> address. A confirmed direct Twin load opens Live without waiting for a rep.
+> Show received counters and preserve unload. A weight hold shows progress or
+> unavailable feedback based on current Auto Load support. See
+> TWIN_HANDOFF_LIVE_2026_11_26.md.
+>
 > Devices shows the selected VOLTRA name while connecting. A known Twin shows
 > both names during discovery and handoff; unavailable names use a generic
 > label. Names are presentation only and do not appear in the debug log.

@@ -26,6 +26,9 @@ public:
     // connection resets; promotion can fail while current role/state is unknown.
     virtual bool setReadOnlyProbe(bool enabled) { return !enabled; }
     virtual bool readOnlyProbe() const { return false; }
+    // Fresh local idle proof for leaving a selected follower. It grants no
+    // control permission on either member of the pair.
+    virtual bool twinHandoffIdle() const { return false; }
     virtual void notification(const std::string&,const Bytes&) {}
     virtual void tick(uint64_t) {}
     virtual bool accepted() const { return true; }

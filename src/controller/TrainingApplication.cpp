@@ -183,7 +183,7 @@ bool TrainingApplication::selectionReady() const {
     // A previously resolved standalone endpoint retains its navigation and
     // unconditional unload route while ordinary readback is stale. All load/
     // settings operations still enforce their own fresh readiness requirements.
-    if(!selectionResolvedTwin_) return !r.twinDetected && !r.twin;
+    if(!selectionResolvedTwin_) return twinTransitionPending_ || (!r.twinDetected && !r.twin);
     // Established Primary identity is a route, not current load permission.
     // Its backend-held unload route survives mere polling TTL expiry and is
     // revoked by an actual identity/role/topology contradiction.
@@ -197,6 +197,7 @@ bool TrainingApplication::selectionReady() const {
     return twinPermissionFresh();
 }
 bool TrainingApplication::twinPermissionFresh() const {
+    if(twinTransitionPending_) return false;
     if(!selectionResolvedTwin_) return true;
     const auto r=report();
     return r.twinDetected && r.twin && r.twinKnown && r.twinStatusFresh && r.twinLinkState==0x12 &&
@@ -223,9 +224,61 @@ const char* TrainingApplication::connectionEndNotice() const {
     }
     return "";
 }
+void TrainingApplication::refreshConnectedTwinSelection(bool afterProtocolPoll) {
+    if(selectionPhase_!=SelectionPhase::Ready || selectionResolvedTwin_ || !connected() || !session_.accepted()) return;
+    const auto r=report();
+    if(!twinTransitionPending_) {
+        if(!r.twinDetected && !r.twin) return;
+        twinTransitionPending_=true;
+        cancelControlIntents();
+        // Standalone drop/set presentation belongs to the prior scope too.
+        dropProgress_={};
+        restSince_.reset();restSetRevision_=0;
+        confirmedDropWeight_.reset();observedLoaded_=false;
+        message_.clear();
+        diagnostic("Twin transition observed on selected connection");
+    }
+    if(!afterProtocolPoll) return;
+    // A pairing indication disables standalone controls immediately. Keep
+    // reading the accepted link until its current role and partner are known.
+    observeTwin(r);
+    refreshTwinDevices();
+    const bool paired=r.twin && r.twinKnown && twinFresh() && r.twinLinkState==0x12 &&
+        !r.twinPeerId.empty() && !sameDeviceIdentity(r.twinPeerId,selected_) &&
+        r.twinRoleAtMs!=0 && now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
+    if(!paired) return;
+    if(r.currentTwinRole==CurrentTwinRole::Master && r.unloadRouteKnown) {
+        // The same authenticated link is now the primary. Keep its explicit
+        // unload route while readback catches up to the new combined scope.
+        selectionResolvedTwin_=true;
+        selectionResolvedPeer_=r.twinPeerId;
+        twinTransitionPending_=false;
+        diagnostic("Twin transition kept current controller");
+        return;
+    }
+    if(r.currentTwinRole!=CurrentTwinRole::Follower || maintenance_ || session_.busy() || !session_.twinHandoffIdle()) return;
+    // The former single endpoint is now a verified idle follower. Reuse
+    // bounded read-only recovery and require the primary's reciprocal A7.
+    // Navigation evidence never carries a settings or resistance request.
+    selectionPhase_=SelectionPhase::Resolving;
+    selectionStartedAt_=now_;
+    selectionFirstEndpoint_=selected_;
+    selectionProbed_={selected_};
+    selectionEndpointAccepted_=true;
+    selectionTrace_.clear();
+    traceSelectionEndpoint();
+    recoveryFollower_=selected_;
+    retrySelectionCandidate_=r.twinPeerId;
+    twinTransitionPending_=false;
+    diagnostic("Twin transition connecting to verified controller");
+    if(!beginSelectionEndpoint(r.twinPeerId,BleConnectionPolicy::RecoverKnownEndpoint,r.twinPeerName))
+        failSelection(message_,transport_.connectionFailure().stage);
+}
 bool TrainingApplication::retainSelectionControl(bool requireControl) {
+    refreshConnectedTwinSelection(false);
+    if(resolvingSelection() || selectionFailed()) return false;
     if(selectionReady()) {
-        const bool controlsFresh=!selectionReadOnlyView_ && (!selectionResolvedTwin_ ||
+        const bool controlsFresh=!selectionReadOnlyView_ && !twinTransitionPending_ && (!selectionResolvedTwin_ ||
             (twinPermissionFresh() && fresh() && readbackFresh()));
         if(!controlsFresh) {
             cancelControlIntents();
@@ -662,7 +715,12 @@ void TrainingApplication::failSelection(const std::string& reason,BleConnectionS
     suggestDisconnectOtherBluetooth_=end==ConnectionEnd::None && stage==BleConnectionStage::Radio;
 }
 bool TrainingApplication::runSelection() {
-    if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl(false);
+    if(selectionPhase_==SelectionPhase::Ready) {
+        // The protocol has just polled on this tick's clock. Only this path
+        // can use a fresh local-idle proof to move the Bluetooth link.
+        refreshConnectedTwinSelection(true);
+        return !retainSelectionControl(false) || twinTransitionPending_;
+    }
     if(selectionPhase_!=SelectionPhase::Resolving) return false;
     const bool recovering=!recoveryFollower_.empty();
     const auto deadline=recovering ? twinRecoveryDeadlineMs : selectionDeadlineMs;
@@ -824,6 +882,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();
     selectionFirstPeerObserved_=selectionResolvedTwin_=false;
     selectionReadOnlyView_=false;
+    twinTransitionPending_=false;
     waitingForControlFreshness_=false;
     scanned_ = scanPending_ = false;
     topologyProbeDue_=false;
@@ -941,7 +1000,7 @@ void TrainingApplication::toggleWeight() {
 }
 void TrainingApplication::unload() {
     if(!retainSelectionControl(false)) return;
-    if(selectionReadOnlyView_ || (selectionResolvedTwin_ && !report().unloadRouteKnown)) {
+    if(selectionReadOnlyView_ || ((selectionResolvedTwin_ || twinTransitionPending_) && !report().unloadRouteKnown)) {
         message_="Use VOLTRA to unload";recordControlFailure(message_);return;
     }
     diagnostic("Unload requested");
