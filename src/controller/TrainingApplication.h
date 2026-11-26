@@ -29,6 +29,8 @@ public:
     bool selectionReady() const;
     bool selectionReadOnlyView() const { return selectionReadOnlyView_; }
     bool selectionFailed() const { return selectionPhase_==SelectionPhase::Failed; }
+    bool establishedConnectionEnded() const { return connectionEnd_!=ConnectionEnd::None; }
+    const char* connectionEndNotice() const;
     bool suggestDisconnectOtherBluetooth() const { return suggestDisconnectOtherBluetooth_; }
     bool canRetrySelection() const;
     bool retrySelection();
@@ -111,6 +113,8 @@ private:
     DeviceId selected_;
     std::string name_, message_, presetError_;
     std::string lastControlFailure_,lastClosedSession_,loadRefusalMessage_,lastConnectionFailure_;
+    enum class ConnectionEnd { None, Unknown, PeerEnded, WorkoutExited, MountLockReleased };
+    ConnectionEnd connectionEnd_=ConnectionEnd::None;
     bool suggestDisconnectOtherBluetooth_=false;
     enum class SelectionPhase { Idle, Resolving, Ready, Failed };
     SelectionPhase selectionPhase_=SelectionPhase::Idle;
@@ -133,7 +137,8 @@ private:
     bool beginSelectionEndpoint(const DeviceId&, BleConnectionPolicy = BleConnectionPolicy::Standard,
                                 const std::string& peerName = {});
     bool runSelection();
-    void failSelection(const std::string&, BleConnectionStage stage=BleConnectionStage::None);
+    void failSelection(const std::string&, BleConnectionStage stage=BleConnectionStage::None,
+                       ConnectionEnd end=ConnectionEnd::None);
     void traceSelectionEndpoint();
     bool retainSelectionControl(bool requireControl=true);
     uint64_t loadRefusalRevision_=0;

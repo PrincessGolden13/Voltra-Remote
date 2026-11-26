@@ -31,8 +31,10 @@ VoltraController::VoltraController(BleTransport& t, ControllerPolicy p, ControlS
         if (connected) return; // Validate GATT on the application loop first.
         const bool failed = connecting_;
         connecting_ = false;
-        if(!disconnecting_ && confirmed_.connected && controls_)
+        if(!disconnecting_ && confirmed_.connected && controls_) {
+            endedSessionObservation_=controls_->endObservation(now_);
             endedSessionSnapshot_=controls_->diagnosticState().substr(0,800);
+        }
         if (controls_) controls_->connectionChanged(false);
         confirmed_ = {}; requested_ = {}; responseSubscribed_={};
         for(auto& parser:responseParsers_) parser.reset();
@@ -68,6 +70,7 @@ VoltraController::~VoltraController() {
 bool VoltraController::connect(const DeviceId& id, BleConnectionPolicy policy) {
     disconnect();
     endedSessionSnapshot_.clear();
+    endedSessionObservation_=DeviceEndObservation::None;
     connecting_ = true;feedback_ = "Connecting...";
     if (transport_.connect(id,policy) != TransportResult::Accepted) { connecting_=false;feedback_=connectionFailureText(transport_.connectionFailure(),"Connection unavailable");return false; }
     return linkUp_ ? finishConnection() : true;

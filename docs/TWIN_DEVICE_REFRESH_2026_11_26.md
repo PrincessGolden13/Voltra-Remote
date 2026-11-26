@@ -32,3 +32,22 @@ after roughly 50 seconds. [Albert's client](https://github.com/albertzhang86/vol
 also retries a known selected address. Neither source provides an existing pair
 wake command, follower relay, or Bluetooth takeover. The longer policy is a
 documented best effort, not physical proof of a particular recovery time.
+
+## A connection that ends during use
+
+The reviewed BLE sources expose numeric status, with no documented message
+carrying the exact mounting-error text from the VOLTRA screen.
+[The parameter catalog](https://github.com/dylanmaniatakes/Beyond-Power-Voltra-Android/blob/da514d2db1a16ebb4ded3156bc8fd200bed1e6eb/app/src/main/assets/voltra/paramInfo.csv#L1085)
+identifies 20642 as the mounting-lock state. The owner's earlier Black capture
+verified locked → released → locked as 2 → 1 → 2. A fresh matching transition
+reported by the connected endpoint can be shown as a released mounting lock.
+That observation does not identify the state of the other unit or prove the
+cause of the disconnect. Without a specific observed condition, use a short
+connection-ended notice. Only peer termination or confirmed Weight Training
+exit supports attributing the event to VOLTRA.
+
+The mid-session notice offers Back and Retry where available. Diagnostic
+sending stays available in Settings. Capture the last available numeric state
+and transport reason before clearing the connection, for reports that the owner
+chooses to send. Cancel pending controls on loss and require a new explicit
+load action after reconnecting.

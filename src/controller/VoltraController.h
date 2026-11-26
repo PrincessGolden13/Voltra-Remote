@@ -29,6 +29,7 @@ public:
     LoadState loadState() const;
     const char* feedback() const { return feedback_.c_str(); }
     const std::string& endedSessionSnapshot() const { return endedSessionSnapshot_; }
+    DeviceEndObservation endedSessionObservation() const { return endedSessionObservation_; }
     bool controlPending() const { return pendingLoad_.has_value() || requested_.status == CommandStatus::Pending; }
     bool loadRequested() const { return pendingLoad_ == true; }
 private:
@@ -50,6 +51,7 @@ private:
     static constexpr uint64_t commandTimeoutMs = 3000;
     std::string feedback_ = "Turn wheel to adjust weight";
     std::string endedSessionSnapshot_;
+    DeviceEndObservation endedSessionObservation_=DeviceEndObservation::None;
     const char* report(const char* text) { feedback_ = text; return feedback_.c_str(); }
     bool failConnection(const char* fallback);
 };

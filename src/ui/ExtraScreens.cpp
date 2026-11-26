@@ -53,19 +53,22 @@ void UiController::buildExtra() {
         return;
     }
     if(page_==Screen::ConnectionNotice) {
-        const bool adviseBluetooth=app_.suggestDisconnectOtherBluetooth();
+        const bool sessionEnded=app_.establishedConnectionEnded();
+        const bool adviseBluetooth=!sessionEnded && app_.suggestDisconnectOtherBluetooth();
         label(face_,adviseBluetooth ? "CONNECTION FAILED" : "CONNECTION ENDED",width_*76/100,height_*22/100,heading);
-        auto* reason=label(face_,app_.message(),width_*74/100,height_*(adviseBluetooth ? 32 : 38)/100,medium);
+        auto* reason=label(face_,sessionEnded ? app_.connectionEndNotice() : app_.message(),
+            width_*74/100,height_*(adviseBluetooth ? 32 : 38)/100,medium);
         lv_obj_set_height(reason,height_*(adviseBluetooth ? 13 : 18)/100);lv_label_set_long_mode(reason,LV_LABEL_LONG_DOT);
         if(adviseBluetooth) {
             label(face_,"Disconnect phones and other Bluetooth controllers from the VOLTRAs, then try again.",
                 width_*76/100,height_*46/100,medium);
         }
-        action("Send debug log",20,adviseBluetooth ? 62 : 58,60,11,SendDebugLog);
+        if(!sessionEnded) action("Send debug log",20,adviseBluetooth ? 62 : 58,60,11,SendDebugLog);
+        const int buttonY=sessionEnded ? 65 : 74;
         if(app_.canRetrySelection()) {
-            action("Retry",20,74,28,12,RetryConnection);
-            action("Back",52,74,28,12,DismissConnection);
-        } else action("Back",33,74,34,12,DismissConnection);
+            action("Retry",20,buttonY,28,12,RetryConnection);
+            action("Back",52,buttonY,28,12,DismissConnection);
+        } else action("Back",33,buttonY,34,12,DismissConnection);
         return;
     }
     if (page_ == Screen::ForgetDevice) {

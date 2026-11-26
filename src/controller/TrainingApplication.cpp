@@ -17,6 +17,9 @@ constexpr uint64_t topologyProbeIntervalMs=15000,topologyPresentationMs=30000;
 constexpr uint64_t standaloneTopologyProbeIntervalMs=discoveryIntervalMs;
 constexpr uint64_t topologyConnectDeadlineMs=4500,topologyReadDeadlineMs=3000;
 constexpr uint64_t motionFreshMs=500;
+// NimBLE wraps Bluetooth HCI error 0x13 (remote user terminated) in its 0x200
+// host-error range. Only an ended, established link can use this indication.
+constexpr int peerTerminatedLinkCode=0x200+0x13;
 constexpr uint64_t restPauseBarDelayMs=250; // User-requested visual threshold.
 // The ordinary read-only path visits each candidate at most once. Allow BLE
 // connection/bootstrap time, then six seconds for independent role evidence.
@@ -204,6 +207,16 @@ void TrainingApplication::cancelControlIntents() {
     if(const auto d=dropSettings_.find(selected_);d!=dropSettings_.end()) d->second.enabled=false;
     resetDrops();dropsCancelled_=true;
 }
+const char* TrainingApplication::connectionEndNotice() const {
+    switch(connectionEnd_) {
+    case ConnectionEnd::PeerEnded:return "VOLTRA ended the connection.";
+    case ConnectionEnd::WorkoutExited:return "Weight Training ended on the VOLTRA.";
+    case ConnectionEnd::MountLockReleased:return "VOLTRA reported that the mounting lock was released.";
+    case ConnectionEnd::Unknown:return "VOLTRA connection ended.";
+    case ConnectionEnd::None:return "";
+    }
+    return "";
+}
 bool TrainingApplication::retainSelectionControl(bool requireControl) {
     if(selectionReady()) {
         const bool controlsFresh=!selectionReadOnlyView_ && (!selectionResolvedTwin_ ||
@@ -221,7 +234,9 @@ bool TrainingApplication::retainSelectionControl(bool requireControl) {
         }
         return true;
     }
-    const bool lostLink=selectionPhase_==SelectionPhase::Ready && !connected();
+    const bool established=selectionPhase_==SelectionPhase::Ready;
+    const bool lostLink=established && !connected();
+    auto end=established ? ConnectionEnd::Unknown : ConnectionEnd::None;
     auto stage=BleConnectionStage::None;
     std::string reason="VOLTRA connection changed; reconnect";
     if(lostLink) {
@@ -234,13 +249,17 @@ bool TrainingApplication::retainSelectionControl(bool requireControl) {
         if(stage!=BleConnectionStage::None) reason=controller_.feedback();
         if((stage==BleConnectionStage::None || (stage==BleConnectionStage::Link && !failure.reason)) &&
             !protocolReason.empty() && protocolReason!="Connection lost") reason=protocolReason;
+        if(controller_.endedSessionObservation()==DeviceEndObservation::MountLockReleased) end=ConnectionEnd::MountLockReleased;
+        else if(stage==BleConnectionStage::Link && failure.reason==peerTerminatedLinkCode) end=ConnectionEnd::PeerEnded;
+        else if(protocolReason=="VOLTRA left Weight Training; reconnect") end=ConnectionEnd::WorkoutExited;
         const auto& snapshot=controller_.endedSessionSnapshot();
         lastClosedSession_=("at="+std::to_string(now_)+" transportStage="+std::to_string(int(stage))+
-            " code="+std::to_string(failure.reason)+" "+snapshot).substr(0,800);
+            " code="+std::to_string(failure.reason)+
+            (end==ConnectionEnd::MountLockReleased ? " mountLockRelease=observed " : " ")+snapshot).substr(0,800);
     }
     session_.setReadOnlyProbe(true);
     cancelControlIntents();
-    if(selectionPhase_==SelectionPhase::Ready) failSelection(reason,stage);
+    if(established) failSelection(reason,stage,end);
     return false;
 }
 bool TrainingApplication::canRetrySelection() const {
@@ -610,16 +629,17 @@ void TrainingApplication::traceSelectionEndpoint() {
     selectionTrace_+=snapshot;
     if(selectionTrace_.size()>1450) selectionTrace_.resize(1450);
 }
-void TrainingApplication::failSelection(const std::string& reason,BleConnectionStage stage) {
+void TrainingApplication::failSelection(const std::string& reason,BleConnectionStage stage,ConnectionEnd end) {
     const auto failure=reason.empty() ? std::string("Could not identify the paired controller") : reason;
     traceSelectionEndpoint();
     const auto elapsed=now_>=selectionStartedAt_ ? now_-selectionStartedAt_ : 0;
     lastConnectionFailure_=("at="+std::to_string(now_)+" elapsedMs="+std::to_string(elapsed)+" reason="+failure).substr(0,180);
     diagnostic("Connection selection failed: "+failure);
     leave();message_=failure;selectionPhase_=SelectionPhase::Failed;
+    connectionEnd_=end;
     // A failed GAP connection can have several causes. Give troubleshooting
     // advice separately from the actual stage and code recorded above.
-    suggestDisconnectOtherBluetooth_=stage==BleConnectionStage::Radio;
+    suggestDisconnectOtherBluetooth_=end==ConnectionEnd::None && stage==BleConnectionStage::Radio;
 }
 bool TrainingApplication::runSelection() {
     if(selectionPhase_==SelectionPhase::Ready) return !retainSelectionControl(false);
@@ -767,7 +787,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     if(topologyProbeActive_) stopTopologyProbe();
     if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
-    if(!preserveFailure) suggestDisconnectOtherBluetooth_=false;
+    if(!preserveFailure) {suggestDisconnectOtherBluetooth_=false;connectionEnd_=ConnectionEnd::None;}
     automaticSelection_ = false;
     selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionEndpointStartedAt_=selectionReadAt_=0;selectionReading_=false;
     userSelected_=false;recoveryFollower_.clear();

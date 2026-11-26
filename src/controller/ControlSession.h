@@ -10,6 +10,7 @@ struct SessionReadiness {
     uint16_t minWeightLbs = 0;
     std::string reason;
 };
+enum class DeviceEndObservation { None, MountLockReleased };
 class ControlSession {
 public:
     virtual ~ControlSession() = default;
@@ -33,6 +34,8 @@ public:
     virtual bool commandFailed() const { return false; }
     virtual const std::string& status() const { static const std::string empty; return empty; }
     virtual std::string diagnosticState() const { return status(); }
+    // A recent machine report, not an inferred cause of a Bluetooth failure.
+    virtual DeviceEndObservation endObservation(uint64_t) const { return DeviceEndObservation::None; }
     virtual SessionReadiness readiness() const = 0;
     virtual TransportResult setWeight(uint16_t pounds) = 0;
     virtual TransportResult setLoaded(bool loaded) = 0;
