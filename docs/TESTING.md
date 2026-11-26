@@ -1,5 +1,47 @@
 # Validation status and pending tests
 
+## November 26 v0.4.24 Twin workout recovery and rep timing
+
+Report evidence and limits are in [Twin workout transitions and rep timing](TWIN_LIFECYCLE_2026_11_26.md).
+The v0.4.23 protocol reproduced immediate teardown on idle mode exit from
+both a direct response and a parameter push. The corrected actual protocol
+passed 11 scenarios, including both mode/role arrival orders, the six-query
+eight-second bound, current idle and role requirements, maintenance and unload,
+and standalone manual resume. Actual application/controller mocks passed 14
+scenarios and 164 checks. Receipt `workout-exit-v0424/validation.json`.
+
+Extended Twin lifecycle parsing and diagnostic separation passed six protocol
+scenarios and 43 checks. Actual LVGL and application passed 66 Live and battery
+scenes and 1,089 checks, and 129 hold/input scenes and 1,350 checks at 360, 466
+and 480 px. The latter included old touch, rotary preset, and editor scope
+changes through a workout transition, exact configuration reasons, continued
+explicit unload, and six-second debug. Receipts under `/workspace/preview-tools`
+include `twin-lifecycle-v0424/integrated-final-validation.json` and
+`workout-input-v0424/current/validation.json`.
+
+Four focused physical-session mocks passed exact configuration, stale refusal,
+and bounded isolated target reads, including ignored foreign, push, duplicate
+and late responses. All 31 prior protocol scenarios and the core/inspector build
+pass. No physical radio or motor operation. No new tracked test source.
+
+[PR CI45912658413](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45912658413)
+at 3411830f passed both firmware builds, core and packaging. Artifact 15160269404
+SHA-256 `944694969837ddcfd4d17e419191d67a700d01104d44939de1a550132c74ff38`.
+Merge 4922297d has the exact reviewed tree. [Tag CI45913287976](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45913287976)
+artifact 15161560561 SHA-256 `7964be9d1fde95a05d03bec92e02d21a7f54d587f48bd2fbd88bac161c29dbb5`.
+Both tagged images match the reviewed PR bytes. Normal has 2,073,536 bytes and
+SHA-256 `78112399d83c85bb88192dc18873f5439fad32b327cabe6bf313cff000cc39a6`.
+Simulator has 1,059,744 bytes and SHA-256
+`d81be0a90ca5b5cb9948ac1ece31d12896618be9525d6cfa2674801e103c0365`.
+Version, manifest, USB hashes and offsets, partition map, backend isolation,
+NVS and rollback hooks, and all four draft assets and notes pass review.
+Receipts in ignored `build/review-v0424` and `build/review-v0424-tag`.
+
+Release 460010579 became latest at 2026-11-26 23:55:21 UTC. The public latest
+manifest and pinned image match the reviewed tag bytes. Receipt in ignored
+`build/published-v0424/verification.json`. Physical recovery and Twin workout
+status delivery still need checking. Combined display target remains unverified.
+
 ## November 26 v0.4.23 Twin handoff and Live
 
 Source and report evidence is recorded in [Twin handoff and Live](TWIN_HANDOFF_LIVE_2026_11_26.md).

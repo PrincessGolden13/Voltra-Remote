@@ -1,5 +1,20 @@
 # Foundation baseline
 
+## November 26 v0.4.24 Twin workout recovery and rep timing
+
+- Report `00886881` and the photo match the v0.4.23 idle workout-exit
+  teardown. A brief read-only check can keep the newly verified primary or
+  hand off from the idle follower. The regular-load Live screen now follows
+  actual rep start and returns at reported rest. See
+  [source and report evidence](TWIN_LIFECYCLE_2026_11_26.md).
+- Reported disabled Auto Load settings get a specific message. The verified
+  rep stream still has no validated combined target. Bounded diagnostics can
+  record candidate observations without making them control or display data.
+- Application, protocol, LVGL and public builds pass. Tagged images match the
+  reviewed PR. Release 460010579 published as latest, and public delivery
+  matches checked images. Physical behavior and the combined Live weight are
+  unverified. [Validation](TESTING.md) · [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.24)
+
 ## November 26 v0.4.23 Twin handoff and Live
 
 - Report `24b52042` on v0.4.22 shows the earlier connection-ended message,
