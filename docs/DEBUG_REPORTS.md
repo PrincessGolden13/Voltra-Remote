@@ -1,4 +1,4 @@
-# Diagnostic reports (v0.4.8)
+# Diagnostic reports
 
 Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
 screen for six seconds. No debug hint appears before three seconds; then it says
@@ -22,22 +22,33 @@ shows pending, device-reported unloaded, unknown or error status. Background pag
 rebuilds do not discard dialog touches. Load refusals also have a
 Send debug log button and stay visible until dismissed.
 
-The last 20 bounded semantic events are kept in RAM, replacing the oldest. The
+The last 40 bounded semantic events are kept in RAM, replacing the oldest. The
 snapshot is captured on SEND before disconnecting, so dialog unload actions and
-their results can be included. They
+their results can be included. Reports preserve the newest events if escaped JSON
+would exceed the 12 KiB upload limit. The events
 include user actions, connection outcomes, relevant state changes, protocol parse
 failures and displayed errors. Each message is limited to 256 bytes. No raw BLE
 payloads, bootstrap identities, Wi-Fi credentials, Bluetooth addresses or paired
 device identifiers are included. A snapshot also records firmware, screen, numeric
 readiness fields and their ages. The paired ID is represented only by presence.
+The context starts with the current boot's reset reason and running build's ELF
+fingerprint. On a panic or watchdog reset it also says whether a flash crash
+record passed the ESP-IDF checksum check. If its format is recognized, a bounded
+reader extracts the stored ELF fingerprint, numeric exception cause, and the
+crashed task's program counter. Task identifiers, stack contents, other registers
+and the raw crash record stay on the remote. A stored record may predate the reset.
+The reader avoids the pinned SDK's [core dump summary parser](https://github.com/espressif/esp-idf/blob/v4.4.7/components/espcoredump/src/core_dump_elf.c#L689),
+which can overwrite adjacent summary fields.
 The latest control failure retains a bounded RAM snapshot with timestamp across
 disconnect, so Settings can report the original blocked state. Manually leaving
 the connection also retains its last numeric session snapshot. Weight command
 and readback events include measured force context where available, without
 claiming that register readback proves actual resistance.
 
-SEND persists one approved snapshot in the separate `voltra-debug/pending` NVS key.
-It survives a restart or OTA. Unapproved ring history is RAM-only and resets at
+SEND persists one approved snapshot as a blob in `voltra-debug/pending-v2`. The
+firmware can still deliver queued reports stored by older firmware at
+`voltra-debug/pending`. The saved report survives restart and OTA. Unapproved ring
+history is RAM-only and resets at
 boot, avoiding continuous flash writes. An existing queued report is retained;
 another SEND retries it instead of overwriting it. Only a successful save/requeue
 authorizes the UI to release Bluetooth. Any pending control request is allowed
@@ -74,7 +85,7 @@ capability. Receipts are idempotent; retries cannot overwrite an existing report
 TLS certificate and hostname verification are required; no embedded GitHub/email
 token or Sites service credential is distributed to remote owners.
 
-Limits are 12 KiB/request, 20 events, 256 characters/event, 2 KiB context,
+Limits are 12 KiB/request, 40 events, 256 characters/event, 2 KiB context,
 10 ticket requests/hour per address, and 1,000 retained reports/tickets. Rate
 buckets store an hourly address hash, not a raw IP. Reports older than 90 days,
 expired tickets and expired rate buckets are deleted when another ticket is
