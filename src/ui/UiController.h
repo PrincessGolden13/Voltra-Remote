@@ -73,7 +73,7 @@ private:
     lv_obj_t *face_ = nullptr, *weight_ = nullptr, *title_ = nullptr, *status_ = nullptr,
         *hint_ = nullptr, *message_ = nullptr, *arc_ = nullptr, *unit_ = nullptr, *limit_ = nullptr;
     lv_obj_t *autoLoadArc_=nullptr,*autoLoadTitle_=nullptr,*autoLoadPrompt_=nullptr;
-    bool weightHoldActive_=false,weightUnloadGesture_=false,weightPressTwin_=false,autoFeedbackVisible_=false;
+    bool weightHoldActive_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
     void updateAutoLoadFeedback();
     // Presentation only: confirmed Auto Load completion can precede the first
     // workout packet. Keep Live through that handoff without changing control state.
@@ -105,7 +105,7 @@ private:
     std::string deviceSignature_, scaleSignature_;
     uint64_t lastTickMs_ = 0;
     RotaryAdjustment rotaryAdjustment_;
-    bool touchDown_ = false, touchMoved_ = false;
+    bool touchDown_ = false, touchMoved_ = false, touchPressTwin_ = false;
     int touchStartX_ = 0, touchStartY_ = 0;
     RemoteConfigurationStore* store_ = nullptr;
     RemoteConfiguration config_;

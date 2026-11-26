@@ -38,7 +38,6 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
             if(code==LV_EVENT_PRESSED) {
                 b->ui->weightHoldActive_=true;
                 const auto r=b->ui->app_.report();
-                b->ui->weightPressTwin_=r.twin || r.twinDetected;
                 b->ui->weightUnloadGesture_=!b->ui->app_.fresh() || r.loaded || r.autoLoadArmed || b->ui->app_.pending();
             }
             else if(code==LV_EVENT_RELEASED || code==LV_EVENT_PRESS_LOST) b->ui->weightHoldActive_=false;
@@ -62,8 +61,8 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                 diagnostic("Six-second debug hold recognized on release");
                 lv_indev_wait_release(b->ui->touch_);return;
             }
+            const auto r=b->ui->app_.report();
             if(b->action==Weight) {
-                const auto r=b->ui->app_.report();
                 // Unload/cancel takes precedence over gesture classification,
                 // including when a loaded/armed press becomes unloaded before
                 // release. A hold can never turn that cancellation into Load.
@@ -71,12 +70,12 @@ void UiController::bind(lv_obj_t* obj, int action, const std::string& id) {
                     diagnostic("Weight release unloads/cancels current request");
                     b->ui->app_.unload();return;
                 }
-                if(b->ui->weightPressTwin_!=(r.twin || r.twinDetected)) {
-                    diagnostic("Weight release cancelled after topology change");return;
-                }
                 if(elapsed>=autoLoadHintMs && elapsed<autoLoadHoldMs) {
                     diagnostic("Weight hold cancelled before Auto Load threshold");return;
                 }
+            }
+            if(b->action!=Unload && b->ui->touchPressTwin_!=(r.twin || r.twinDetected)) {
+                diagnostic("Touch release cancelled after topology change");return;
             }
             const bool held=supportsHold && elapsed>=(b->action==Weight ? autoLoadHoldMs : controlHoldMs);
             diagnostic("Touch action="+std::to_string(b->action)+" hold="+std::to_string(held)+" durationMs="+std::to_string(elapsed));
@@ -261,6 +260,8 @@ UiController::UiController(HardwarePlatform& h, TrainingApplication& app, Remote
         }
         const int x=int(p.x*(s->width_-1)), y=int(p.y*(s->height_-1));
         if(p.pressed && !s->touchDown_) {
+            const auto r=s->app_.report();
+            s->touchPressTwin_=r.twin || r.twinDetected;
             s->touchStartX_=x;s->touchStartY_=y;s->touchMoved_=false;s->modeGestureUntil_=0;
             s->touchStartedAt_=s->touchEventAt_;s->debugConsumed_=s->debugMoved_=false;
         }
@@ -505,7 +506,7 @@ void UiController::readTouch() {
     lv_indev_read(touch_);
 }
 void UiController::navigate(Screen page) {
-    weightHoldActive_=weightUnloadGesture_=weightPressTwin_=false;
+    weightHoldActive_=weightUnloadGesture_=false;
     if(page!=Screen::Updates) {updateCheckPending_=false;updateCheckMessage_.clear();}
     if(page==Screen::Live && batteryAlertDialog_) closeBatteryAlert(false);
     const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
@@ -725,7 +726,7 @@ void UiController::build() {
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
-    weightHoldActive_=weightUnloadGesture_=weightPressTwin_=autoFeedbackVisible_=false;
+    weightHoldActive_=weightUnloadGesture_=autoFeedbackVisible_=false;
     center_ = battery_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
@@ -1254,7 +1255,7 @@ void UiController::updateAutoLoadFeedback() {
     // Read support as the hold progresses. A readback missing on touch-down
     // can arrive before release, and the app checks permission at release.
     const bool holdingWeight=weightHoldActive_ && !weightUnloadGesture_ && touchDown_ && !touchMoved_ && !wakeTouch_ && !debugConsumed_ &&
-        weightPressTwin_==(r.twin || r.twinDetected) && elapsed>=autoLoadHintMs && elapsed<debugHoldMs &&
+        touchPressTwin_==(r.twin || r.twinDetected) && elapsed>=autoLoadHintMs && elapsed<debugHoldMs &&
         app_.fresh() && !r.loaded && !r.autoLoadArmed && !app_.pending();
     const bool holding=holdingWeight && r.autoLoadSupported;
     const bool starting=app_.autoLoadRequested() && !r.loaded && !r.autoLoadArmed;
