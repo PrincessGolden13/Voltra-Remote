@@ -14,8 +14,10 @@ public:
 private:
     mutable std::mutex mutex_;
     ReportStatus view_;
-    std::string payload_,id_;
+    std::string payload_,id_,bootContext_;
+    const char* pendingKey_=nullptr;
     std::atomic<bool> active_{false},permitted_{false};
+    bool restorePending();
     void set(ReportPhase,const std::string&);
     void run();
     bool post(const char* path,const std::string& body,const std::string& token,std::string& response);

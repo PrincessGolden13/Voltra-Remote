@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 // Anonymous, consented diagnostics only. Mint a short-lived capability scoped
 // to one immutable report and its digest. No report-read/list route is exposed.
 const maximumBytes = 12288;
+const maximumEvents = 40;
 const retentionSeconds = 90 * 86400;
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 const hex = (buffer: ArrayBuffer) => Array.from(new Uint8Array(buffer), b => b.toString(16).padStart(2, "0")).join("");
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
     const ticket = await db.prepare("SELECT report_id,hash FROM tickets WHERE token_hash=? AND expires>=?").bind(await digest(token), now).first<{report_id:string;hash:string}>();
     if (!ticket || ticket.report_id !== body.id || ticket.hash !== hash) return json({ error: "unauthorized" }, 401);
     if (body.schema !== 1 || !/^[a-f0-9]{32}$/.test(body.id) || typeof body.context !== "string" || body.context.length > 2048 ||
-        typeof body.firmware !== "string" || !/^\d+\.\d+\.\d+$/.test(body.firmware) || !Array.isArray(body.events) || body.events.length > 20 ||
+        typeof body.firmware !== "string" || !/^\d+\.\d+\.\d+$/.test(body.firmware) || !Array.isArray(body.events) || body.events.length > maximumEvents ||
         !body.events.every((e: {at: unknown;message:unknown}) => Number.isSafeInteger(e.at) && Number(e.at) >= 0 && typeof e.message === "string" && e.message.length <= 256)) return json({ error: "invalid report" }, 400);
     // Idempotent after a lost HTTP response; a report ID never overwrites data.
     await db.prepare("INSERT OR IGNORE INTO reports (id,hash,received_at,body) VALUES (?,?,?,?)").bind(body.id, hash, now, raw).run();

@@ -6,6 +6,15 @@
 #include <algorithm>
 #include <iterator>
 #include "diagnostics/EventLog.h"
+
+// Arduino-ESP32's weak hook defaults to 8 KiB. The Twin weight gesture runs
+// LVGL, identity resolution and synchronous BLE control on this same task.
+// A physical v0.4.18 dump hit the end-of-stack watchpoint on that path.
+size_t getArduinoLoopTaskStackSize() {
+    constexpr size_t applicationStackBytes=16*1024;
+    return applicationStackBytes;
+}
+
 namespace voltra::guition {
 HardwareCapabilities Board::capabilities() const {
     HardwareCapabilities c;

@@ -10,7 +10,7 @@ namespace voltra {
 class EventLog {
 public:
     struct Event { uint64_t at=0; std::string message; };
-    static constexpr size_t capacity=20, maximumMessageBytes=256;
+    static constexpr size_t capacity=40, maximumMessageBytes=256;
     static EventLog& instance() { static EventLog log;return log; }
     void clock(uint64_t now) { std::lock_guard<std::mutex> lock(mutex_);now_=now; }
     void add(const std::string& message) {
@@ -22,6 +22,7 @@ public:
     }
     std::vector<Event> snapshot() const {
         std::lock_guard<std::mutex> lock(mutex_);std::vector<Event> result;
+        result.reserve(count_);
         for(size_t i=0;i<count_;++i) result.push_back(events_[(next_+capacity-count_+i)%capacity]);
         return result;
     }

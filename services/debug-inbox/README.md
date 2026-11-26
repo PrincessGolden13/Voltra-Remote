@@ -10,6 +10,10 @@ service, open that existing Site through the Sites source workflow, retain its
 project ID, copy these files, run TypeScript, generate an additive migration if
 needed, build and deploy. Do not create a second Site for an ordinary edit.
 
+Deploy the additive 40-event validator before publishing firmware that can send
+40 events. The same envelope schema and 12 KiB request cap apply to older clients.
+This change needs no database migration.
+
 Project: `appgprj_6af1fc4a0f5c819197846b98bbe4161e`.
 Intended origin: `https://voltra-remote-diagnostics.darkheath.chatgpt.site`.
 See `docs/DEBUG_REPORTS.md` for consent, access, retention and limits. All reported

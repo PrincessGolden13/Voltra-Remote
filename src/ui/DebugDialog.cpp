@@ -16,7 +16,9 @@ void UiController::openDebugDialog() {
     lv_obj_set_style_border_width(debugDialog_,0,0);lv_obj_set_style_pad_all(debugDialog_,0,0);
     lv_obj_remove_flag(debugDialog_,LV_OBJ_FLAG_SCROLLABLE);
     label(debugDialog_,"DEBUG REPORT",width_*3/4,height_/6);
-    debugText_=label(debugDialog_,"20 events and control status.\nNo passwords or device IDs.\n\nSEND disconnects Bluetooth\nand uploads over Wi-Fi.\nDisconnecting does not unload.",width_*80/100,height_*24/100);
+    debugText_=label(debugDialog_,"Up to "+std::to_string(EventLog::capacity)+
+        " events and control status.\nNo passwords or device IDs.\n\nSEND disconnects Bluetooth\nand uploads over Wi-Fi.\nDisconnecting does not unload.",
+        width_*80/100,height_*24/100);
     lv_obj_set_height(debugText_,height_*27/100);
     lv_label_set_long_mode(debugText_,LV_LABEL_LONG_DOT);
     debugControlStatus_=label(debugDialog_,"",width_*76/100,height_*51/100);
