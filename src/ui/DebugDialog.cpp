@@ -1,5 +1,13 @@
 #include "UiController.h"
+#include <cstring>
 namespace voltra {
+namespace {
+constexpr char debugConsent[]="Wi-Fi connection required.\nSending disconnects Bluetooth from VOLTRA.";
+bool savedWifiNeedsReconnect(const WifiSetupStatus& wifi) {
+    return wifi.storageReady && wifi.saved && !wifi.setupActive && !wifi.connected && !wifi.connecting;
+}
+}
+
 void UiController::openDebugDialog() {
     if(debugDialog_) return;
     if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
@@ -16,8 +24,7 @@ void UiController::openDebugDialog() {
     lv_obj_set_style_border_width(debugDialog_,0,0);lv_obj_set_style_pad_all(debugDialog_,0,0);
     lv_obj_remove_flag(debugDialog_,LV_OBJ_FLAG_SCROLLABLE);
     label(debugDialog_,"DEBUG REPORT",width_*3/4,height_/6);
-    debugText_=label(debugDialog_,"Wi-Fi connection required.\nSending disconnects Bluetooth from VOLTRA.",
-        width_*78/100,height_*31/100);
+    debugText_=label(debugDialog_,debugConsent,width_*78/100,height_*31/100);
     lv_obj_set_height(debugText_,height_*20/100);
     lv_label_set_long_mode(debugText_,LV_LABEL_LONG_DOT);
     debugControlStatus_=label(debugDialog_,"",width_*76/100,height_*51/100);
@@ -54,7 +61,18 @@ void UiController::openDebugDialog() {
     hardware_.setDisplayPower(false,false);
 }
 void UiController::sendDebugReport() {
-    if(debugDisconnectPending_ || (reports_ && reports_->status().busy())) return;
+    const auto status=reports_ ? reports_->status() : ReportStatus{};
+    if(debugDisconnectPending_ || status.busy()) return;
+    const auto retrySavedWifi=[this] {
+        if(wifi_ && !app_.radioInUse() && !app_.pending() && (!updates_ || !updates_->status().busy()) &&
+           savedWifiNeedsReconnect(wifi_->status())) wifi_->reconnectSaved();
+    };
+    if(debugSubmitted_ && status.phase==ReportPhase::Queued) {
+        // The report is already saved and approved. Retry its saved network
+        // directly, without another submission or a Bluetooth handoff.
+        retrySavedWifi();
+        return;
+    }
     debugSubmitted_=true;
     if(!reports_) return; // Offline simulator must not disconnect or transmit.
     diagnostic("Debug report SEND requested");
@@ -64,6 +82,9 @@ void UiController::sendDebugReport() {
     if(reports_->submit(events,context)) {
         debugDisconnectPending_=true;
         app_.setMaintenance(true);
+        // The ordinary handoff resumes Wi-Fi after Bluetooth. When the radio
+        // was already idle, SEND can also retry a previously failed join.
+        retrySavedWifi();
     }
 }
 void UiController::unloadFromDebugDialog() {
@@ -107,8 +128,30 @@ void UiController::updateDebugDialog() {
     }
     if(controlStatus!=lv_label_get_text(debugControlStatus_)) lv_label_set_text(debugControlStatus_,controlStatus.c_str());
     const auto status=reports_ ? reports_->status() : ReportStatus{};
-    if(!debugSubmitted_ && !debugDisconnectPending_) return;
-    if(debugDisconnectPending_ || !reports_ || status.phase==ReportPhase::Queued || status.phase==ReportPhase::Sending || status.phase==ReportPhase::Sent)
+    const auto wifi=wifi_ ? wifi_->status() : WifiSetupStatus{};
+    const bool wifiAvailableForReport=!app_.radioInUse() && !app_.pending() &&
+        (!updates_ || !updates_->status().busy());
+    if(!debugSubmitted_ && !debugDisconnectPending_) {
+        const char* text=debugConsent;
+        // Wi-Fi is deliberately paused while Bluetooth owns the radio. Only
+        // describe that as a Wi-Fi problem after the radio is available.
+        if(wifi_ && wifiAvailableForReport && !wifi.connected) {
+            if(!wifi.storageReady) text="Saved Wi-Fi settings are unavailable.";
+            else if(wifi.setupActive) text="Finish Wi-Fi setup to send.";
+            else if(!wifi.saved) text="Wi-Fi is not set up.\nUse Settings to connect.";
+            else if(wifi.connecting) text="Connecting to Wi-Fi.\nYou can save the report now.";
+            else text="Wi-Fi is disconnected.\nYou can save the report now.";
+        }
+        if(std::strcmp(text,lv_label_get_text(debugText_))!=0) lv_label_set_text(debugText_,text);
+        return;
+    }
+    const bool retryWifi=!debugDisconnectPending_ && status.phase==ReportPhase::Queued && wifi_ &&
+        wifiAvailableForReport && savedWifiNeedsReconnect(wifi);
+    if(retryWifi) {
+        lv_label_set_text(debugSendLabel_,"RETRY WI-FI");
+        lv_obj_remove_flag(debugSend_,LV_OBJ_FLAG_HIDDEN);
+    } else if(debugDisconnectPending_ || !reports_ || status.phase==ReportPhase::Queued ||
+              status.phase==ReportPhase::Sending || status.phase==ReportPhase::Sent)
         lv_obj_add_flag(debugSend_,LV_OBJ_FLAG_HIDDEN);
     else {
         lv_label_set_text(debugSendLabel_,"RETRY");
@@ -117,11 +160,15 @@ void UiController::updateDebugDialog() {
     std::string text=reports_ ? status.message : "Report delivery is unavailable in Simulator.";
     if(debugDisconnectPending_) text="Report saved.\nWaiting for VOLTRA before sending.";
     else if(status.phase==ReportPhase::Queued && wifi_) {
-        const auto w=wifi_->status();
-        if(w.setupActive) text="Report saved.\nFinish Wi-Fi setup to send.";
-        else if(!w.saved) text="Report saved.\nSet up Wi-Fi in Settings to send.";
-        else if(!w.connected) text="Report saved. Waiting for Wi-Fi.";
+        if(!wifi.storageReady) text="Report saved.\nSaved Wi-Fi settings are unavailable.";
+        else if(wifi.setupActive) text="Report saved.\nFinish Wi-Fi setup to send.";
+        else if(!wifi.saved) text="Report saved.\nSet up Wi-Fi in Settings to send.";
+        else if(wifiAvailableForReport && wifi.connecting) text="Report saved.\nConnecting to Wi-Fi.";
+        else if(retryWifi) text="Wi-Fi disconnected. Report saved.\nTry Wi-Fi again or restart the remote.";
+        else if(!wifi.connected) text="Report saved. Waiting for Wi-Fi.";
     } else if(status.phase==ReportPhase::Sent) text="Report sent.\nCode: "+status.id;
+    else if(status.phase==ReportPhase::Error && wifi_ && wifiAvailableForReport && !wifi.connected)
+        text="Wi-Fi disconnected.\n"+status.message;
     if(text!=lv_label_get_text(debugText_)) lv_label_set_text(debugText_,text.c_str());
 }
 }

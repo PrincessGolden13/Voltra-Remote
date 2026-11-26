@@ -76,7 +76,7 @@ private:
     bool weightHoldActive_=false,weightAutoLoadGesture_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
     void updateAutoLoadFeedback();
     // Presentation only: confirmed Auto Load completion can precede the first
-    // workout packet. Keep that Live screen without changing load/control state.
+    // workout packet. Keep Live through that handoff without changing control state.
     DeviceId autoLiveDevice_;
     bool autoLiveArmedSeen_=false,autoLiveCompletionConsumed_=false,autoLiveAwaitingSet_=false;
     int autoLiveWorkoutPhase_=0;

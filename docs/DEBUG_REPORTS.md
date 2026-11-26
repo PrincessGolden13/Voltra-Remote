@@ -64,8 +64,11 @@ to settle or time out first; closing the dialog does not cancel an approved send
 A failed save keeps Bluetooth connected and offers RETRY. Upload waits for saved
 Wi-Fi and no VOLTRA connection, pending control or firmware update. Rebooting
 with a queued report does not authorize a new disconnect. Upload failure retains
-the snapshot and offers RETRY in the open dialog. A queued report without saved
-Wi-Fi tells the user to configure it in Settings. Simulator delivery and SEND
+the snapshot and offers RETRY in the open dialog. The dialog distinguishes
+disconnected Wi-Fi, a join in progress, and missing setup once Bluetooth has
+released the radio. If the saved network still cannot connect, RETRY WI-FI
+tries the saved settings without restarting. The queued report sends when
+Wi-Fi returns and survives a restart if needed. Simulator delivery and SEND
 handoff are disabled.
 
 Wi-Fi provides the Internet connection to the diagnostic inbox; the remote's BLE

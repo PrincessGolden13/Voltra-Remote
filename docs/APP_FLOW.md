@@ -1,3 +1,9 @@
+> v0.4.21 extends the confirmed Auto Load handoff to Twin. The verified
+> controller's loaded completion opens Live before the first rep. Calibration
+> counts and a reported return to Auto Load armed can keep Live during the
+> first-set handoff. Confirmed unload returns to Adjust and the unload/cancel
+> control stays available. This is a screen change; it sends no commands.
+>
 > November 23 v0.4.18 supersedes Stairs' old completed-report trigger: AA82 phase2
 > is return START. Wait for fresh matching AA81 return3-to-idle0 and stillness;
 > reject a late or moving window and cancel unsent automatic edits if motion or

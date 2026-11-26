@@ -441,41 +441,57 @@ void UiController::updateLiveNavigation(const TrainingReport& r) {
         autoLiveDevice_=app_.selectedDevice();
         autoLiveArmedSeen_=autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
     }
-    if(!app_.fresh()) return;
+    if(!app_.fresh() || !r.loadStateKnown) return;
     const bool single=r.twinKnown && !r.twin && !r.twinDetected;
-    if(r.loadStateKnown && !r.loaded && !r.autoLoadArmed) {
+    const bool twin=r.twinKnown && r.twin && r.currentTwinRole==CurrentTwinRole::Master;
+    const bool supportedAutoProfile=single || twin;
+    const bool twinCalibration=twin && autoLiveCompletionConsumed_ && autoLiveAwaitingSet_;
+    if(!r.loaded && !r.autoLoadArmed) {
         autoLiveArmedSeen_=autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
-    } else if(single && r.loadStateKnown && r.autoLoadArmed) {
+    } else if(supportedAutoProfile && r.autoLoadArmed && !twinCalibration) {
         autoLiveArmedSeen_=true;
         autoLiveCompletionConsumed_=autoLiveAwaitingSet_=false;
     }
-    if(!single || !r.loadStateKnown) autoLiveAwaitingSet_=false;
+    if(!supportedAutoProfile) autoLiveAwaitingSet_=false;
     const int phase=r.setActive==true ? 2 : r.resting==true ? 3 : r.setEnding==true ? 4 : 0;
     // A device may leave Auto motor mode before its completion field is read.
     // In either case it must independently confirm known loaded state first.
-    const bool completedAuto=single && app_.readbackFresh() && r.loadStateKnown &&
+    constexpr int singleAutoCompletion=14, twinAutoCompletion=15;
+    const bool completedAuto=supportedAutoProfile && app_.readbackFresh() &&
         r.loaded && !r.autoLoadArmed && !autoLiveCompletionConsumed_ &&
-        (r.autoLoadPhase==14 || autoLiveArmedSeen_);
-    if(completedAuto && page_==Screen::Main) {
+        (r.autoLoadPhase==(twin ? twinAutoCompletion : singleAutoCompletion) || autoLiveArmedSeen_);
+    if(completedAuto && (page_==Screen::Main || page_==Screen::Live)) {
         autoLiveCompletionConsumed_=true;autoLiveArmedSeen_=false;autoLiveAwaitingSet_=true;
         autoLiveWorkoutPhase_=phase;autoLiveSetEndRevision_=r.setEndRevision;
-        navigate(Screen::Live);
+        if(page_==Screen::Main) navigate(Screen::Live);
+        return;
     }
     bool endedBeforeFirstSet=false;
     if(autoLiveAwaitingSet_) {
         // Workout status is retained by the protocol adapter. An old rest/end
         // at completion must not bounce Live; require a newly observed boundary.
+        // Twin B4 counts do not indicate workout boundaries. A calibration
+        // count or counter reset cannot end this presentation by itself.
         endedBeforeFirstSet=((phase==3 || phase==4) && phase!=autoLiveWorkoutPhase_) ||
-            (r.setEndRevision && r.setEndRevision!=autoLiveSetEndRevision_);
+            (single && r.setEndRevision && r.setEndRevision!=autoLiveSetEndRevision_);
         const bool began=(phase==2 && phase!=autoLiveWorkoutPhase_) ||
-            (r.telemetryValid && r.repsStarted.value_or(false));
+            (single && r.telemetryValid && r.repsStarted.value_or(false));
         autoLiveWorkoutPhase_=phase;autoLiveSetEndRevision_=r.setEndRevision;
         if(endedBeforeFirstSet || began) autoLiveAwaitingSet_=false;
     }
     if(r.loaded && r.setActive.value_or(true) && r.telemetryValid &&
         r.repsStarted.value_or(false) && page_==Screen::Main) navigate(Screen::Live);
-    if((!r.loaded || endedBeforeFirstSet || (r.setActive==false && !autoLiveAwaitingSet_)) &&
-        page_==Screen::Live) navigate(Screen::Main);
+    // A paired Auto session can still report an armed phase while the first
+    // set is coming through. Keep the Live presentation (and its cancel tap)
+    // while following the actual machine state. A confirmed unload ends it.
+    const bool waitingForTwinAuto=twin && r.autoLoadArmed && autoLiveAwaitingSet_;
+    if(((!r.loaded && !waitingForTwinAuto) || endedBeforeFirstSet ||
+        (r.setActive==false && !autoLiveAwaitingSet_)) && page_==Screen::Live) {
+        diagnostic("Live ended loaded="+std::to_string(r.loaded)+" armed="+std::to_string(r.autoLoadArmed)+
+            " twin="+std::to_string(twin)+" phase="+std::to_string(phase)+
+            " auto="+(r.autoLoadPhase ? std::to_string(*r.autoLoadPhase) : "unknown"));
+        navigate(Screen::Main);
+    }
 }
 void UiController::readTouch() {
     const auto now=hardware_.nowMs();lv_tick_inc(uint32_t(now-lastTickMs_));lastTickMs_=now;

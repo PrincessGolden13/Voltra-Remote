@@ -63,7 +63,7 @@ struct TrainingReport {
     std::optional<int> autoUnloadHoldSeconds;
     bool twinKnown = false, twin = false, loaded = false, autoLoadArmed = false;
     // Read-only Auto Load feedback: 11 waiting, 12 countdown, 13 engaging,
-    // 14 complete on the captured profile. Never authorizes a load command.
+    // 14 single completion or 15 Twin completion on the captured profiles.
     std::optional<int> autoLoadPhase, autoLoadCountdownMs;
     uint64_t autoLoadCountdownAtMs = 0;
     bool telemetryValid = false, moving = false, held = false;
