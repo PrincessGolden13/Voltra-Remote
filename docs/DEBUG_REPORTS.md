@@ -32,13 +32,21 @@ payloads, bootstrap identities, Wi-Fi credentials, Bluetooth addresses or paired
 device identifiers are included. A snapshot also records firmware, screen, numeric
 readiness fields and their ages. The paired ID is represented only by presence.
 The context starts with the current boot's reset reason and running build's ELF
-fingerprint. On a panic or watchdog reset it also says whether a flash crash
-record passed the ESP-IDF checksum check. If its format is recognized, a bounded
-reader extracts the stored ELF fingerprint, numeric exception cause, and the
-crashed task's program counter. Task identifiers, stack contents, other registers
-and the raw crash record stay on the remote. A stored record may predate the reset.
-The reader avoids the pinned SDK's [core dump summary parser](https://github.com/espressif/esp-idf/blob/v4.4.7/components/espcoredump/src/core_dump_elf.c#L689),
+fingerprint. A stored crash may predate this boot. At startup the remote checks
+for a flash crash record and validates its size and ESP-IDF checksum. For the
+recognized format it extracts only the stored ELF fingerprint, numeric exception
+cause, and the crashed task's executable program counter. The reader avoids the
+pinned SDK's [core dump summary parser](https://github.com/espressif/esp-idf/blob/v4.4.7/components/espcoredump/src/core_dump_elf.c#L689),
 which can overwrite adjacent summary fields.
+
+After the remote saves and reads back the summary in `voltra-debug/crash-summary`,
+it erases the dedicated crash partition. The SDK erases that partition and writes
+its blank sentinel. This does not erase settings or app slots. Invalid or
+unrecognized dumps remain in place, as does a dump whose summary could not be
+verified in storage. Failed cleanup can be retried on a later boot. One bounded
+summary is retained and replaced by the next recognized crash. It survives a
+power cycle or firmware update and is included only in an approved debug report.
+Task identifiers, stacks, other registers and raw flash data are never uploaded.
 The latest control failure retains a bounded RAM snapshot with timestamp across
 disconnect, so Settings can report the original blocked state. Manually leaving
 the connection also retains its last numeric session snapshot. Weight command

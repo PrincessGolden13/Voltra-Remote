@@ -41,7 +41,9 @@ by this crash. Physical Twin loading after the fix is UNVERIFIED.
 
 The report now retains up to 40 current-boot events and a bounded crash status.
 Increasing a RAM ring alone cannot recover the previous boot. Approved reports
-still use the private inbox, with no automatic upload of raw ESP32 memory.
+still use the private inbox. At boot, one recognized crash summary is saved and
+read back before the SDK clears the raw crash partition. This leaves at most one
+replaceable summary for later Wi-Fi reporting without needing a USB connection.
 
 CONFIRMED (inbox): the deployed validator accepted a synthetic 40-event report
 and denied public GET access. The existing schema, payload size limit, and

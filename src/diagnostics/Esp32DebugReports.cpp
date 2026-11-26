@@ -18,6 +18,7 @@ constexpr size_t maximumReportBytes=12*1024,maximumContextBytes=2048,maximumResp
 // IDF 4.4 limits an NVS string to 4000 bytes including the terminator. A
 // bounded blob permits larger reports and leaves the legacy string readable.
 constexpr char pendingReportKey[]="pending-v2",legacyReportKey[]="pending";
+constexpr char crashSummaryKey[]="crash-summary";
 constexpr int socketTimeoutMs=10000;
 constexpr uint32_t clockWaitMs=10000,workerStackBytes=12288;
 constexpr time_t earliestValidTime=1704067200; // 2024-01-01 UTC, certificate clock sanity floor.
@@ -41,28 +42,109 @@ const char* resetName(esp_reset_reason_t reason) {
     default:return "unknown";
     }
 }
+#if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
+// Persist only the reviewed fields, never a copy of a task or crash note.
+// Layout: format byte, presence flags, lowercase ELF digest prefix, cause, PC.
+constexpr uint8_t crashSummarySchema=1, causePresent=1, pcPresent=2;
+constexpr size_t fingerprintOffset=2, causeOffset=fingerprintOffset+fingerprintCharacters, pcOffset=causeOffset+1;
+using CrashSummaryRecord=std::array<uint8_t,pcOffset+4>;
+
+CrashSummaryRecord readCrashSummary() {
+    CrashSummaryRecord record{};
+    Preferences nvs;
+    if(nvs.begin("voltra-debug",true) && nvs.isKey(crashSummaryKey) &&
+        nvs.getBytesLength(crashSummaryKey)==record.size()) {
+        if(nvs.getBytes(crashSummaryKey,record.data(),record.size())!=record.size()) record={};
+    }
+    return record;
+}
+
+CrashSummaryRecord encodeCrashSummary(const CrashNotes& notes) {
+    CrashSummaryRecord record{};
+    record[0]=crashSummarySchema;
+    std::memcpy(record.data()+fingerprintOffset,notes.fingerprint.data(),fingerprintCharacters);
+    if(notes.cause) {
+        record[1]|=causePresent;
+        record[causeOffset]=uint8_t(*notes.cause);
+    }
+    if(notes.pc) {
+        record[1]|=pcPresent;
+        for(unsigned byte=0;byte<4;++byte) record[pcOffset+byte]=uint8_t(*notes.pc>>(8*byte));
+    }
+    return record;
+}
+
+bool saveCrashSummary(const CrashSummaryRecord& record) {
+    // A prior boot may have saved this exact record but failed to erase it.
+    if(readCrashSummary()==record) return true;
+    Preferences nvs;
+    if(!nvs.begin("voltra-debug",false)) return false;
+    const bool written=nvs.putBytes(crashSummaryKey,record.data(),record.size())==record.size();
+    nvs.end();
+    return written && readCrashSummary()==record;
+}
+
+std::string describeCrashSummary(const CrashSummaryRecord& record) {
+    if(record[0]!=crashSummarySchema || (record[1]&~(causePresent|pcPresent))) return {};
+    std::string fingerprint;
+    for(size_t i=fingerprintOffset;i<causeOffset;++i) {
+        const auto c=record[i];
+        if(!((c>='0' && c<='9') || (c>='a' && c<='f'))) return {};
+        fingerprint+=char(c);
+    }
+    auto result=" storedElf="+fingerprint;
+    if(record[1]&causePresent) result+=" storedCause="+std::to_string(record[causeOffset]);
+    const auto pc=littleWord(record.data()+pcOffset);
+    if((record[1]&pcPresent) && esp_ptr_executable(reinterpret_cast<const void*>(pc))) {
+        char formatted[11];std::snprintf(formatted,sizeof(formatted),"0x%08lx",static_cast<unsigned long>(pc));
+        result+=" storedPc="+std::string(formatted);
+    }
+    return result;
+}
+
+std::string clearCrashStorage(const std::string& summary) {
+    // IDF 4.4.7 erases only the COREDUMP partition and writes a blank sentinel.
+    const bool cleared=esp_core_dump_image_erase()==ESP_OK;
+    return (cleared ? " storedDump=cleared" : " storedDump=cleanup-failed")+summary;
+}
+
+std::string storedCrashContext() {
+    const auto previous=describeCrashSummary(readCrashSummary());
+    const auto* partition=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_DATA_COREDUMP,nullptr);
+    if(!partition) return previous;
+    // A successful SDK erase writes {UINT32_MAX, 0, 0, 0} after erasing the
+    // partition. If power cut cleanup after erasing its first sector, the size
+    // will also be blank but the marker will be incomplete. A verified stored
+    // summary lets us finish that cleanup without writing settings again.
+    std::array<uint8_t,16> header{};
+    if(esp_partition_read(partition,0,header.data(),header.size())!=ESP_OK) return " storedDump=invalid"+previous;
+    if(littleWord(header.data())==UINT32_MAX) {
+        const bool finishedMarker=littleWord(header.data()+4)==0 && littleWord(header.data()+8)==0 && littleWord(header.data()+12)==0;
+        return !finishedMarker && !previous.empty() ? clearCrashStorage(previous) : previous;
+    }
+
+    size_t address=0,size=0;
+    const auto status=esp_core_dump_image_get(&address,&size);
+    if(status!=ESP_OK || address!=partition->address ||
+        size<dumpHeaderBytes+elfHeaderBytes+dumpCrcBytes || size>partition->size || esp_core_dump_image_check()!=ESP_OK)
+        return " storedDump=invalid"+previous;
+
+    const auto notes=readCrashNotes();
+    if(notes.fingerprint.empty()) return " storedDump=unsupported"+previous;
+    const auto record=encodeCrashSummary(notes);
+    if(!saveCrashSummary(record)) return " storedDump=summary-save-failed"+describeCrashSummary(record);
+
+    return clearCrashStorage(describeCrashSummary(record));
+}
+#endif
 std::string bootContext() {
     const auto reason=esp_reset_reason();
     auto result=std::string("bootReset=")+resetName(reason)+"("+std::to_string(int(reason))+")";
     if(const auto* app=esp_ota_get_app_description())
         result+=" runningElf="+hex(app->app_elf_sha256,fingerprintCharacters/2);
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
-    if(reason==ESP_RST_PANIC || reason==ESP_RST_INT_WDT || reason==ESP_RST_TASK_WDT || reason==ESP_RST_WDT) {
-        // Check the on-device record without decoding or sending task memory.
-        // The pinned 4.4.7 summary parser can overrun its SHA-256 field, and a
-        // retained dump's presence alone does not match it to this reset.
-        const auto status=esp_core_dump_image_check();
-        result+=status==ESP_OK ? " storedDump=valid" : status==ESP_ERR_NOT_FOUND ? " storedDump=missing" : " storedDump=invalid";
-        if(status==ESP_OK) {
-            const auto notes=readCrashNotes();
-            if(!notes.fingerprint.empty()) result+=" storedElf="+notes.fingerprint;
-            if(notes.cause) result+=" storedCause="+std::to_string(*notes.cause);
-            if(notes.pc) {
-                char pc[11];std::snprintf(pc,sizeof(pc),"0x%08lx",static_cast<unsigned long>(*notes.pc));
-                result+=" storedPc="+std::string(pc);
-            }
-        }
-    }
+    // A stored crash can predate this boot (for example across a power cycle).
+    result+=storedCrashContext();
 #endif
     return result;
 }
