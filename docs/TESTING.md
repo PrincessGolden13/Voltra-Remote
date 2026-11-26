@@ -1,5 +1,47 @@
 # Validation status and pending tests
 
+## November 26 v0.4.23 Twin handoff and Live
+
+Source and report evidence is recorded in [Twin handoff and Live](TWIN_HANDOFF_LIVE_2026_11_26.md).
+The unchanged v0.4.22 application reproduced the reported connection-ended
+message when the accepted endpoint became primary. The fixed application and
+controller passed 11 synthetic scenarios with 124 checks for in-place adoption,
+idle follower recovery, reciprocal validation, stale or conflicting evidence,
+cleared intents, and unload access.
+
+The actual protocol session passed five local-idle scenarios, 11 prompt-refresh
+scenarios and 31 prior regression scenarios with synthetic radio I/O. In the
+660 ms replay of the brief confirmed-load window, v0.4.22 sent no refresh. The
+fix sent one at 100, 260 or 305 ms depending on the tested cadence. The existing
+activation matrix passed 15 scenarios and 13,437 assertions, accounting for
+v0.4.20's earlier read-only A7 query. Offline core and packet inspector build.
+
+The reviewed LVGL and application sources passed 102 hold and input-scope scenes
+with 1,059 assertions, and 63 Live scenes with 990 assertions at 360, 466 and
+480 px. Old-scope clicks, delayed editor changes and queued dial inputs could
+not issue controls after adoption. Unload and debug priority passed. External
+receipts under `/workspace/preview-tools` include `twin-handoff-v0423`,
+`twin-recovery-v0423`, `twin-direct-refresh-v0423`, `auto-hold-v0423/final` and
+`twin-live-v0423/release-4210c84-validation.json`.
+
+[PR CI45907398106](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45907398106)
+at 4210c842 passed both public images, core and packaging. Artifact 15158208902
+SHA-256 `39c40ad66478488fd157691e074677ba54ebdf580a6c620c1b19933714088d26`.
+Main merge 7e7004eb has the exact reviewed tree. [Tag CI45907964336](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45907964336)
+artifact 15159386333 SHA-256 `7ad94fe63ec9f9449adb432e5cae3dafd77ef6bb20a4d272169fbe14ca5a5222`.
+Both tagged images match the reviewed PR bytes. Normal has 2,066,704 bytes and
+SHA-256 `ffaddf33214732daf4a230995a33a8fe60152040a7c39029dfe2a4e1ac0bc118`.
+Simulator has 1,059,312 bytes and SHA-256
+`131c6abf20ed09e00e8d3956028af18d263c5cde638e30e29e49857567d85d99`.
+Version, channel, layout, manifest, USB hashes and offsets, backend isolation,
+strong NVS and rollback hooks, and all four draft asset digests and notes pass.
+Receipts are in ignored `build/review-v0423` and `build/review-v0423-tag`.
+
+Release 459980562 became latest at 2026-11-26 23:02:09 UTC. The public latest
+manifest and pinned image match the verified tag bytes. Receipt is in ignored
+`build/published-v0423/verification.json`. The checks used no physical radio or
+motor operation. Physical handoff, stream recovery and Twin target remain unverified.
+
 November 23 v0.4.18: [Stairs boundary correction](STAIRS_BOUNDARY_2026_11_23.md).
 CONFIRMED source baseline: actual PhysicalSession dispatches a base edit on
 AA82 return-start during movement and lets an idle-queued edit survive a later

@@ -1,5 +1,21 @@
 # Foundation baseline
 
+## November 26 v0.4.23 Twin handoff and Live
+
+- Report `24b52042` on v0.4.22 shows the earlier connection-ended message,
+  successful direct Twin load and unload, no Twin stream in that brief
+  connection and Auto Load enable and Safety Check reports both off.
+- Adopt a newly confirmed controller in place or recover the reported controller
+  from a fresh idle follower. Discard old input and pending settings. Confirmed
+  direct Twin loading opens Live and requests the stream promptly. See
+  [the evidence and scope](TWIN_HANDOFF_LIVE_2026_11_26.md).
+- Mock application, protocol and UI checks passed. Both public firmware builds
+  and reviewed packages passed. The tagged images match the reviewed source
+  build and the remote update feed was verified. See [validation](TESTING.md).
+- Published v0.4.23 as latest. Physical handoff and stream reception remain
+  unverified, and combined live target weight still needs device evidence.
+  [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.23)
+
 ## November 23 Stairs boundary follow-up v0.4.18
 
 - Owner reports Stairs changing weight midrep after Auto Load. Already-pinned
