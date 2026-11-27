@@ -13,7 +13,8 @@ public:
     virtual ReportStatus status() const=0;
     // Captured on SEND, including dialog unload actions and before BLE handoff.
     // Only SEND may queue or persist it. No BLE operations in this service.
-    virtual bool submit(const std::vector<EventLog::Event>& events,const std::string& context)=0;
+    virtual bool submit(const std::vector<EventLog::Event>& events,const std::string& context,
+        const std::vector<EventLog::Event>& bleTrace)=0;
     virtual void tick(bool networkReady,bool controlIdle)=0;
 };
 }

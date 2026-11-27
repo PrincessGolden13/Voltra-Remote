@@ -2,6 +2,7 @@
 #include "ble/BleTypes.h"
 #include "state/VoltraState.h"
 #include "state/TrainingState.h"
+#include <vector>
 namespace voltra {
 // A VOLTRA-level command boundary, separate from generic GATT transport.
 struct SessionReadiness {
@@ -43,6 +44,8 @@ public:
     virtual bool commandFailed() const { return false; }
     virtual const std::string& status() const { static const std::string empty; return empty; }
     virtual std::string diagnosticState() const { return status(); }
+    virtual void setBleTraceEnabled(bool) {}
+    virtual std::vector<std::string> bleTraceReport() const { return {}; }
     // A recent machine report, not an inferred cause of a Bluetooth failure.
     virtual DeviceEndObservation endObservation(uint64_t) const { return DeviceEndObservation::None; }
     virtual SessionReadiness readiness() const = 0;

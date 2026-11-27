@@ -99,6 +99,11 @@ constexpr uint8_t telemetryHz=10; // Catalogued 5..50 Hz; Android resets it to 0
 // AA94 on Black, not the AA81 layout used by the source-validated WT decoder.
 // SDK 79f6c55 / Android da514d2 both encode this reset; no resistance changes.
 constexpr uint32_t fitnessNotificationMask=0;
+// Bounded capture counters are independent of the BLE/control state machine.
+constexpr unsigned traceCountLimit=9999;
+void countTrace(unsigned& value) {
+    if(value<traceCountLimit) ++value;
+}
 // HA/Android pace bootstrap at 90 ms. Their captured VOLTRA connect-request
 // deadline is ~5 s from radio connection; a 3 s post-HELLO wait plus full GATT
 // discovery exceeded it on this remote. Keep every bootstrap step nonblocking.
@@ -163,6 +168,13 @@ bool PhysicalSession::prepareConnection() {
 void PhysicalSession::connectionChanged(bool connected) {
     const bool prepared=connected && helloPrepared_;
     helloPrepared_=false;
+    if(bleTrace_) {
+        if(connected) {
+            countTrace(bleTrace_->links);
+            bleTrace_->rate.reset();bleTrace_->mask.reset();
+        }
+        else if(accepted_) bleTrace_->lastState=bleTraceState();
+    }
     if(!connected) selectedAddress_.reset();
     connected_=connected;accepted_=activated_=false; bootstrap_=prepared ? 1 : 0;backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
     activationKnown_=false;activationReadAttempts_=0;activationReadAt_=activationStatusAt_=0;
@@ -263,6 +275,12 @@ bool PhysicalSession::controlContextReady() const {
 bool PhysicalSession::loadSafetyStatusSupported() const {
     const auto value=fresh(voidLock);
     return value && (*value==defaultVoidLock || *value==observedVoidLock);
+}
+bool PhysicalSession::autoLoadConfigurationReady() const {
+    if(fresh(autoLoadEnabled)!=1 || fresh(autoLoadSafetyEnabled)!=1) return false;
+    if(standalone()) return true;
+    return primaryTwinFresh() && values_.at(autoLoadEnabled).at>twinTopologyAt_ &&
+        values_.at(autoLoadSafetyEnabled).at>twinTopologyAt_;
 }
 bool PhysicalSession::liveWeightReady() const {
     // The source-validated loaded-idle register path changes base only. Mode 5
@@ -482,6 +500,13 @@ bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
 void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
     if(!connected_ || (uuid!=VoltraGattProfile::notify && uuid!=VoltraGattProfile::write && uuid!=VoltraGattProfile::telemetry)) return;
     const size_t channel=uuid==VoltraGattProfile::notify ? 0 : uuid==VoltraGattProfile::write ? 1 : 2;
+    if(bleTrace_) {
+        auto& route=bleTrace_->channels[channel];
+        countTrace(route.notifications);
+        if(accepted_ && bytes.size()>=11 && bytes[0]==wire::magic &&
+           bytes[2]==0x04 && bytes[4]==0x10 && bytes[5]==0xaa && bytes[10]==0xb4 &&
+           crc8(bytes.data(),3)==bytes[3]) countTrace(route.b4Headers);
+    }
     if(accepted_ && channel==2 && rawTelemetryHeaders_<4 && !bytes.empty()) {
         ++rawTelemetryHeaders_;
         Serial.printf("VOLTRA telemetry transport bytes=%u marker=%02x",unsigned(bytes.size()),unsigned(bytes[0]));
@@ -498,6 +523,7 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
     if(now_-fragmentAt_[channel]>1000) parser.reset();
     fragmentAt_[channel]=now_;
     for(const auto& f:parser.feed(bytes)) {
+        if(bleTrace_ && accepted_) traceFrame(channel,f);
         if(accepted_ && f.command==0xaa && f.payload.size()>=2 && !telemetryTypes_[f.payload[0]]) {
             telemetryTypes_[f.payload[0]]=true;
             Serial.printf("VOLTRA telemetry subtype=%02x%02x bytes=%u channel=%u receiver=%02x protocol=%04x\n",
@@ -544,6 +570,149 @@ void PhysicalSession::notification(const std::string& uuid,const Bytes& bytes) {
         if(std::find(seen_.begin(),seen_.end(),key)!=seen_.end()) continue;
         seen_.push_back(key);if(seen_.size()>32) seen_.pop_front();
         apply(f);
+    }
+}
+void PhysicalSession::setBleTraceEnabled(bool enabled) {
+    if(enabled==bleTrace_.has_value()) return;
+    if(enabled) {
+        bleTrace_.emplace();
+        bleTrace_->startedAt=now_;
+        bleTrace_->links=connected_ ? 1 : 0;
+    } else bleTrace_.reset();
+}
+std::string PhysicalSession::bleTraceState() const {
+    const auto raw=[&](uint16_t id,bool includeAge=false) {
+        const auto found=values_.find(id);
+        if(found==values_.end()) return std::string("-");
+        auto value=std::to_string(found->second.value);
+        if(includeAge) {
+            const auto age=now_>=found->second.at ? now_-found->second.at : 0;
+            value+='@';value+=age>traceCountLimit ? "9999+" : std::to_string(age);
+        }
+        return value;
+    };
+    const auto role=currentTwinRole();
+    const char* topology=role==CurrentTwinRole::Master ? "master" : role==CurrentTwinRole::Follower ? "follower" :
+        standalone() ? "single" : "unknown";
+    auto state="BLE state l="+std::to_string(bleTrace_->links)+" role="+topology+
+        " base/unit/WT="+raw(base)+"/"+raw(unit)+"/"+raw(workout)+
+        " IC/EO="+raw(chains)+"/"+raw(eccentric)+" pct="+raw(accessoryDisplayPercent)+
+        "/"+raw(percentParameter(true))+"/"+raw(percentParameter(false))+
+        " auto21272/21389/21447="+raw(autoLoadEnabled,true)+"/"+raw(autoLoadSafetyEnabled,true)+"/"+raw(autoLoadStatus,true);
+    if(twinMotorTargetReads_) {
+        state+=" 20859="+std::to_string(twinMotorTargetReplies_)+"/"+std::to_string(twinMotorTargetReads_);
+        if(twinMotorTargetMin_)
+            state+="["+std::to_string(*twinMotorTargetMin_)+","+std::to_string(*twinMotorTargetMax_)+"]";
+    }
+    return state;
+}
+std::vector<std::string> PhysicalSession::bleTraceReport() const {
+    if(!bleTrace_) return {};
+    const auto& trace=*bleTrace_;
+    std::vector<std::string> rows;
+    rows.reserve(2+trace.samples.size());
+    auto routes="BLE trace v1 links="+std::to_string(trace.links)+" rx/crc/B4hdr=";
+    for(size_t i=0;i<trace.channels.size();++i) {
+        const auto& route=trace.channels[i];
+        if(i) routes+=',';
+        routes+=std::to_string(route.notifications)+"/"+std::to_string(route.frames)+"/"+std::to_string(route.b4Headers);
+    }
+    routes+=" B4="+std::to_string(trace.b4Frames)+"@"+std::to_string(trace.b4Protocol)+"/"+std::to_string(trace.b4PayloadBytes);
+    routes+=" AA80-85/94=";
+    for(size_t i=0;i<trace.vendorFrames.size();++i) {
+        if(i) routes+=',';
+        routes+=std::to_string(trace.vendorFrames[i]);
+    }
+    routes+=" len81/94="+std::to_string(trace.aa81PayloadBytes)+"/"+std::to_string(trace.aa94PayloadBytes)+
+        " Hz/mask="+(trace.rate ? std::to_string(*trace.rate) : "-")+"/"+(trace.mask ? std::to_string(*trace.mask) : "-");
+    rows.push_back(std::move(routes));
+    const auto state=accepted_ ? bleTraceState() : trace.lastState;
+    if(!state.empty()) rows.push_back(state);
+    constexpr std::array<const char*,size_t(TraceSampleKind::Count)> names{
+        "AA80", "AA81 pull", "AA81 return", "B4 single", "B4 twin", "B4 twin negative", "AA82", "AA84"};
+    constexpr char hex[]="0123456789abcdef";
+    for(size_t i=0;i<trace.samples.size();++i) {
+        const auto& sample=trace.samples[i];
+        if(!sample.command) continue;
+        auto row=std::string("BLE ")+names[i]+" +"+std::to_string(sample.ms)+"ms l="+std::to_string(sample.link)+
+            " c="+std::to_string(sample.channel)+" t="+std::to_string(sample.twin)+
+            " proto/n="+std::to_string(sample.protocol)+"/"+std::to_string(sample.payloadBytes);
+        size_t byte=0;
+        for(const auto& window:sample.windows) {
+            if(!window.size) break;
+            row+=" "+std::to_string(window.offset)+"=";
+            for(size_t j=0;j<window.size;++j,++byte) {
+                row+=hex[sample.bytes[byte]>>4];row+=hex[sample.bytes[byte]&0x0f];
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+void PhysicalSession::traceSample(TraceSampleKind kind,size_t channel,const Frame& f,
+                                  std::initializer_list<TraceWindow> windows) {
+    auto& sample=bleTrace_->samples[size_t(kind)];
+    sample={};
+    sample.ms=uint32_t(std::min<uint64_t>(now_-bleTrace_->startedAt,UINT32_MAX));
+    sample.link=bleTrace_->links;
+    sample.channel=uint8_t(channel);
+    sample.command=f.command;
+    sample.protocol=f.protocol;
+    sample.payloadBytes=uint16_t(f.payload.size());
+    sample.twin=twinObserved_;
+    size_t copied=0, windowIndex=0;
+    for(const auto& window:windows) {
+        if(windowIndex==sample.windows.size() || copied+window.size>sample.bytes.size() ||
+           size_t(window.offset)+window.size>f.payload.size()) break;
+        sample.windows[windowIndex++]=window;
+        std::copy_n(f.payload.begin()+window.offset,window.size,sample.bytes.begin()+copied);
+        copied+=window.size;
+    }
+}
+void PhysicalSession::traceFrame(size_t channel,const Frame& f) {
+    auto& trace=*bleTrace_;
+    countTrace(trace.channels[channel].frames);
+    // Only addressed CRC-valid fitness notifications can contribute raw bytes.
+    // No complete wire header, identity, handshake, control command, or opaque
+    // payload from a new firmware layout is copied into the report.
+    if(f.type!=0x04 || f.sender!=0x10 || f.receiver!=0xaa) return;
+    const auto& p=f.payload;
+    if(f.command==0xb4) {
+        countTrace(trace.b4Frames);
+        trace.b4Protocol=f.protocol;
+        trace.b4PayloadBytes=uint16_t(p.size());
+        if(const auto twin=decodeTwinRuntime(f)) {
+            const auto kind=twin->localVelocityMmPerSecond<0 ? TraceSampleKind::TwinB4Negative : TraceSampleKind::TwinB4;
+            if(twin->localVelocityMmPerSecond!=0 || !trace.samples[size_t(kind)].command)
+                traceSample(kind,channel,f,{{0,uint8_t(p.size())}});
+        } else if(decodeRuntimeTarget(f)) {
+            traceSample(TraceSampleKind::SingleB4,channel,f,{{0,uint8_t(p.size())}});
+        }
+        return;
+    }
+    if(f.command!=0xaa || p.empty()) return;
+    if(p[0]>=0x80 && p[0]<=0x85) countTrace(trace.vendorFrames[p[0]-0x80]);
+    if(p[0]==0x81) trace.aa81PayloadBytes=uint16_t(p.size());
+    if(p[0]==0x94) {
+        countTrace(trace.vendorFrames.back());
+        trace.aa94PayloadBytes=uint16_t(p.size());
+    }
+    if(f.protocol!=wire::protocolId) return;
+    if(const auto counters=decodeExtendedTwinCounters(f)) {
+        // Exact Steven 81/42 layout. Byte windows are the phase/counters,
+        // both motion triplets from Albert and the unverified final word.
+        if(counters->phase==1 || counters->phase==3)
+            traceSample(counters->phase==1 ? TraceSampleKind::Pull : TraceSampleKind::Return,
+                        channel,f,{{0,6},{11,6},{46,6},{66,2}});
+    } else if(p.size()==39 && p[0]==0x80 && p[1]==0x25 && p[2]==1 && p[3]==0 && p[4]<=4) {
+        traceSample(TraceSampleKind::Workout,channel,f,{{0,5}});
+    } else if(p.size()==61 && p[0]==0x82 && p[1]==0x3b && (p[2]==1 || p[2]==2)) {
+        // HJewkes c76a523 exact per-rep descriptor and numeric fields.
+        traceSample(TraceSampleKind::Rep,channel,f,{{0,10}});
+    } else if(p.size()==66 && p[0]==0x84 && p[1]==0x40) {
+        // HJewkes c76a523 config calls the word at 38 pull-volume, while
+        // a53804e read it as target. Record the bytes without interpretation.
+        traceSample(TraceSampleKind::Progress,channel,f,{{0,2},{38,4}});
     }
 }
 void PhysicalSession::apply(const Frame& f) {
@@ -716,6 +885,10 @@ void PhysicalSession::apply(const Frame& f) {
     }
     bool acknowledgedMagic=false,acknowledgedEccentric=false,motorObserved=false;
     for(const auto& pair:decoded) {
+        if(bleTrace_ && f.command==0x0f) {
+            if(pair.first==telemetryRate) bleTrace_->rate=pair.second;
+            if(pair.first==telemetrySubscribe) bleTrace_->mask=pair.second;
+        }
         if(pair.first==twinMotorTargetProbe) {
             // Isolated, solicited read only. No cache entry feeds any control
             // or display, and a late response after unload is ignored.
@@ -1135,15 +1308,7 @@ void PhysicalSession::updateReport() {
         report_.maxWeight=resolveWeightLimit(limits,report_.unit).ticks;
         report_.minWeight=standalone() ? voltraISingleMinimum(report_.unit) : 0;
     }
-    const auto autoLoadFlag=[&](uint16_t id) -> std::optional<bool> {
-        const auto value=fresh(id);
-        if(value!=0 && value!=1) return {};
-        if(!standalone() && (!primaryTwinFresh() || values_.at(id).at<=twinTopologyAt_)) return {};
-        return value==1;
-    };
-    report_.autoLoadEnabled=autoLoadFlag(autoLoadEnabled);
-    report_.autoLoadSafetyEnabled=autoLoadFlag(autoLoadSafetyEnabled);
-    report_.autoLoadSupported=report_.autoLoadEnabled==true && report_.autoLoadSafetyEnabled==true;
+    report_.autoLoadSupported=autoLoadConfigurationReady();
     report_.autoUnloadHoldSeconds.reset();
     if(const auto delay=fresh(autoUnloadHoldTime); delay && *delay>=0 && *delay<=10)
         report_.autoUnloadHoldSeconds=int(*delay);
@@ -1195,9 +1360,7 @@ void PhysicalSession::updateReport() {
 }
 TrainingReport PhysicalSession::trainingReport() const {
     auto result=report_;
-    if(!fresh(autoLoadEnabled) || (!standalone() && !primaryTwinFresh())) result.autoLoadEnabled.reset();
-    if(!fresh(autoLoadSafetyEnabled) || (!standalone() && !primaryTwinFresh())) result.autoLoadSafetyEnabled.reset();
-    result.autoLoadSupported=result.autoLoadSupported && result.autoLoadEnabled==true && result.autoLoadSafetyEnabled==true;
+    result.autoLoadSupported=result.autoLoadSupported && autoLoadConfigurationReady();
     if(const auto* counters=twinCountersForDisplay()) result.twinDisplayCounters=counters->value;
     if(twinCounterContext()) {
         result.twinWorkoutPhase=twinWorkoutPhase_;
@@ -1475,7 +1638,8 @@ TransportResult PhysicalSession::triggerAutoLoad() {
     const auto ready=readiness();
     if(!connected_ || !accepted_) return TransportResult::Disconnected;
     if(busy() || !ready.ready || !ready.twinSafe || !settingsReady() || !activated_ ||
-       !trainingReport().autoLoadSupported || fresh(autoLoadStatus)!=0 || fresh(base).value_or(0)<ready.minWeightLbs ||
+       !report_.autoLoadSupported || !autoLoadConfigurationReady() ||
+       fresh(autoLoadStatus)!=0 || fresh(base).value_or(0)<ready.minWeightLbs ||
        !weightOnIncrement(report_,report_.settings.weight)) {
         status_=ready.reason.empty() ? "Auto Load unavailable" : ready.reason;return TransportResult::Unsupported;
     }

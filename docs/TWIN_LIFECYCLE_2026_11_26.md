@@ -50,15 +50,33 @@ multiplier as the real Live target.
 [Albert's captured B4 and target scope](https://github.com/albertzhang86/voltra-remote/tree/c4f2884798941babd83788cf79609620e767bc85)
 · [Android parameter catalog](https://github.com/dylanmaniatakes/Beyond-Power-Voltra-Android/blob/da514d2db1a16ebb4ded3156bc8fd200bed1e6eb/app/src/main/assets/voltra/paramInfo.csv#L869)
 
+The November 27 recheck replayed four captured independent B4 frames and
+seven captured Twin B4 frames through the current parser at every two-chunk
+split. Each decoded in its own layout. The independent samples supplied a
+target word. The Twin layout supplied two motion channels and optional
+counters; it has no verified combined target field. Report `00886881`
+received 57 valid Twin rep frames and zero B4 frames. Cortex likewise
+specifies separate single and Twin stream contracts. Its public documentation
+does not give the BLE field offset for the controller display.
+[Cortex live telemetry](https://cortex.beyond-power.com/docs/cortex/live-telemetry#independent-device-streams-and-twin-streams)
+
+The opt-in trace in v0.4.25 records transport and frame counts plus bounded
+training packet samples from the active stream. Use an Eccentric set and
+compare whole-pound pull and return numbers from the controller against
+the corresponding trace. The current mask previously restored AA81 on
+Black after an all-fields mask selected a different stream. The trace
+observes the existing stream without changing that mask.
+[Previous stream capture](DROPSETS_UNITS_2026_10_24.md#verification)
+
 ## Auto Load refusal
 
-The report captured fresh `21272=0` (Auto Load enable) and `21389=0` (Direct
-Load Safety Check enable) from the verified Twin controller. Both conditions
-block the remote's trigger. Native long press can use the machine's optional
-Safety Check configuration. The remote keeps the project's requirement for
-both reported flags, with fresh same-scope values. The hold and refusal
-now name a known disabled setting. Unknown reports remain unavailable.
-This does not configure either VOLTRA or bypass a safety check.
+The report captured fresh `21272=0` and `21389=0` from the verified Twin
+controller. The user confirmed that Auto Load was on and worked on the
+VOLTRA. These volatile BLE values alone do not establish the menu settings.
+In v0.4.25 the remote says **Auto Load unavailable** when it lacks the fresh
+same-scope values required to arm. A specific device-readiness reason can
+still appear when available. Native long press uses the VOLTRA's own
+Safety Check configuration.
 [Beyond Power Safety Basics](https://help.beyond-power.com/en/articles/14167229-safety-basics)
 
 See [validation](TESTING.md) for mock scenarios and build checks. Physical

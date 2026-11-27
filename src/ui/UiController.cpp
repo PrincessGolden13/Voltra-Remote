@@ -229,6 +229,7 @@ void UiController::updateScale(int selected, int maximum, const std::string& suf
 UiController::UiController(HardwarePlatform& h, TrainingApplication& app, RemoteConfigurationStore* store, RuntimeMode* runtime, WifiSetup* wifi, FirmwareUpdate* updates, DebugReports* reports) : hardware_(h), app_(app), runtime_(runtime), wifi_(wifi), updates_(updates), reports_(reports), store_(store) {
     if (store_) config_ = store_->load();
     if (!h.capabilities().coreInputsValid()) throw std::runtime_error("Unsupported display/input target");
+    setBleTrace(false);
     lv_init(); width_ = h.display().width(); height_ = h.display().height();
     drawBuffer_.resize(size_t(width_)*height_); display_ = lv_display_create(width_, height_);
     lv_display_set_color_format(display_, LV_COLOR_FORMAT_XRGB8888); lv_display_set_user_data(display_, this);
@@ -512,6 +513,9 @@ void UiController::readTouch() {
     const auto now=hardware_.nowMs();lv_tick_inc(uint32_t(now-lastTickMs_));lastTickMs_=now;
     lv_indev_read(touch_);
 }
+bool UiController::saveDropsOnly(const TrainingReport& r) const {
+    return app_.fresh() && r.twin && !r.liveWeightSupported;
+}
 void UiController::navigate(Screen page) {
     weightHoldActive_=weightUnloadGesture_=false;
     if(page!=Screen::Updates) {updateCheckPending_=false;updateCheckMessage_.clear();}
@@ -623,6 +627,7 @@ void UiController::act(int action, const std::string& id, bool held) {
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
     if (action == SendDebugLog) { debugPending_=true; return; }
+    if (action == ToggleBleTrace) { if(!held) setBleTrace(!bleTraceEnabled_); return; }
     if(action==CheckUpdates) {requestUpdateCheck();return;}
     if(action==InstallUpdate) {
         updateCheckPending_=false;updateCheckMessage_.clear();
@@ -667,12 +672,13 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == ConfirmReset) {
         auto old = config_; config_ = {};
         if (store_ && !store_->save(config_)) { config_ = old; value(message_, "Reset could not be saved"); return; }
+        setBleTrace(false);
         modifierMemory_.clear(); unitMemory_.clear();
         activePreset_ = pendingPreset_ = -1; navigate(Screen::Settings); return;
     }
     if (action == ModeFocus || action == AmountFocus) return;
     if (action == BackMain) {
-        if (editMaximum() == 0) { navigate(Screen::Main); return; }
+        if (page_ == Screen::Drops || editMaximum() == 0) { navigate(Screen::Main); return; }
         if(editDirty_) { returnAfterEdit_ = true; editedAt_ = 0; }
         else if(!app_.report().loaded || app_.report().liveModifierAmountsSupported) { edited(); returnAfterEdit_=true; editedAt_=0; }
         else navigate(Screen::Main);
@@ -707,8 +713,9 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (held) return;
     if (action == Apply) {
         if (page_ == Screen::Drops) {
-            draftDrops_.enabled = true;
-            if(!app_.applyDrops(draftDrops_)) {
+            auto requested=draftDrops_;
+            requested.enabled=!saveDropsOnly(app_.report());
+            if(!app_.applyDrops(requested)) {
                 std::printf("Drops Apply refused: %s\n",app_.message().c_str());return;
             }
         }
@@ -732,6 +739,7 @@ void UiController::build() {
     if (face_) lv_obj_delete(face_);
     bindings_.clear(); deviceRows_.clear();
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
+    dropsCommitLabel_=nullptr;
     autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
     weightHoldActive_=weightUnloadGesture_=autoFeedbackVisible_=false;
     center_ = battery_ = nullptr; ticks_.fill(nullptr);
@@ -740,6 +748,7 @@ void UiController::build() {
     wifiBody_=wifiButton_=wifiReset_=wifiBack_=nullptr;
     updateBody_=updateCheck_=updateInstall_=nullptr;
     for (auto& item : settingsValues_) item = nullptr;
+    bleTraceButton_ = nullptr;
     for (auto& item : liveValues_) item = nullptr;
     for (auto& item : unitChoices_) item = nullptr;
     for (int i=0; i<3; ++i) {
@@ -964,15 +973,17 @@ void UiController::build() {
                 tiles_[i] = disc(face_, width_*(12+i*26)/100, height_*39/100, size, accent(), i == dropField_);
                 bind(tiles_[i], FieldDrops+i);
                 miniArc_[i] = arc(tiles_[i], size*91/100, accent());
-                auto* caption = label(tiles_[i], i == 0 ? "Drops" : i == 1 ? "Drop %" : "Hold", size*90/100, size*24/100, small);
-                color(caption, soft);
+                modeLabels_[i] = label(tiles_[i], i == 0 ? "Drops" : i == 1 ? "Drop %" : "Hold", size*90/100, size*24/100, small);
                 miniValue_[i] = label(tiles_[i], "", size*96/100, size*45/100,
                     width_ < 400 ? &lv_font_montserrat_28 : &lv_font_montserrat_36);
                 color(miniValue_[i], bright);
             }
             hint_ = label(face_, "", width_*55/100, height_*67/100, &lv_font_montserrat_18);
         } else {
-            lv_obj_set_y(center_, height_*39/100); bind(center_,Apply); bind(weight_,Apply);
+            // Keep the weight action clear of the status/unload hit target.
+            lv_obj_set_y(center_, height_*38/100);
+            lv_obj_set_height(center_, height_*35/100);
+            bind(center_,Apply); bind(weight_,Apply);
         }
     }
     if(page_ == Screen::Magic || page_ == Screen::Eccentric) {
@@ -1001,11 +1012,20 @@ void UiController::build() {
     }
     const int applyY = page_ == Screen::Magic ? 85 : page_ == Screen::Eccentric ? 78 : 81;
     const int applyH = page_ == Screen::Magic ? 7 : 10;
-    auto* apply = button(face_, "Apply", width_*26/100, height_*applyY/100, width_*48/100, height_*applyH/100, Apply);
+    const bool dropsEditor=page_==Screen::Drops;
+    if(dropsEditor) {
+        auto* back=button(face_, "Back", width_*26/100, height_*applyY/100, width_*22/100, height_*applyH/100, BackMain);
+        lv_obj_set_ext_click_area(back,std::max(4,width_/50));
+        style::set_text_font(lv_obj_get_child(back,0),medium,0);
+    }
+    auto* apply = button(face_, "Apply", width_*(dropsEditor ? 52 : 26)/100, height_*applyY/100,
+        width_*(dropsEditor ? 22 : 48)/100, height_*applyH/100, Apply);
     lv_obj_set_ext_click_area(apply,std::max(4,width_/50));
     glow(apply, accent(), true);
     style::set_text_font(lv_obj_get_child(apply, 0), medium, 0);
+    if(dropsEditor) dropsCommitLabel_=lv_obj_get_child(apply,0);
     for (auto* legend : scaleLabels_) lv_obj_move_foreground(legend);
+    if(dropsEditor) lv_obj_move_foreground(status_);
 }
 int UiController::editMaximum() const {
     const auto r = app_.report();
@@ -1200,8 +1220,10 @@ void UiController::update() {
         lv_obj_remove_flag(status_,LV_OBJ_FLAG_CLICKABLE);
     else lv_obj_add_flag(status_,LV_OBJ_FLAG_CLICKABLE);
     if (page_ == Screen::Drops) {
-        if (app_.fresh() && !r.loaded && !r.autoLoadArmed && !r.liveWeightSupported)
-            value(status_,"Preview only / drops unavailable");
+        const bool unavailableInTwin=saveDropsOnly(r);
+        value(dropsCommitLabel_,unavailableInTwin ? "Save" : "Apply");
+        const bool showEditorStatus=app_.fresh() && !r.loaded && !r.autoLoadArmed && !app_.pending() && app_.message().empty();
+        if(showEditorStatus && unavailableInTwin) value(status_,"Drops unavailable in Twin");
         for (int i=0; i<2; ++i) {
             glow(choice_[i], accent(), int(draftDrops_.mode) == i);
             color(choice_[i], int(draftDrops_.mode) == i ? bright : muted);
@@ -1215,18 +1237,23 @@ void UiController::update() {
             const char* names[] = {"Drops", "Drop %", "Hold"};
             for (int i=0; i<3; ++i) {
                 value(miniValue_[i], i==2 && !holdMaximum ? "--" : std::to_string(values[i])+suffix[i]);
-                // All values stay active; the bright outer ring marks rotary focus.
-                glow(tiles_[i], accent(), i == dropField_);
+                // The outline and text mark rotary focus independently of arc length.
+                const bool selected=i==dropField_;
+                glow(tiles_[i], accent(), selected);
+                const auto focus=selected ? accent() : soft;
+                color(modeLabels_[i],focus);
+                color(miniValue_[i],selected ? focus : bright);
+                style::set_arc_color(miniArc_[i],lv_color_hex(selected ? focus : muted),LV_PART_INDICATOR);
                 lv_arc_set_value(miniArc_[i], percentOf(values[i], maxima[i]));
             }
             value(hint_, names[dropField_]); color(hint_, bright);
             updateScale(values[dropField_], maxima[dropField_], suffix[dropField_], accent());
-            if(app_.fresh() && r.autoUnloadHoldSeconds && *r.autoUnloadHoldSeconds>0 && !r.loaded && !r.autoLoadArmed && app_.message().empty())
+            if(showEditorStatus && !unavailableInTwin && r.autoUnloadHoldSeconds && *r.autoUnloadHoldSeconds>0)
                 value(status_,holdMaximum ? "Auto Unload: "+std::to_string(*r.autoUnloadHoldSeconds)+"s / max pause "+std::to_string(holdMaximum)+"s" :
                     "Auto Unload 1s / RP unavailable");
         } else {
             largeValue((draftDrops_.step > 0 ? "+" : "")+weightText(draftDrops_.step,r.unit)); color(weight_, bright);
-            value(unit_, unitName(r.unit)); value(hint_, "After each rep");
+            value(unit_, unitName(r.unit)); value(hint_, unavailableInTwin ? "" : "After each rep");
             updateScale(draftDrops_.step, r.maxWeight, "", accent(), true);
         }
     } else {
@@ -1302,7 +1329,7 @@ void UiController::updateAutoLoadFeedback() {
     autoFeedbackVisible_=visible;
     if(!visible) {
         if(holdingWeight && !r.autoLoadSupported && !debugDialog_ && !debugPending_) {
-            value(message_,TrainingApplication::autoLoadUnavailableText(r));
+            value(message_,"Auto Load unavailable");
             color(message_,soft);
         }
         return;
@@ -1541,6 +1568,7 @@ void UiController::tick() {
         // unsent editor work and unread gestures from the old weight scope.
         editDirty_=returnAfterEdit_=false;
         rotaryAdjustment_.reset();
+        if(page_==Screen::Drops || next_==Screen::Drops) navigate(Screen::Main);
         if(touchDown_) touchScopeInvalid_=true;
         else if(hardware_.touch().hasPending()) hardware_.touch().discardPending();
     }

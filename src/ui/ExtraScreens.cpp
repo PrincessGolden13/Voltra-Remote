@@ -22,6 +22,10 @@ bool UiController::saveConfiguration() {
     if (store_ && !store_->save(config_)) {text(message_,"Could not save settings");return false;}
     return true;
 }
+void UiController::setBleTrace(bool enabled) {
+    bleTraceEnabled_=enabled;
+    app_.setBleTraceEnabled(enabled);
+}
 void UiController::separator(int y,int inset) {
     auto* line = lv_obj_create(face_); lv_obj_remove_style_all(line);
     lv_obj_set_size(line,width_*(100-2*inset)/100,1); lv_obj_set_pos(line,width_*inset/100,height_*y/100);
@@ -173,7 +177,8 @@ void UiController::buildExtra() {
         for(int i=0;i<4;++i) {
             auto* b=action(names[i],19,25+i*9,62,8,ThemeField+i); settingsValues_[i]=lv_obj_get_child(b,0);
         }
-        action("Send debug log",19,62,62,9,SendDebugLog);
+        action("Send log",19,62,29,9,SendDebugLog);
+        bleTraceButton_=action("",51,62,30,9,ToggleBleTrace);
         action("Wi-Fi",16,73,31,8,OpenWifi); action("Updates",53,73,31,8,OpenUpdates);
         action("About",24,83,24,8,OpenAbout); action("Reset",52,83,24,8,OpenReset);
     } else if(page_ == Screen::Reset) {
@@ -317,6 +322,8 @@ void UiController::updateExtra() {
             (config_.restAlertSeconds%60 < 10 ? "0" : "")+std::to_string(config_.restAlertSeconds%60) : "Off"));
         text(settingsValues_[2],"Dim    "+mins(config_.dimMinutes)); text(settingsValues_[3],"Sleep    "+mins(config_.sleepMinutes));
         for(int i=0;i<4;++i) style::set_text_color(settingsValues_[i],lv_color_hex(i==settingsField_ ? white : dim),0);
+        text(lv_obj_get_child(bleTraceButton_,0),bleTraceEnabled_ ? "BLE trace On" : "BLE trace Off");
+        glow(bleTraceButton_,accent(),bleTraceEnabled_);
     }
 }
 }
