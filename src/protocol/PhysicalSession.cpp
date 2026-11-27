@@ -173,7 +173,8 @@ void PhysicalSession::connectionChanged(bool connected) {
             countTrace(bleTrace_->links);
             bleTrace_->rate.reset();bleTrace_->mask.reset();
         }
-        else if(accepted_) bleTrace_->lastState=bleTraceState();
+        else if(accepted_ && (!readOnlyProbe_ || !bleTrace_->workoutLink || bleTrace_->workoutLink==bleTrace_->links))
+            bleTrace_->lastState=bleTraceState();
     }
     if(!connected) selectedAddress_.reset();
     connected_=connected;accepted_=activated_=false; bootstrap_=prepared ? 1 : 0;backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
@@ -398,6 +399,7 @@ void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
 void PhysicalSession::clearTwinDisplayTelemetry() {
     twinB4Counters_.reset();twinAa81Counters_.reset();
     twinRepPhase_.reset();twinWorkoutPhase_.reset();
+    twinIdleSince_.reset();
 }
 bool PhysicalSession::twinCounterContext() const {
     return !readOnlyProbe_ && primaryTwinFresh() && report_.loadStateKnown && report_.loaded &&
@@ -604,6 +606,11 @@ std::string PhysicalSession::bleTraceState() const {
         if(twinMotorTargetMin_)
             state+="["+std::to_string(*twinMotorTargetMin_)+","+std::to_string(*twinMotorTargetMax_)+"]";
     }
+    if(bleTrace_->rate || bleTrace_->mask)
+        state+=" Hz/mask="+(bleTrace_->rate ? std::to_string(*bleTrace_->rate) : "-")+
+            "/"+(bleTrace_->mask ? std::to_string(*bleTrace_->mask) : "-");
+    if(bleTrace_->workoutLink==bleTrace_->links && bleTrace_->idleStartedAt)
+        state+=" AA81idle="+std::to_string(bleTrace_->idleLastAt-*bleTrace_->idleStartedAt)+"ms";
     return state;
 }
 std::vector<std::string> PhysicalSession::bleTraceReport() const {
@@ -618,7 +625,7 @@ std::vector<std::string> PhysicalSession::bleTraceReport() const {
         routes+=std::to_string(route.notifications)+"/"+std::to_string(route.frames)+"/"+std::to_string(route.b4Headers);
     }
     routes+=" B4="+std::to_string(trace.b4Frames)+"@"+std::to_string(trace.b4Protocol)+"/"+std::to_string(trace.b4PayloadBytes);
-    routes+=" AA80-85/94=";
+    routes+=" AA80-86/94=";
     for(size_t i=0;i<trace.vendorFrames.size();++i) {
         if(i) routes+=',';
         routes+=std::to_string(trace.vendorFrames[i]);
@@ -626,10 +633,13 @@ std::vector<std::string> PhysicalSession::bleTraceReport() const {
     routes+=" len81/94="+std::to_string(trace.aa81PayloadBytes)+"/"+std::to_string(trace.aa94PayloadBytes)+
         " Hz/mask="+(trace.rate ? std::to_string(*trace.rate) : "-")+"/"+(trace.mask ? std::to_string(*trace.mask) : "-");
     rows.push_back(std::move(routes));
-    const auto state=accepted_ ? bleTraceState() : trace.lastState;
+    // A later read-only topology probe can be active when the user sends the
+    // report. Keep the context of the Twin workout that produced the samples.
+    const auto state=accepted_ && (!readOnlyProbe_ || !trace.workoutLink || trace.workoutLink==trace.links)
+        ? bleTraceState() : trace.lastState;
     if(!state.empty()) rows.push_back(state);
     constexpr std::array<const char*,size_t(TraceSampleKind::Count)> names{
-        "AA80", "AA81 pull", "AA81 return", "B4 single", "B4 twin", "B4 twin negative", "AA82", "AA84"};
+        "AA80", "AA81 pull", "AA81 return", "B4 single", "B4 twin", "B4 twin negative", "AA82 pull", "AA82 return", "AA84"};
     constexpr char hex[]="0123456789abcdef";
     for(size_t i=0;i<trace.samples.size();++i) {
         const auto& sample=trace.samples[i];
@@ -651,6 +661,9 @@ std::vector<std::string> PhysicalSession::bleTraceReport() const {
 }
 void PhysicalSession::traceSample(TraceSampleKind kind,size_t channel,const Frame& f,
                                   std::initializer_list<TraceWindow> windows) {
+    // Keep the recent workout samples if discovery reconnects only to read
+    // topology. Route and packet counters still include those connections.
+    if(readOnlyProbe_ && bleTrace_->workoutLink && bleTrace_->workoutLink!=bleTrace_->links) return;
     auto& sample=bleTrace_->samples[size_t(kind)];
     sample={};
     sample.ms=uint32_t(std::min<uint64_t>(now_-bleTrace_->startedAt,UINT32_MAX));
@@ -691,7 +704,7 @@ void PhysicalSession::traceFrame(size_t channel,const Frame& f) {
         return;
     }
     if(f.command!=0xaa || p.empty()) return;
-    if(p[0]>=0x80 && p[0]<=0x85) countTrace(trace.vendorFrames[p[0]-0x80]);
+    if(p[0]>=0x80 && p[0]<=0x86) countTrace(trace.vendorFrames[p[0]-0x80]);
     if(p[0]==0x81) trace.aa81PayloadBytes=uint16_t(p.size());
     if(p[0]==0x94) {
         countTrace(trace.vendorFrames.back());
@@ -701,14 +714,28 @@ void PhysicalSession::traceFrame(size_t channel,const Frame& f) {
     if(const auto counters=decodeExtendedTwinCounters(f)) {
         // Exact Steven 81/42 layout. Byte windows are the phase/counters,
         // both motion triplets from Albert and the unverified final word.
-        if(counters->phase==1 || counters->phase==3)
+        const bool samplingMovement=counters->phase==1 || counters->phase==3;
+        if(!readOnlyProbe_ && primaryTwinFresh()) {
+            if(samplingMovement) trace.workoutLink=trace.links;
+            if(trace.workoutLink==trace.links) {
+                if(counters->phase!=0) trace.idleStartedAt.reset();
+                else {
+                    if(!trace.idleStartedAt || now_<trace.idleLastAt || now_-trace.idleLastAt>motionFreshMs)
+                        trace.idleStartedAt=now_;
+                    trace.idleLastAt=now_;
+                }
+            }
+        }
+        if(samplingMovement) {
             traceSample(counters->phase==1 ? TraceSampleKind::Pull : TraceSampleKind::Return,
                         channel,f,{{0,6},{11,6},{46,6},{66,2}});
+        }
     } else if(p.size()==39 && p[0]==0x80 && p[1]==0x25 && p[2]==1 && p[3]==0 && p[4]<=4) {
         traceSample(TraceSampleKind::Workout,channel,f,{{0,5}});
     } else if(p.size()==61 && p[0]==0x82 && p[1]==0x3b && (p[2]==1 || p[2]==2)) {
         // HJewkes c76a523 exact per-rep descriptor and numeric fields.
-        traceSample(TraceSampleKind::Rep,channel,f,{{0,10}});
+        const auto kind=p[2]==1 ? TraceSampleKind::RepPull : TraceSampleKind::RepReturn;
+        traceSample(kind,channel,f,{{0,10}});
     } else if(p.size()==66 && p[0]==0x84 && p[1]==0x40) {
         // HJewkes c76a523 config calls the word at 38 pull-volume, while
         // a53804e read it as target. Record the bytes without interpretation.
@@ -732,6 +759,8 @@ void PhysicalSession::apply(const Frame& f) {
                 pairedMotion_=true;motionAt_=now_;++motionRevision_;
                 motionPosition_=sample->localPositionMm;motionVelocity_=sample->localVelocityMmPerSecond;
                 peerMotionVelocity_=sample->peerVelocityMmPerSecond;motionForce_=sample->localForceTenthsLb;
+                if(std::abs(motionVelocity_)>stationarySpeedMmPerSec ||
+                   std::abs(peerMotionVelocity_)>stationarySpeedMmPerSec) twinIdleSince_.reset();
                 // These extreme unproven words remain raw telemetry, but may
                 // not authorize an already-loaded base edit. Signed velocity
                 // -1 is legitimate and is not treated as a missing channel.
@@ -1029,12 +1058,21 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     // must not manufacture paired completion or automatic drop events.
     if(twinObserved_) {
         const bool displayContext=twinCounterContext() && now_>twinTopologyAt_;
+        if(!displayContext) twinIdleSince_.reset();
         if(const auto counters=decodeExtendedTwinCounters(f)) {
             ++twinAa81Decoded_;
             if(displayContext) {
                 twinAa81Counters_=TimedTwinCounters{{counters->set,counters->rep},now_};
-                if(!twinWorkoutPhase_ || twinWorkoutPhase_==TwinWorkoutPhase::InProgress)
+                if(!twinWorkoutPhase_ || twinWorkoutPhase_==TwinWorkoutPhase::InProgress) {
+                    const bool motionFresh=pairedMotion_ && motionAt_ && now_>=motionAt_ &&
+                        now_-motionAt_<=motionFreshMs;
+                    const bool moving=motionFresh && (std::abs(motionVelocity_)>stationarySpeedMmPerSec ||
+                        std::abs(peerMotionVelocity_)>stationarySpeedMmPerSec);
+                    if(counters->phase!=0 || moving) twinIdleSince_.reset();
+                    else if(!twinIdleSince_ || !twinRepPhase_ || now_<twinRepPhase_->at ||
+                            now_-twinRepPhase_->at>motionFreshMs) twinIdleSince_=now_;
                     twinRepPhase_=Observed{counters->phase,now_};
+                }
                 // Albert c4f2884 notes an optional two-byte Twin trailer.
                 // The exact 68-byte Steven profile is validated above, but
                 // its last word is not confirmed as a target or in any unit.
@@ -1051,12 +1089,14 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
                 ? std::optional<TwinWorkoutPhase>(static_cast<TwinWorkoutPhase>(p[4])) : std::nullopt;
             if(phase) ++twinAa80Decoded_;
             if(displayContext) {
-                if(phase!=TwinWorkoutPhase::InProgress || (twinWorkoutPhase_ && phase!=twinWorkoutPhase_))
+                if(phase!=TwinWorkoutPhase::InProgress || (twinWorkoutPhase_ && phase!=twinWorkoutPhase_)) {
                     twinRepPhase_.reset();
+                    twinIdleSince_.reset();
+                }
                 if(phase!=twinWorkoutPhase_) diagnostic("Twin workout status="+std::to_string(p[4]));
                 twinWorkoutPhase_=phase;
             }
-        }
+        } else if(!p.empty() && p[0]==0x81) twinIdleSince_.reset();
         return;
     }
     // SDK 79f6c55's on-device validated AA subtypes. Per-rep means are NOT
@@ -1365,7 +1405,10 @@ TrainingReport PhysicalSession::trainingReport() const {
     if(twinCounterContext()) {
         result.twinWorkoutPhase=twinWorkoutPhase_;
         if(twinRepPhase_ && twinRepPhase_->at>twinTopologyAt_ && now_>=twinRepPhase_->at &&
-           now_-twinRepPhase_->at<=motionFreshMs) result.twinRepActive=twinRepPhase_->value!=0;
+           now_-twinRepPhase_->at<=motionFreshMs) {
+            result.twinRepActive=twinRepPhase_->value!=0;
+            if(twinIdleSince_) result.twinRepIdleMs=twinRepPhase_->at-*twinIdleSince_;
+        }
     }
     result.completedRepWindow=result.completedRepWindow && completedRepWindow_;
     if(!motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) result.completedRepWindow=false;
@@ -1757,6 +1800,8 @@ void PhysicalSession::pollWorkoutExit() {
 }
 void PhysicalSession::tick(uint64_t now) {
     now_=now;if(!connected_) return;
+    if(twinIdleSince_ && (!twinCounterContext() || !twinRepPhase_ ||
+       now_<twinRepPhase_->at || now_-twinRepPhase_->at>motionFreshMs)) twinIdleSince_.reset();
     if(!motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) clearRepBoundary();
     if(automaticWeightWindow_ && !automaticWeightWindowCurrent()) cancelWrites("Drop stopped: motion window passed");
     if(connectionClockPending_) {connectedAt_=now_;connectionClockPending_=false;}

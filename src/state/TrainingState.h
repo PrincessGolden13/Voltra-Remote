@@ -51,6 +51,8 @@ struct TrainingReport {
     std::optional<TwinDisplayCounters> twinDisplayCounters;
     std::optional<TwinWorkoutPhase> twinWorkoutPhase;
     std::optional<bool> twinRepActive;
+    // Time covered by uninterrupted idle AA81 reports. Presentation only.
+    std::optional<uint64_t> twinRepIdleMs;
     std::optional<bool> repsStarted;
     std::optional<bool> setActive; // Actual device workout phase, not a local timer.
     std::optional<bool> resting; // Confirmed between-set rest, distinct from a weight-induced statistics close.

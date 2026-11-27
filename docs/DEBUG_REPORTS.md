@@ -64,6 +64,8 @@ The trace lists notification chunks, valid frames and leading B4 headers in
 command, transport and telemetry characteristic order. Sample times are
 milliseconds since enabling the trace. The link ordinal groups each sample
 with its connection, and hex windows are labeled by payload offset.
+The trace keeps separate pull and return AA82 samples. A read-only device
+discovery after training does not replace the most recent Twin workout context.
 
 SEND persists one approved snapshot as a blob in `voltra-debug/pending-v2`. The
 firmware can still deliver queued reports stored by older firmware at

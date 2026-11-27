@@ -1,5 +1,30 @@
 # Validation status and pending tests
 
+## November 27 v0.4.26 Twin recovery and Live
+
+Actual LVGL tests passed 72 idle-loss cases and 654 assertions at 360, 466
+and 480 px. The cases distinguish idle loss, Live loss, a failed selection,
+confirmed mount-lock release, and explicit exit. The idle notice reproduced
+on v0.4.25. The new cases verify retained diagnostics and no implicit controls.
+
+The Twin Live idle fallback passed eight physical-session mock cases and 61
+assertions, plus 69 LVGL scenes and 1,134 assertions across the three display
+sizes. Confirmed rest remains immediate. Long gaps, stale context, motion,
+unknown packets and Auto Load calibration do not supply a completed idle
+interval. The fallback changes the page only. No new tracked tests or
+physical radio or motor operation. See [report evidence](TWIN_RECOVERY_2026_11_27.md).
+
+Five foreground selection scenarios and five native retry scenarios passed.
+A verified controller was retained when it alone advertised. Exact follower
+handoff, absent and exhausted endpoints, and ordinary two-attempt limits
+passed. Existing application handoff and native GATT fixtures passed 14 and
+16 scenarios respectively. The offline core and packet inspector built.
+
+The physical-session tracing fixture emitted all 11 rows within 1,473 encoded
+bytes. The trace retained the Twin workout through a read-only discovery,
+kept AA82 phases separate, and supplied neither a command nor a Twin live
+display value.
+
 ## November 27 v0.4.25 Twin Drops and BLE trace
 
 Actual LVGL tests for 360, 466 and 480 px passed 27 Drops cases, 420 RP

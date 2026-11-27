@@ -501,11 +501,20 @@ void UiController::updateLiveNavigation(const TrainingReport& r) {
     // set is coming through. Keep the Live presentation (and its cancel tap)
     // while following the actual machine state. A confirmed unload ends it.
     const bool waitingForTwinAuto=twin && r.autoLoadArmed && autoLiveAwaitingSet_;
+    // The catalogued VOLTRA idle-to-rest setting tops out at 15 s. Use that
+    // interval only to close this screen after continuous reported idle.
+    // This neither establishes a set boundary nor affects training controls.
+    constexpr uint64_t twinIdleDisplayMs=15000;
+    const bool twinIdlePresentation=twin && !autoLiveAwaitingSet_ && !r.autoLoadArmed &&
+        app_.readbackFresh() && r.twinRepActive==false && !r.moving &&
+        r.twinRepIdleMs.value_or(0)>=twinIdleDisplayMs;
     if(((!r.loaded && !waitingForTwinAuto) || endedBeforeFirstSet ||
-        ((twin ? twinSetEnded : r.setActive==false) && !autoLiveAwaitingSet_)) && page_==Screen::Live) {
+        ((twin ? twinSetEnded : r.setActive==false) && !autoLiveAwaitingSet_) ||
+        twinIdlePresentation) && page_==Screen::Live) {
         diagnostic("Live ended loaded="+std::to_string(r.loaded)+" armed="+std::to_string(r.autoLoadArmed)+
             " twin="+std::to_string(twin)+" phase="+std::to_string(phase)+
-            " auto="+(r.autoLoadPhase ? std::to_string(*r.autoLoadPhase) : "unknown"));
+            " auto="+(r.autoLoadPhase ? std::to_string(*r.autoLoadPhase) : "unknown")+
+            (twinIdlePresentation ? " idle display" : ""));
         navigate(Screen::Main);
     }
 }
@@ -1540,9 +1549,16 @@ void UiController::tick() {
     rememberModifiers();
     if(page_!=Screen::Devices && int(page_)<int(Screen::Settings) && app_.connected() && !app_.selectionReady())
         navigate(Screen::Devices);
-    if (page_ != Screen::Devices && int(page_) < int(Screen::Settings) && !app_.connected() && !app_.connecting() &&
+    const bool trainingPage=page_!=Screen::Devices && int(page_)<int(Screen::Settings);
+    const bool establishedEnd=app_.selectionFailed() && app_.establishedConnectionEnded();
+    if ((trainingPage || establishedEnd) && !app_.connected() && !app_.connecting() &&
         !(rebuild_ && next_==Screen::Devices)) {
-        app_.leave(true);navigate(app_.message().empty() ? Screen::Devices : Screen::ConnectionNotice);
+        const bool live=page_==Screen::Live || (rebuild_ && next_==Screen::Live);
+        const bool failedSelection=app_.selectionFailed() && !establishedEnd;
+        const bool showNotice=!app_.message().empty() &&
+            (live || failedSelection || app_.connectionEndedOnMountRelease());
+        app_.leave(showNotice);
+        navigate(showNotice ? Screen::ConnectionNotice : Screen::Devices);
     }
     if (page_ == Screen::Devices) {
         if (!batteryAlertDialog_ && !debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
@@ -1568,7 +1584,7 @@ void UiController::tick() {
         // unsent editor work and unread gestures from the old weight scope.
         editDirty_=returnAfterEdit_=false;
         rotaryAdjustment_.reset();
-        if(page_==Screen::Drops || next_==Screen::Drops) navigate(Screen::Main);
+        if(app_.connected() && (page_==Screen::Drops || next_==Screen::Drops)) navigate(Screen::Main);
         if(touchDown_) touchScopeInvalid_=true;
         else if(hardware_.touch().hasPending()) hardware_.touch().discardPending();
     }
