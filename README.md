@@ -78,9 +78,10 @@ See [debug reports](docs/DEBUG_REPORTS.md) and the
 
 After the [initial USB installation](docs/USB_INSTALL.md), the remote checks
 GitHub at power-on using saved Wi-Fi. A newer release shows an installation prompt.
-Settings -> Updates -> CHECK FOR UPDATES checks again; INSTALL & RESTART downloads
-and installs the firmware. Leave the VOLTRA connection and keep power connected
-during installation. Offline operation remains available without Wi-Fi.
+Open **Settings → Updates** to check again. If an update is available, tap
+**Install & Update** to download and install the firmware. Leave the VOLTRA
+connection and keep power connected during installation. Offline operation
+remains available without Wi-Fi.
 
 Updates use published firmware releases for this board, with HTTPS, size and
 SHA-256 verification. The old flash layout requires one USB migration; subsequent

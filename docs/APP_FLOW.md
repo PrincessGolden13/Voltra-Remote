@@ -1,3 +1,12 @@
+> November 27 v0.4.27. Opening Updates from Settings checks automatically.
+> The current screen offers Back. A newer release adds Install & Update.
+> Installing still requires that explicit action. Standalone Live prefers
+> fresh B4 target samples and can use an isolated motor-target readback if
+> those samples are unavailable. A tap with the cable extended offers
+> Load Weight and Cancel when fresh single-device readiness and Direct Load
+> safety readbacks allow the existing guided sequence. Current settings that
+> block Direct Load get an inline message. See [Grey VOLTRA follow-up](SINGLE_LIVE_2026_11_27.md).
+>
 > November 27 v0.4.26. An idle linked VOLTRA disconnect returns directly to
 > Devices. Live disconnects and confirmed mounting-lock release retain the
 > appropriate notice. A Twin selection visits each Bluetooth identity at most

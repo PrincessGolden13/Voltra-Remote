@@ -212,6 +212,8 @@ bool TrainingApplication::twinPermissionFresh() const {
         now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && now_>=r.twinRoleAtMs && now_-r.twinRoleAtMs<=2000;
 }
 void TrainingApplication::cancelControlIntents() {
+    cancelDirectLoad();
+    directLoadActive_=false;
     const bool unloading=session_.unloading();
     session_.cancelTraining();
     if(!unloading) pending_=false;
@@ -876,6 +878,8 @@ void TrainingApplication::rememberConnection() {
     scan();
 }
 void TrainingApplication::leave(bool preserveFailure) {
+    cancelDirectLoad();
+    directLoadActive_=false;
     if(topologyProbeActive_) stopTopologyProbe();
     if(connected()) lastClosedSession_=("at="+std::to_string(now_)+" "+session_.diagnosticState()).substr(0,800);
     const std::string failure = preserveFailure ? (!message_.empty() ? message_ : session_.status().empty() ? "Connection lost" : session_.status()) : "";
@@ -983,6 +987,8 @@ void TrainingApplication::recordLoadRefusal() {
     recordControlFailure(loadRefusalMessage_);
 }
 void TrainingApplication::toggleWeight() {
+    // A second weight action can only make a new offer, never confirm one.
+    cancelDirectLoad();
     if(!retainSelectionControl(false)) return;
     diagnostic("Explicit weight action");
     auto r = report();
@@ -996,7 +1002,20 @@ void TrainingApplication::toggleWeight() {
         message_.clear();diagnostic("Weight action ignored: unload pending");return;
     }
     const auto e = session_.readiness();
-    if (pending() || !settingsAllowed() || !e.ready || !e.cableZero || !e.twinSafe || r.settings.weight < r.minWeight) {
+    const bool ready=!pending() && settingsAllowed() && e.ready && e.twinSafe && r.settings.weight>=r.minWeight;
+    if(ready && !maintenance_ && r.loadStateKnown && e.cableExtended) {
+        if(e.extendedLoad==ExtendedLoadReadiness::Guided && r.autoLoadSupported && r.twinKnown && !r.twin && !r.twinDetected) {
+            directLoadConfirmation_=DirectLoadConfirmation{selected_,r.unit,r.settings};
+            message_.clear();
+            diagnostic("Direct Load confirmation requested");
+        } else {
+            message_=e.extendedLoad==ExtendedLoadReadiness::SettingsBlocked ? "Direct Load blocked by settings" :
+                e.extendedLoad==ExtendedLoadReadiness::SafetyCheckOff ? "Enable Safety Check on VOLTRA" : "Use VOLTRA for Direct Load";
+            recordControlFailure(message_);
+        }
+        return;
+    }
+    if (!ready || !e.cableZero) {
         message_ = r.minWeight>0 && r.settings.weight < r.minWeight ? "Set at least "+weightText(r.minWeight,r.unit)+" "+unitName(r.unit) :
             !e.reason.empty() ? e.reason : "Device not ready"; recordLoadRefusal();return;
     }
@@ -1006,7 +1025,28 @@ void TrainingApplication::toggleWeight() {
     diagnostic("Load request result="+std::to_string(int(result)));
     if(result!=TransportResult::Accepted) recordLoadRefusal();
 }
+bool TrainingApplication::directLoadConfirmationPending() const {
+    if(!directLoadConfirmation_ || maintenance_ || pending() || !settingsAllowed() ||
+       selected_!=directLoadConfirmation_->device) return false;
+    const auto e=session_.readiness();
+    if(!e.ready || !e.twinSafe || !e.cableExtended || e.extendedLoad!=ExtendedLoadReadiness::Guided) return false;
+    const auto r=report();
+    const auto& saved=*directLoadConfirmation_;
+    return r.twinKnown && !r.twin && !r.twinDetected && r.loadStateKnown && !r.loaded && !r.autoLoadArmed &&
+        r.autoLoadSupported && r.unit==saved.unit && r.settings.weight==saved.settings.weight &&
+        r.settings.weight>=r.minWeight && r.settings.magicMode==saved.settings.magicMode &&
+        sameModifier(r.settings.magic,saved.settings.magic) && sameModifier(r.settings.eccentric,saved.settings.eccentric);
+}
+void TrainingApplication::confirmDirectLoad() {
+    const bool current=directLoadConfirmationPending();
+    cancelDirectLoad();
+    if(!current) return;
+    diagnostic("Explicit Direct Load confirmation");
+    startGuidedLoad(true);
+}
 void TrainingApplication::unload() {
+    cancelDirectLoad();
+    directLoadActive_=false;
     if(!retainSelectionControl(false)) return;
     const auto r=report();
     if(selectionReadOnlyView_ || ((selectionResolvedTwin_ || r.twinDetected || r.twin) && !r.unloadRouteKnown)) {
@@ -1024,6 +1064,7 @@ void TrainingApplication::unload() {
     if(result!=TransportResult::Accepted) recordControlFailure(message_.empty() ? "Unload request not accepted" : message_);
 }
 void TrainingApplication::autoLoad() {
+    cancelDirectLoad();
     if(!retainSelectionControl()) return;
     diagnostic("Explicit Auto Load action");
     if(session_.unloading()) {
@@ -1033,14 +1074,21 @@ void TrainingApplication::autoLoad() {
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
         message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; recordLoadRefusal();return;
     }
+    startGuidedLoad(false);
+}
+void TrainingApplication::startGuidedLoad(bool direct) {
     const auto result = session_.triggerAutoLoad();
     // A new explicit Auto Load starts a new execution sequence, preserving the
     // selected local recipe. Countdown reports cannot inherit an old set/hold.
     if(result == TransportResult::Accepted) resetDrops();
     autoLoadRequested_ = result == TransportResult::Accepted;
+    directLoadActive_=direct && autoLoadRequested_;
     requestedLoad_ = result == TransportResult::Accepted; sent(result);
-    diagnostic("Auto Load request result="+std::to_string(int(result)));
-    if(result!=TransportResult::Accepted) recordLoadRefusal();
+    diagnostic(std::string(direct ? "Direct Load" : "Auto Load")+" request result="+std::to_string(int(result)));
+    if(result!=TransportResult::Accepted) {
+        if(direct) recordControlFailure(message());
+        else recordLoadRefusal();
+    }
 }
 void TrainingApplication::toggleModifier(bool magic) {
     if(!retainSelectionControl()) return;
@@ -1383,6 +1431,7 @@ void TrainingApplication::tick(uint64_t now) {
     if(selectionPhase_==SelectionPhase::Ready && !retainSelectionControl(false)) return;
     session_.allowTwinWorkoutReentry(!maintenance_ && selectionPhase_==SelectionPhase::Ready && selectionResolvedTwin_);
     controller_.tick(now);
+    if(!directLoadConfirmationPending()) cancelDirectLoad();
     if(topologyProbeActive_) {tickTopologyProbe();return;}
     refreshTwinDevices();
     if(runSelection()) return;
@@ -1454,7 +1503,7 @@ void TrainingApplication::tick(uint64_t now) {
             message_="Settings not confirmed";
         if(!message_.empty()) {
             recordControlFailure(message_);
-            if(requestedLoad_) {loadRefusalMessage_=message_;++loadRefusalRevision_;}
+            if(requestedLoad_ && !directLoadActive_) {loadRefusalMessage_=message_;++loadRefusalRevision_;}
         }
         pending_ = requestedLoad_ = autoLoadRequested_ = false; weightIntent_.reset(); settingsIntent_.reset();
         if (presetIntent_) {
@@ -1472,6 +1521,7 @@ void TrainingApplication::tick(uint64_t now) {
         if(!pending_) message_.clear(); // A confirmed external load resolves a prior load refusal.
     }
     if (fresh()) observedLoaded_ = r.loaded;
+    if(r.loaded || (!r.autoLoadArmed && !autoLoadRequested())) directLoadActive_=false;
     runDropRestore();
     if(!dropRestore_) runDrops(r);
 }

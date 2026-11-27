@@ -376,7 +376,8 @@ void UiController::updateBatteryAlert(uint64_t now) {
     const auto modal=[](Screen screen) {
         return screen==Screen::Reset || screen==Screen::Wifi || screen==Screen::Updates ||
             screen==Screen::SavePreset || screen==Screen::OverridePreset || screen==Screen::PresetNotice ||
-            screen==Screen::ForgetDevice || screen==Screen::ConnectionNotice || screen==Screen::ControlNotice;
+            screen==Screen::ForgetDevice || screen==Screen::ConnectionNotice || screen==Screen::ControlNotice ||
+            screen==Screen::DirectLoadConfirm;
     };
     const bool blocked=!percent || page_==Screen::Live || (rebuild_ && next_==Screen::Live) || activeSet ||
         debugDialog_ || debugPending_ || debugDisconnectPending_ || restNotice_ ||
@@ -417,6 +418,7 @@ void UiController::updateRestAlert(uint64_t now) {
         // An unacknowledged notice stays visible; never extend its buzz deadline.
         if(!restNotice_) {
             restNotice_=restBuzzing_=true;restBuzzUntil_=now+restBuzzMs;
+            if((rebuild_ ? next_ : page_)==Screen::DirectLoadConfirm) navigate(Screen::Main);
             hardware_.restAlert(restBuzzMs);
             // Separate top-layer button survives screen rebuilds. It covers only
             // the upper banner, leaving the weight/unload controls accessible.
@@ -526,11 +528,17 @@ bool UiController::saveDropsOnly(const TrainingReport& r) const {
     return app_.fresh() && r.twin && !r.liveWeightSupported;
 }
 void UiController::navigate(Screen page) {
+    const auto previous = rebuild_ ? next_ : page_;
     weightHoldActive_=weightUnloadGesture_=false;
     if(page!=Screen::Updates) {updateCheckPending_=false;updateCheckMessage_.clear();}
     if(page==Screen::Live && batteryAlertDialog_) closeBatteryAlert(false);
-    const bool trainingPage=int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings);
+    const bool trainingPage=(int(page)>int(Screen::Devices) && int(page)<int(Screen::Settings)) ||
+        page==Screen::DirectLoadConfirm;
     if(trainingPage && !app_.selectionReady()) page=Screen::Devices;
+    if(page!=Screen::DirectLoadConfirm) {
+        confirmDirectLoadQueued_=false;
+        app_.cancelDirectLoad();
+    }
     if(page!=Screen::Devices) app_.setTopologyDiscoveryEnabled(false);
     // Choosing another screen cancels a read-only connection probe. A late
     // response must not reopen training after the user has left selection.
@@ -548,6 +556,7 @@ void UiController::navigate(Screen page) {
     if (page == Screen::SavePreset || page == Screen::OverridePreset) saveDraft_ = app_.currentPreset();
     editDirty_ = returnAfterEdit_ = false;
     next_ = page; rebuild_ = true;
+    if(page==Screen::Updates && previous==Screen::Settings) requestUpdateCheck();
     const auto r = app_.report();
     if (page == Screen::Magic || page == Screen::Eccentric) {
         rememberModifiers();
@@ -577,6 +586,13 @@ void UiController::act(int action, const std::string& id, bool held) {
         return;
     }
     if(action==DismissControl) {navigate(app_.connected() ? Screen::Main : Screen::Devices);return;}
+    if(action==ConfirmDirectLoad || action==CancelDirectLoad) {
+        if(!held && !debugDialog_ && page_==Screen::DirectLoadConfirm && !rebuild_) {
+            if(action==ConfirmDirectLoad) confirmDirectLoadQueued_=true;
+            else navigate(Screen::Main);
+        }
+        return;
+    }
     rotaryAdjustment_.reset(); // A new touch selection starts with precise control.
     if (!held && (action == PreviousDevices || action == NextDevices)) {
         const size_t count = (deviceChoices().size()+3)/4;
@@ -609,7 +625,10 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == BackDevices && !held) { diagnostic("User released Bluetooth connection");app_.leave(); navigate(Screen::Devices); return; }
     if (action == Weight) {
         if (held) app_.autoLoad();
-        else app_.toggleWeight();
+        else {
+            app_.toggleWeight();
+            if(app_.directLoadConfirmationPending()) navigate(Screen::DirectLoadConfirm);
+        }
         return;
     }
     if (action == OpenPresets && !held) { presetIndex_ = std::max(0,activePreset_); navigate(Screen::Presets); return; }
@@ -637,12 +656,12 @@ void UiController::act(int action, const std::string& id, bool held) {
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
     if (action == SendDebugLog) { debugPending_=true; return; }
     if (action == ToggleBleTrace) { if(!held) setBleTrace(!bleTraceEnabled_); return; }
-    if(action==CheckUpdates) {requestUpdateCheck();return;}
     if(action==InstallUpdate) {
-        updateCheckPending_=false;updateCheckMessage_.clear();
-        if(updates_ && !app_.radioInUse() && !app_.pending()) {
+        if(updates_ && updates_->status().phase==UpdatePhase::Available &&
+           !updateCheckPending_ && updateCheckMessage_.empty() && !app_.radioInUse() && !app_.pending()) {
             if(!saveConfiguration()) return;
-            if(!wifi_ || !wifi_->prepareForUpdate()) {value(message_,"Wi-Fi not safely saved; update blocked");return;}
+            if(!wifi_ || !wifi_->prepareForUpdate()) {value(message_,"Save Wi-Fi before installing");return;}
+            value(message_,"");
             if(updates_->install()) app_.setMaintenance(true);
         }
         return;
@@ -755,7 +774,7 @@ void UiController::build() {
     presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
     holdBar_ = nullptr;
     wifiBody_=wifiButton_=wifiReset_=wifiBack_=nullptr;
-    updateBody_=updateCheck_=updateInstall_=nullptr;
+    updateBody_=updateInstall_=nullptr;
     for (auto& item : settingsValues_) item = nullptr;
     bleTraceButton_ = nullptr;
     for (auto& item : liveValues_) item = nullptr;
@@ -1344,7 +1363,8 @@ void UiController::updateAutoLoadFeedback() {
         return;
     }
 
-    value(autoLoadTitle_,"AUTO LOAD");
+    const bool direct=app_.directLoadActive();
+    value(autoLoadTitle_,direct ? "DIRECT LOAD" : "AUTO LOAD");
     style::set_arc_color(autoLoadArc_,lv_color_hex(accent()),LV_PART_INDICATOR);
     color(autoLoadTitle_,accent());
     if(holding) {
@@ -1365,16 +1385,17 @@ void UiController::updateAutoLoadFeedback() {
         const auto wave=now%1600;
         const auto pulse=wave<800 ? wave : 1600-wave;
         style::set_opa(autoLoadArc_,lv_opa_t(96+pulse*159/800),0);
-        std::string prompt=r.twin && r.autoLoadPhase!=11 ? "Waiting for\nVOLTRA" : "Pull cable and\nhold still";
+        std::string prompt=direct ? "Hold cable still" :
+            r.twin && r.autoLoadPhase!=11 ? "Waiting for\nVOLTRA" : "Pull cable and\nhold still";
         if(r.autoLoadPhase==12) {
-            prompt="Hold still";
+            prompt=direct ? "Safety Check" : "Hold still";
             if(r.autoLoadCountdownMs && now>=r.autoLoadCountdownAtMs && now-r.autoLoadCountdownAtMs<=500) {
                 // Show only received countdown values. Do not decrement a
                 // local clock or substitute the two-second touch-hold timer.
                 const int tenths=(*r.autoLoadCountdownMs+99)/100;
                 prompt+="\n"+std::to_string(tenths/10)+"."+std::to_string(tenths%10)+"s";
             }
-        } else if(r.autoLoadPhase==13) prompt="Engaging...";
+        } else if(r.autoLoadPhase==13) prompt=direct ? "Progressive\nLoading" : "Engaging...";
         value(autoLoadPrompt_,prompt);
         value(message_,"Tap weight to cancel");
     }
@@ -1442,14 +1463,14 @@ void UiController::requestUpdateCheck() {
     if(!w.connected && !w.saved) {updateCheckMessage_="Set up Wi-Fi in Settings first";return;}
     updateCheckPending_=true;updateWifiRequested_=w.connecting;updateCheckAt_=hardware_.nowMs();
     updateCheckRevision_=updates_->status().revision;
-    updateCheckMessage_=w.connected ? "Starting update check..." : "Connecting to saved Wi-Fi...";
+    updateCheckMessage_=w.connected ? "Checking for updates..." : "Connecting to saved Wi-Fi...";
 }
 void UiController::tickUpdateCheck(uint64_t now) {
     if(!updateCheckPending_) return;
     auto w=wifi_ ? wifi_->status() : WifiSetupStatus{};
     const auto u=updates_ ? updates_->status() : UpdateStatus{};
     const auto phase=u.phase;
-    const bool interrupted=page_!=Screen::Updates || (rebuild_ && next_!=Screen::Updates) ||
+    const bool interrupted=(rebuild_ ? next_ : page_)!=Screen::Updates ||
         app_.radioInUse() || app_.pending() || w.setupActive ||
         debugDisconnectPending_ || (reports_ && (reports_->status().phase==ReportPhase::Queued || reports_->status().busy())) ||
         phase==UpdatePhase::Installing || phase==UpdatePhase::Ready;
@@ -1461,11 +1482,11 @@ void UiController::tickUpdateCheck(uint64_t now) {
     if(phase==UpdatePhase::Checking || u.revision!=updateCheckRevision_) {
         updateCheckPending_=false;updateCheckMessage_.clear();return;
     }
-    if(!w.storageReady || !w.saved) {
+    if(!w.storageReady || (!w.saved && !w.connected)) {
         updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi unavailable. Settings kept.";return;
     }
     if(now-updateCheckAt_>=updateWifiWaitMs) {
-        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi did not connect. Try again.";return;
+        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi did not connect";return;
     }
     // A paused discovery policy stops new scans; let its existing async window
     // finish before asking the shared radio to join the network.
@@ -1476,15 +1497,16 @@ void UiController::tickUpdateCheck(uint64_t now) {
     if(!updateWifiRequested_) {
         updateWifiRequested_=true;
         if(!wifi_->reconnectSaved()) {
-            updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi could not reconnect. Try again.";return;
+            updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi could not reconnect";return;
         }
         w=wifi_->status();
     }
     if(!w.connecting) {
-        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi did not connect. Try again.";
+        updateCheckPending_=false;updateCheckMessage_="Saved Wi-Fi did not connect";
     }
 }
 void UiController::tick() {
+    const bool wasDirectConfirmation=page_==Screen::DirectLoadConfirm || (rebuild_ && next_==Screen::DirectLoadConfirm);
     const auto reportPhase=reports_ ? reports_->status().phase : ReportPhase::Idle;
     const bool reportWaiting=reports_ && (reportPhase==ReportPhase::Queued || reports_->status().busy());
     const bool updateWaiting=updates_ && (updates_->startupPending() || updates_->status().busy() ||
@@ -1535,8 +1557,13 @@ void UiController::tick() {
         updates_->tick(now,w.connected && !w.setupActive,!app_.radioInUse() && !app_.pending() && (!reports_ || !reports_->status().busy()));
         tickUpdateCheck(now);
         if(updates_->status().phase==UpdatePhase::Available && !updatePromptShown_ &&
-           !batteryAlertDialog_ && !debugDialog_ && !debugPending_ && !app_.radioInUse() && page_==Screen::Devices && !touchDown_) {
-            updatePromptShown_=true;navigate(Screen::Updates);
+           !updateCheckPending_ && updateCheckMessage_.empty()) {
+            const auto screen=rebuild_ ? next_ : page_;
+            if(screen==Screen::Updates) updatePromptShown_=true;
+            else if(screen==Screen::Devices && !batteryAlertDialog_ && !debugDialog_ && !debugPending_ &&
+                    !app_.radioInUse() && !touchDown_) {
+                updatePromptShown_=true;navigate(Screen::Updates);
+            }
         }
     }
     if(app_.dropConfirmationRevision()!=dropCueRevision_) {
@@ -1560,6 +1587,8 @@ void UiController::tick() {
         app_.leave(showNotice);
         navigate(showNotice ? Screen::ConnectionNotice : Screen::Devices);
     }
+    if((rebuild_ ? next_ : page_)==Screen::DirectLoadConfirm && !app_.directLoadConfirmationPending())
+        navigate(Screen::Main);
     if (page_ == Screen::Devices) {
         if (!batteryAlertDialog_ && !debugDialog_ && !debugPending_ && (!reports_ || (reports_->status().phase!=ReportPhase::Queued && !reports_->status().busy())) && !touchDown_ && !modeGestureUntil_ && !rebuild_ &&
             (!updates_ || (!updates_->startupPending() && !updates_->status().busy()))) {
@@ -1610,6 +1639,16 @@ void UiController::tick() {
     if (activePreset_ >= 0 && (!app_.fresh() || !samePreset(app_.currentPreset(),app_.presetForCurrentDevice(config_.presets[activePreset_])))) activePreset_ = -1;
     updateLiveNavigation(r);
     updateRestAlert(now);
+    if(confirmDirectLoadQueued_) {
+        confirmDirectLoadQueued_=false;
+        // The input loop may release a touch before this tick drains BLE.
+        // Revalidate the previously offered configuration after that drain.
+        if((rebuild_ ? next_ : page_)==Screen::DirectLoadConfirm) {
+            if(!sleeping_ && !debugDialog_ && !debugPending_ && !batteryAlertDialog_ && !restNotice_)
+                app_.confirmDirectLoad();
+            navigate(Screen::Main);
+        }
+    }
     if (rebuild_) build();
     const int delta = hardware_.rotary().getDelta();
     const bool pressed = hardware_.rotary().wasPressed();
@@ -1629,11 +1668,14 @@ void UiController::tick() {
         else if (page_ == Screen::Presets) {
             if(!inputScopeChanged) act(ChoosePreset,"",false);
         }
+        else if (page_ == Screen::DirectLoadConfirm || wasDirectConfirmation) {
+            if(app_.connected() && (r.loaded || r.autoLoadArmed || app_.pending())) app_.unload();
+        }
         else if (page_ == Screen::PresetNotice) act(Unload,"",false);
         else if (page_ != Screen::Devices && int(page_) < int(Screen::Settings)) {
             // Keep the rotary unload path, but don't turn a queued press into
             // a new load on the just-adopted pair.
-            if(!inputScopeChanged) app_.toggleWeight();
+            if(!inputScopeChanged) act(Weight,"",false);
             else if(!app_.fresh() || r.loaded || r.autoLoadArmed || app_.pending()) app_.unload();
         }
     }
@@ -1646,6 +1688,7 @@ void UiController::tick() {
     const auto idleMs=powerNow>=activityAt_ ? powerNow-activityAt_ : 0;
     sleeping_ = !mustStayAwake && config_.sleepMinutes > 0 && idleMs >= uint64_t(config_.sleepMinutes)*60000;
     dimmed_ = !mustStayAwake && config_.dimMinutes > 0 && idleMs >= uint64_t(config_.dimMinutes)*60000;
+    if(sleeping_ && (rebuild_ ? next_ : page_)==Screen::DirectLoadConfirm) navigate(Screen::Main);
     hardware_.setDisplayPower(sleeping_,dimmed_);
     style::set_opa(face_,sleeping_ ? 0 : dimmed_ ? 65 : 255,0);
     update();

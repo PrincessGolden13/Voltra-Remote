@@ -79,8 +79,9 @@ Do not promise an immediate fix for bugs that require more physical evidence.
    with suitable GitHub tools/access can do this when instructed; otherwise use
    GitHub in the phone's browser. A merged commit or unpublished draft alone is
    not offered to remotes. Never replace assets under a published tag.
-4. Unload the VOLTRAs and leave the connection on the remote. Choose Settings ->
-   Updates -> Check for updates, then Install & Restart. Keep power connected.
+4. Unload the VOLTRAs and leave the connection on the remote. Open
+   **Settings → Updates**, then tap **Install & Update** when offered. Keep
+   power connected.
    Each power-on also checks saved Wi-Fi and offers a newer release; installation
    always needs the explicit tap. The remote downloads compiled firmware.
 

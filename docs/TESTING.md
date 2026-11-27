@@ -1,5 +1,29 @@
 # Validation status and pending tests
 
+## November 27 v0.4.27 Updates, standalone Live and Direct Load
+
+The Updates UI passed 48 actual LVGL scenes and 429 assertions at 360,
+466 and 480 pixels. Opening the screen starts or adopts one check. The
+checks cover saved Wi-Fi reconnect, no check while connected to VOLTRA,
+current/update/error screens, reentry, and explicit installation.
+
+Standalone Live passed six focused protocol cases covering request scope,
+freshness, bounded misses, target range and B4 preference. All four real
+B4 capture replays and 31 prior physical-session mock cases passed. The
+fallback only reads the target. Its response on Grey remains a physical check.
+
+The exact Stairs counter interleaving reproduced a failed endpoint on
+v0.4.26. The updated protocol passed 11 cases and 39 assertions, including
+one base-only decrement at the stationary endpoint, no earlier dispatch
+and all loaded mode and lock gates. Previous protocol and app Stairs
+fixtures passed 53 and 12 cases respectively. The original Grey report
+did not contain its endpoint or loaded write-gate snapshot.
+
+Five extended-cable PhysicalSession mock scenarios checked positive
+extension, fresh flags, unavailable and unknown state, single scope, no
+unguarded ordinary load, and the existing one-shot countdown and cancel.
+See [the report and video evidence](SINGLE_LIVE_2026_11_27.md).
+
 ## November 27 v0.4.26 Twin recovery and Live
 
 Actual LVGL tests passed 72 idle-loss cases and 654 assertions at 360, 466

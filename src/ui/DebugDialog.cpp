@@ -10,6 +10,7 @@ bool savedWifiNeedsReconnect(const WifiSetupStatus& wifi) {
 
 void UiController::openDebugDialog() {
     if(debugDialog_) return;
+    if((rebuild_ ? next_ : page_)==Screen::DirectLoadConfirm) navigate(Screen::Main);
     if(debugHint_) lv_obj_add_flag(debugHint_,LV_OBJ_FLAG_HIDDEN);
     diagnostic("Debug report dialog opened");
     const auto phase=reports_ ? reports_->status().phase : ReportPhase::Idle;

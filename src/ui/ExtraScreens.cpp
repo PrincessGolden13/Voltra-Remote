@@ -48,6 +48,14 @@ void UiController::buildExtra() {
         auto* b=button(face_,name,width_*x/100,height_*y/100,width_*w/100,height_*h/100,id);
         glow(b,accent(),true); return b;
     };
+    if(page_==Screen::DirectLoadConfirm) {
+        const auto r=app_.report();
+        label(face_,"Cable is extended",width_*76/100,height_*29/100,heading);
+        label(face_,weightText(r.settings.weight,r.unit)+" "+unitName(r.unit),width_*68/100,height_*43/100,heading);
+        action("Cancel",14,63,32,11,CancelDirectLoad);
+        action("Load Weight",49,63,37,11,ConfirmDirectLoad);
+        return;
+    }
     if(page_==Screen::ControlNotice) {
         label(face_,"LOAD REQUEST BLOCKED",width_*80/100,height_*20/100,heading);
         label(face_,app_.loadRefusalMessage(),width_*74/100,height_*33/100,medium);
@@ -194,30 +202,32 @@ void UiController::buildExtra() {
         }
         status_=label(face_,"",width_*78/100,height_*69/100);
     } else if(page_==Screen::Updates) {
-        updateBody_=label(face_,"",width_*74/100,height_*31/100,medium);
-        if(updates_) {
-            updateCheck_=action("CHECK FOR UPDATES",19,66,62,10,CheckUpdates);
-            updateInstall_=action("INSTALL & RESTART",19,79,62,10,InstallUpdate);
-        }
+        updateBody_=label(face_,"",width_*74/100,height_*42/100,medium);
+        if(updates_) updateInstall_=action("INSTALL & UPDATE",19,72,62,11,InstallUpdate);
     } else {
         std::string body = std::string("VOLTRA Remote " VOLTRA_VERSION "\n")+(runtime_ && !runtime_->simulated() ? "Normal / Bluetooth" : "Simulator")+"\n" __DATE__ "\n\n"+std::to_string(width_)+" x "+std::to_string(height_)+"\nShared LVGL application";
         label(face_,body,width_*74/100,height_*33/100,medium);
     }
-    message_=label(face_,"",width_*75/100,height_*88/100);
+    message_=label(face_,"",width_*75/100,height_*(page_==Screen::Updates ? 60 : 88)/100);
 }
 void UiController::updateExtra() {
     const auto r=app_.report();
     if(page_==Screen::Updates) {
-        if(!updates_) text(updateBody_,"Firmware " VOLTRA_VERSION "\n\nWireless updates are available\nin Normal mode on\nthe physical remote.");
+        if(!updates_) text(updateBody_,"Wireless updates are available\nin Normal mode");
         else {
             const auto u=updates_->status();
-            std::string body="Installed: " VOLTRA_VERSION;
-            if(!u.version.empty()) body+="\nLatest: "+u.version;
-            body+="\n\n"+(updateCheckMessage_.empty() ? u.message : updateCheckMessage_);
-            if(u.phase==UpdatePhase::Installing) body+="\n"+std::to_string(u.percent)+"%";
+            const bool available=u.phase==UpdatePhase::Available && !updateCheckPending_ && updateCheckMessage_.empty();
+            auto body=updateCheckMessage_;
+            if(body.empty()) {
+                if(u.phase==UpdatePhase::Current) body="Up to date";
+                else if(available) body="Update available"+(u.version.empty() ? "" : "\n"+u.version);
+                else if(u.phase==UpdatePhase::Checking) body="Checking for updates...";
+                else body=u.message;
+                if(u.phase==UpdatePhase::Installing) body+="\n"+std::to_string(u.percent)+"%";
+            }
             text(updateBody_,body);
-            if(u.busy() || updateCheckPending_) lv_obj_add_state(updateCheck_,LV_STATE_DISABLED);else lv_obj_remove_state(updateCheck_,LV_STATE_DISABLED);
-            if(u.phase==UpdatePhase::Available && !updateCheckPending_) lv_obj_remove_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);else lv_obj_add_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);
+            if(available) lv_obj_remove_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(updateInstall_,LV_OBJ_FLAG_HIDDEN);
         }
     }
     if(page_==Screen::Wifi) {

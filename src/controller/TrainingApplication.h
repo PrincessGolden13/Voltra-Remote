@@ -12,7 +12,7 @@ public:
     void scan();
     // Reserve an already-disconnected remote for a platform firmware install.
     // Never disconnects, unloads, or changes any confirmed machine state.
-    void setMaintenance(bool active) { maintenance_=active; }
+    void setMaintenance(bool active) { maintenance_=active; if(active) cancelDirectLoad(); }
     void setDiscoveryPaused(bool paused) { discoveryPaused_=paused; }
     // Device-screen discovery may briefly open a strictly read-only session.
     // Its radio ownership is distinct from a selected training connection.
@@ -73,9 +73,13 @@ public:
     bool pending() const { return resolvingSelection() || pending_ || session_.busy() || dropRestore_.has_value(); }
     // Pending intent only; machine-confirmed arming lives in TrainingReport.
     bool autoLoadRequested() const { return pending_ && autoLoadRequested_; }
+    bool directLoadActive() const { return directLoadActive_; }
     const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
     void adjustWeight(int delta);
     void toggleWeight();
+    bool directLoadConfirmationPending() const;
+    void cancelDirectLoad() { directLoadConfirmation_.reset(); }
+    void confirmDirectLoad();
     void unload();
     void autoLoad();
     bool checkingTwinAfterWorkoutExit() const { return session_.checkingTwinAfterWorkoutExit(); }
@@ -183,6 +187,11 @@ private:
     std::optional<int> weightIntent_, dropTarget_;
     WeightUnit weightIntentUnit_=WeightUnit::Pounds;
     std::optional<TrainingSettings> settingsIntent_;
+    // Explicit confirmation belongs to the same selected, unloaded workout.
+    struct DirectLoadConfirmation { DeviceId device; WeightUnit unit; TrainingSettings settings; };
+    std::optional<DirectLoadConfirmation> directLoadConfirmation_;
+    bool directLoadActive_=false;
+    void startGuidedLoad(bool direct);
     uint32_t lastRep_ = 0;
     uint64_t telemetryRevision_ = 0, holdSince_ = 0;
     uint64_t repRevision_ = 0, dropSetEndRevision_ = 0;
