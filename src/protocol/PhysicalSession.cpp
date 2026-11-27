@@ -18,12 +18,14 @@ constexpr uint16_t lastCoworkerRole=21560,peerAutoLoadStatus=21569;
 // Measured wire weight, not the changing target shown by the main VOLTRA LCD.
 // Keep one isolated diagnostic probe; never substitute it for the live target.
 constexpr uint16_t liveWireWeight=0x3e83;
-// Android da514d2 parameter catalog: signed motor target in 0.1 lb. The
-// controller LCD's combined Twin value has not been matched to this field.
-constexpr uint16_t twinMotorTargetProbe=20859;
+// Android da514d2 catalogs MC_TARGET_WEIGHT_LBS as the signed motor
+// command in 0.1 lb. Its scope is local to the motor, never a Twin total.
+constexpr uint16_t motorTarget=20859;
 constexpr unsigned twinMotorTargetReadLimit=3;
 constexpr uint64_t twinMotorTargetReadSpacingMs=750;
 constexpr uint64_t liveTargetFreshMs=500;
+constexpr uint64_t singleMotorTargetReadSpacingMs=300;
+constexpr unsigned singleMotorTargetMissLimit=3;
 constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentricPercent=21456;
 // kirby6365/voltra_remote 8e1ea1c: polled uint8 switches, absent from older CSV.
 constexpr uint16_t mountain=0x556f, accessoryDisplayPercent=0x5569;
@@ -128,7 +130,7 @@ int width(uint16_t id) {
     case lastCoworkerRole: case peerAutoLoadStatus: return 1;
     case 0x3e82: case 0x3e83: case 0x3e86: case 0x3e87: case 0x3e88: case 0x3e89:
     case 0x506a: case 21268: case 21476: case 21534: case 0x53c8: case 20873: case 20874:
-    case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377: case twinMotorTargetProbe:
+    case 0x5362: case 0x53b7: case 0x5011: case 0x5467: case 21377: case motorTarget:
     case 21002: case 21003: case 21004: return 2; // BLE interval reports, Android capture.
     case 20590: case 21023: case 0x5165: case 0x5355: case 0x53cf:
     case 21028: case 21722: case 21456: case 21224: case telemetrySubscribe: return 4;
@@ -154,7 +156,7 @@ bool PhysicalSession::setReadOnlyProbe(bool enabled) {
     // Discovery can promote only an accepted standalone endpoint or a fresh
     // own-matched primary. Per-command readiness remains independent.
     if(!enabled && connected_ && (!accepted_ || (!standalone() && !primaryTwinFresh()))) return false;
-    cancelWrites("");runtimeTarget_.reset();
+    cancelWrites("");clearRuntimeTargets();
     readOnlyProbe_=enabled;
     updateReport();
     return true;
@@ -172,6 +174,8 @@ void PhysicalSession::connectionChanged(bool connected) {
         if(connected) {
             countTrace(bleTrace_->links);
             bleTrace_->rate.reset();bleTrace_->mask.reset();
+            bleTrace_->returnMarkers=bleTrace_->returnEndpoints=0;
+            bleTrace_->returnGate.clear();
         }
         else if(accepted_ && (!readOnlyProbe_ || !bleTrace_->workoutLink || bleTrace_->workoutLink==bleTrace_->links))
             bleTrace_->lastState=bleTraceState();
@@ -191,7 +195,9 @@ void PhysicalSession::connectionChanged(bool connected) {
     autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
     pairedRefreshAt_=0;pairedRefreshPending_=pairedDirectRefreshSent_=false;
     singleAutoFollowup_=SingleAutoFollowup::None;
-    liveWeightProbed_=false;runtimeTarget_.reset();
+    liveWeightProbed_=false;clearRuntimeTargets();
+    singleMotorTargetReadAt_.reset();singleMotorTargetLastValue_.reset();
+    singleMotorTargetReads_=singleMotorTargetReplies_=singleMotorTargetUnanswered_=0;
     twinMotorTargetReads_=twinMotorTargetReplies_=0;
     twinMotorTargetPending_=false;
     twinMotorTargetReadAt_.reset();twinMotorTargetMin_.reset();twinMotorTargetMax_.reset();
@@ -314,7 +320,7 @@ void PhysicalSession::cancelWrites(const char* reason) {
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();unitSwitchAt_=0;commandFailed_=*reason!=0;
 }
 void PhysicalSession::clearRepBoundary() {
-    pendingReturn_.reset();completedRepWindow_=false;
+    lastPullMarker_.reset();pendingReturn_.reset();completedRepWindow_=false;
 }
 bool PhysicalSession::automaticWeightWindowCurrent() const {
     if(!automaticWeightWindow_) return true;
@@ -386,7 +392,7 @@ bool PhysicalSession::primaryRouteKnown() const {
 void PhysicalSession::invalidatePrimaryRoute(const char* reason) {
     if(primaryPeer_ || busy()) cancelWrites(reason);
     primaryRouteRevoked_=primaryRouteRevoked_ || primaryPeer_.has_value();
-    primaryPeer_.reset();pairedMotorFamily_.reset();runtimeTarget_.reset();
+    primaryPeer_.reset();pairedMotorFamily_.reset();clearRuntimeTargets();
     directIdle_.reset();directWorkout_.reset();
     pairedRefreshPending_=pairedDirectRefreshSent_=false;pairedRefreshAt_=0;
     singleAutoFollowup_=SingleAutoFollowup::None;
@@ -488,6 +494,41 @@ bool PhysicalSession::read(std::initializer_list<uint16_t> ids) {
     Bytes b; append16(b,uint16_t(ids.size()));
     for(auto id:ids) append16(b,id);
     return send(0x0f,b);
+}
+std::optional<PhysicalSession::RuntimeTargetContext> PhysicalSession::runtimeTargetContext() const {
+    if(readOnlyProbe_ || !standalone() || fresh(workout)!=1 ||
+       !report_.loadStateKnown || !report_.loaded || report_.autoLoadArmed) return {};
+    const auto m=fresh(motor),u=fresh(unit),w=fresh(base);
+    if(!m || !u || !w || (*u!=0 && *u!=1) ||
+       (freshMotorMode()==autoLoadMotorMode && fresh(autoLoadStatus)!=autoLoadComplete)) return {};
+    return RuntimeTargetContext{*m,*u,*w};
+}
+bool PhysicalSession::runtimeTargetCurrent(const RuntimeTargetObservation& sample,
+                                           const RuntimeTargetContext& context) const {
+    return sample.context==context && now_>=sample.at && now_-sample.at<=liveTargetFreshMs;
+}
+void PhysicalSession::clearRuntimeTargets() {
+    runtimeTarget_.reset();
+    singleMotorTarget_.reset();
+    singleMotorTargetPending_.reset();
+}
+bool PhysicalSession::pollSingleMotorTarget() {
+    const auto context=runtimeTargetContext();
+    if(!context || (runtimeTarget_ && runtimeTargetCurrent(*runtimeTarget_,*context)) ||
+       !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs ||
+       singleMotorTargetUnanswered_>=singleMotorTargetMissLimit) return false;
+    if(singleMotorTargetPending_ && now_>=singleMotorTargetPending_->at &&
+       now_-singleMotorTargetPending_->at<=liveTargetFreshMs) return false;
+    if(singleMotorTargetReadAt_ && now_>=*singleMotorTargetReadAt_ &&
+       now_-*singleMotorTargetReadAt_<singleMotorTargetReadSpacingMs) return false;
+    // Isolate the optional read from all control writes and required state
+    // groups. An unsupported register gets a small, finite probe budget.
+    singleMotorTargetReadAt_=now_;
+    singleMotorTargetPending_=MotorTargetRequest{now_,*context};
+    ++singleMotorTargetUnanswered_;
+    countTrace(singleMotorTargetReads_);
+    if(!read({motorTarget})) singleMotorTargetPending_.reset();
+    return true;
 }
 bool PhysicalSession::writeParameter(uint16_t id,int value,int bytes) {
     if(readOnlyProbe_) return false;
@@ -606,11 +647,17 @@ std::string PhysicalSession::bleTraceState() const {
         if(twinMotorTargetMin_)
             state+="["+std::to_string(*twinMotorTargetMin_)+","+std::to_string(*twinMotorTargetMax_)+"]";
     }
+    if(singleMotorTargetReads_)
+        state+=" MC20859="+std::to_string(singleMotorTargetReplies_)+"/"+std::to_string(singleMotorTargetReads_)+
+            "["+(singleMotorTargetLastValue_ ? std::to_string(*singleMotorTargetLastValue_) : "no reply")+"]";
     if(bleTrace_->rate || bleTrace_->mask)
         state+=" Hz/mask="+(bleTrace_->rate ? std::to_string(*bleTrace_->rate) : "-")+
             "/"+(bleTrace_->mask ? std::to_string(*bleTrace_->mask) : "-");
     if(bleTrace_->workoutLink==bleTrace_->links && bleTrace_->idleStartedAt)
         state+=" AA81idle="+std::to_string(bleTrace_->idleLastAt-*bleTrace_->idleStartedAt)+"ms";
+    if(bleTrace_->returnMarkers)
+        state+=" end/start="+std::to_string(bleTrace_->returnEndpoints)+"/"+
+            std::to_string(bleTrace_->returnMarkers)+bleTrace_->returnGate;
     return state;
 }
 std::vector<std::string> PhysicalSession::bleTraceReport() const {
@@ -644,7 +691,8 @@ std::vector<std::string> PhysicalSession::bleTraceReport() const {
     for(size_t i=0;i<trace.samples.size();++i) {
         const auto& sample=trace.samples[i];
         if(!sample.command) continue;
-        auto row=std::string("BLE ")+names[i]+" +"+std::to_string(sample.ms)+"ms l="+std::to_string(sample.link)+
+        const auto name=i==size_t(TraceSampleKind::IdleOrProgress) && sample.bytes[0]==0x81 ? "AA81 idle" : names[i];
+        auto row=std::string("BLE ")+name+" +"+std::to_string(sample.ms)+"ms l="+std::to_string(sample.link)+
             " c="+std::to_string(sample.channel)+" t="+std::to_string(sample.twin)+
             " proto/n="+std::to_string(sample.protocol)+"/"+std::to_string(sample.payloadBytes);
         size_t byte=0;
@@ -730,17 +778,34 @@ void PhysicalSession::traceFrame(size_t channel,const Frame& f) {
             traceSample(counters->phase==1 ? TraceSampleKind::Pull : TraceSampleKind::Return,
                         channel,f,{{0,6},{11,6},{46,6},{66,2}});
         }
+    } else if(p.size()==45 && p[0]==0x81 && p[1]==0x2b && !readOnlyProbe_ && standalone() &&
+              report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed) {
+        if(p[2]==1 || p[2]==3) {
+            if(trace.workoutLink!=trace.links) trace.idleStartedAt.reset();
+            trace.workoutLink=trace.links;
+            traceSample(p[2]==1 ? TraceSampleKind::Pull : TraceSampleKind::Return,channel,f,{{0,6},{11,6}});
+        } else if(p[2]==0 && motionAt_ && motionPhase_!=0) {
+            traceSample(TraceSampleKind::IdleOrProgress,channel,f,{{0,6},{11,6}});
+        }
     } else if(p.size()==39 && p[0]==0x80 && p[1]==0x25 && p[2]==1 && p[3]==0 && p[4]<=4) {
         traceSample(TraceSampleKind::Workout,channel,f,{{0,5}});
     } else if(p.size()==61 && p[0]==0x82 && p[1]==0x3b && (p[2]==1 || p[2]==2)) {
         // HJewkes c76a523 exact per-rep descriptor and numeric fields.
         const auto kind=p[2]==1 ? TraceSampleKind::RepPull : TraceSampleKind::RepReturn;
         traceSample(kind,channel,f,{{0,10}});
-    } else if(p.size()==66 && p[0]==0x84 && p[1]==0x40) {
+    } else if(p.size()==66 && p[0]==0x84 && p[1]==0x40 && twinObserved_) {
         // HJewkes c76a523 config calls the word at 38 pull-volume, while
         // a53804e read it as target. Record the bytes without interpretation.
-        traceSample(TraceSampleKind::Progress,channel,f,{{0,2},{38,4}});
+        traceSample(TraceSampleKind::IdleOrProgress,channel,f,{{0,2},{38,4}});
     }
+}
+void PhysicalSession::traceReturnBoundary(bool endpoint) {
+    if(!bleTrace_ || readOnlyProbe_ || !standalone()) return;
+    auto& trace=*bleTrace_;
+    countTrace(endpoint ? trace.returnEndpoints : trace.returnMarkers);
+    const auto show=[](std::optional<int64_t> value) {return value ? std::to_string(*value) : "-";};
+    trace.returnGate=" gate="+std::to_string(liveWeightReady())+" m/d/mt/v="+show(freshMotorMode())+
+        "/"+show(freshDirectMotorMode())+"/"+show(fresh(mountLock))+"/"+show(fresh(voidLock));
 }
 void PhysicalSession::apply(const Frame& f) {
     const auto& p=f.payload;
@@ -781,10 +846,9 @@ void PhysicalSession::apply(const Frame& f) {
         const auto decoded=decodeRuntimeTarget(f);
         if(!decoded) return;
         runtimeTarget_.reset();
-        const auto m=fresh(motor),mode=fresh(workout),u=fresh(unit),w=fresh(base);
-        if(decoded->targetTenthsLb && standalone() && report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed &&
-           m && mode==1 && u && w)
-            runtimeTarget_=RuntimeTargetObservation{*decoded->targetTenthsLb,now_,*m,*mode,*u,*w};
+        const auto context=runtimeTargetContext();
+        if(decoded->targetTenthsLb && context)
+            runtimeTarget_=RuntimeTargetObservation{*decoded->targetTenthsLb,now_,*context};
         updateReport();return;
     }
     if(f.command==twinStatusCommand) {
@@ -822,7 +886,7 @@ void PhysicalSession::apply(const Frame& f) {
                 if(scopeChanged && standaloneTrainingSeen_ && !standaloneTwinJoinedAt_ &&
                    decoded->state==twinStatusPaired && decoded->role!=TwinStatusRole::Unknown)
                     standaloneTwinJoinedAt_=now_;
-                runtimeTarget_.reset();
+                clearRuntimeTargets();
                 clearRepBoundary();automaticWeightWindow_.reset();
                 singleAutoFollowup_=SingleAutoFollowup::None;
                 motionAt_=0;pairedMotion_=pairedMotionUsableForEdit_=false;
@@ -849,7 +913,7 @@ void PhysicalSession::apply(const Frame& f) {
             clearTwinDisplayTelemetry();
             twinAa81Tails_={};
             directIdle_.reset();directWorkout_.reset();
-            runtimeTarget_.reset();
+            clearRuntimeTargets();
             clearRepBoundary();
             if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
             singleAutoFollowup_=SingleAutoFollowup::None;
@@ -904,7 +968,7 @@ void PhysicalSession::apply(const Frame& f) {
         // Only retain presence for a paired identifier; do not log/persist it.
         decoded[id]=id==pairedDevice ? int64_t(value!=0) :
             (id==chainsPercent || id==eccentricPercent) ? int32_t(value) :
-            (id==eccentric || id==liveWireWeight || id==twinMotorTargetProbe) ? int16_t(value) : int64_t(value);
+            (id==eccentric || id==liveWireWeight || id==motorTarget) ? int16_t(value) : int64_t(value);
     }
     if(at!=p.size()) return;
     if(f.command==0x0f) {
@@ -918,9 +982,23 @@ void PhysicalSession::apply(const Frame& f) {
             if(pair.first==telemetryRate) bleTrace_->rate=pair.second;
             if(pair.first==telemetrySubscribe) bleTrace_->mask=pair.second;
         }
-        if(pair.first==twinMotorTargetProbe) {
-            // Isolated, solicited read only. No cache entry feeds any control
-            // or display, and a late response after unload is ignored.
+        if(pair.first==motorTarget) {
+            // Fresh same-context replies may supply a local display target.
+            // Keep the unverified Twin scope confined to diagnostics.
+            if(f.command==0x0f && f.type==0x08 && count==1 && singleMotorTargetPending_) {
+                const auto request=*singleMotorTargetPending_;
+                singleMotorTargetPending_.reset();
+                const auto context=runtimeTargetContext();
+                if(context && *context==request.context && now_>=request.at &&
+                   now_-request.at<=liveTargetFreshMs) {
+                    singleMotorTargetLastValue_=int(pair.second);
+                    if(pair.second>=0 && pair.second<=maximumRuntimeTargetTenthsLb) {
+                        singleMotorTarget_=RuntimeTargetObservation{int(pair.second),now_,*context};
+                        singleMotorTargetUnanswered_=0;
+                        countTrace(singleMotorTargetReplies_);
+                    } else singleMotorTarget_.reset();
+                }
+            }
             if(f.command==0x0f && count==1 && twinMotorTargetPending_ && twinMotorTargetReadAt_ &&
                *twinMotorTargetReadAt_>twinTopologyAt_ && now_>=*twinMotorTargetReadAt_ &&
                now_-*twinMotorTargetReadAt_<=motionFreshMs && twinCounterContext()) {
@@ -965,9 +1043,11 @@ void PhysicalSession::apply(const Frame& f) {
             clearRepBoundary();
             if(automaticWeightWindow_) cancelWrites("Drop stopped: device changed");
         }
-        if(changed && (pair.first==chains || pair.first==eccentric || pair.first==chainsPercent || pair.first==eccentricPercent ||
+        if(changed && (pair.first==base || pair.first==unit || pair.first==motor || pair.first==workout ||
+           pair.first==autoLoadStatus || pair.first==twin || pair.first==remoteCoworker || pair.first==pairedDevice ||
+           pair.first==chains || pair.first==eccentric || pair.first==chainsPercent || pair.first==eccentricPercent ||
            pair.first==inverse || pair.first==mountain || pair.first==extraMode || pair.first==accessoryDisplayPercent))
-            runtimeTarget_.reset();
+            clearRuntimeTargets();
         values_[pair.first]={pair.second,now_};
         if(pair.first==motor && primaryRouteKnown()) {
             if(pair.second==0 || pair.second==1 || pair.second==pairedUnloaded || pair.second==pairedLoaded || pair.second==pairedAutoMode)
@@ -1110,12 +1190,17 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
         if(automaticWeightWindow_) cancelWrites("Drop stopped: movement resumed");
         if(p[2]==1) clearRepBoundary();
         else completedRepWindow_=false;
-        if(p[2]==1) {deviceSet_=u16(p,4);deviceRep_=u16(p,6);telemetryAt_=now_;}
+        if(p[2]==1) {
+            deviceSet_=u16(p,4);deviceRep_=u16(p,6);telemetryAt_=now_;
+            if(report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed && standalone())
+                lastPullMarker_=PullMarker{*deviceSet_,uint32_t(*deviceRep_)};
+        }
         // SDK 79f6c55 explicitly labels these pull START / return START.
         // Retain the device's counter as a candidate only. A separate fresh
         // AA81 return-to-idle transition must finish it before Stairs can act.
         if(p[2]==2) {
             const int set=u16(p,4);const auto rep=u16(p,6);
+            traceReturnBoundary(false);
             boundarySet_=set;
             const auto m=fresh(motor),u=fresh(unit),w=fresh(base);
             if(report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed && standalone() && m && u && w &&
@@ -1124,8 +1209,11 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
                 completedRepWindow_=false;
                 const bool returning=motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs &&
                     motionPhase_==3 && deviceSet_==set && deviceRep_==rep;
-                pendingReturn_=ReturnBoundary{set,rep,returning,*m,*u,*w};
+                const bool adjacentPull=lastPullMarker_ && lastPullMarker_->set==set &&
+                    lastPullMarker_->rep+1==rep;
+                pendingReturn_=ReturnBoundary{set,rep,returning,adjacentPull,*m,*u,*w};
             }
+            lastPullMarker_.reset();
         }
     } else if(p.size()==127 && p[0]==0x86 && p[1]==0x7d) {
         clearRepBoundary();
@@ -1168,7 +1256,12 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
            std::abs(motionPosition_-completedRepPosition_)>automaticWindowDriftMm)) completedRepWindow_=false;
         if(pendingReturn_) {
             const auto candidate=*pendingReturn_;
-            if(!continuous || candidate.set!=*deviceSet_ || candidate.rep!=uint32_t(rep) ||
+            // Captured AA82 pull/return counters are n-1 and n. A transition
+            // sample still carrying n-1 can arrive before the first return n.
+            // It supplies no return or idle proof; both must still report n.
+            const bool priorTransition=candidate.adjacentPull && !candidate.sawReturn &&
+                motionPhase_==2 && uint32_t(rep)+1==candidate.rep;
+            if(!continuous || candidate.set!=*deviceSet_ || (candidate.rep!=uint32_t(rep) && !priorTransition) ||
                fresh(motor)!=candidate.motor || fresh(unit)!=candidate.unit || fresh(base)!=candidate.base ||
                motionPhase_==1 || (candidate.sawReturn && motionPhase_==2)) pendingReturn_.reset();
             else if(motionPhase_==3) pendingReturn_->sawReturn=true;
@@ -1178,6 +1271,7 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
                 if(previousPhase==3 && stationary && report_.loadStateKnown && report_.loaded && !report_.autoLoadArmed) {
                     completedRep_=candidate.rep;repSet_=candidate.set;repAt_=now_;++repRevision_;
                     completedRepWindow_=true;completedRepPosition_=motionPosition_;
+                    traceReturnBoundary(true);
                     diagnostic("Rep return-to-idle observed set="+std::to_string(candidate.set)+" rep="+std::to_string(candidate.rep));
                 }
                 pendingReturn_.reset();
@@ -1286,11 +1380,9 @@ void PhysicalSession::updateReport() {
     const bool wasLoaded=report_.loadStateKnown && report_.loaded;
     report_={};
     updateReadback();
-    if(runtimeTarget_ && (!standalone() || fresh(motor)!=runtimeTarget_->motor || fresh(workout)!=runtimeTarget_->workout ||
-       fresh(unit)!=runtimeTarget_->unit || fresh(base)!=runtimeTarget_->base)) runtimeTarget_.reset();
     if(report_.twinDetected && !commandFailed_) status_.clear();
     const auto w=fresh(base),rawMotor=fresh(motor),m=freshMotorMode(),mode=fresh(workout),u=fresh(unit);
-    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) {clearRepBoundary();return;}
+    if(!w || !rawMotor || !mode || !u || (*u!=0 && *u!=1)) {clearRuntimeTargets();clearRepBoundary();return;}
     // Ryan dff6227 documents readback 0/1, distinct from write commands 4/5.
     // The October 18 unloaded capture reports 0. Retain recognized legacy
     // report values, but never turn an unknown value into an unloaded state.
@@ -1299,7 +1391,7 @@ void PhysicalSession::updateReport() {
     const int autoComplete=twinObserved_ ? pairedAutoComplete : autoLoadComplete;
     const bool knownAuto=m==autoMode && autoState && *autoState>=autoLoadWaiting && *autoState<=autoComplete;
     if(*mode!=1 || !m || (*m!=0 && *m!=1 && *m!=4 && *m!=5 && *m!=38 && *m!=39 && !knownAuto)) {
-        runtimeTarget_.reset();
+        clearRuntimeTargets();
         clearRepBoundary();
         // A newly unknown/non-training mode must invalidate the previous report
         // immediately. The weight target then remains an unconditional unload,
@@ -1328,7 +1420,7 @@ void PhysicalSession::updateReport() {
     report_.loaded=report_.loadStateKnown && loaded;
     report_.autoLoadArmed=report_.loadStateKnown && (*m==38 || (knownAuto && *autoState!=autoComplete));
     if(!report_.loaded || report_.autoLoadArmed) clearRepBoundary();
-    if(!report_.loaded || report_.autoLoadArmed) runtimeTarget_.reset();
+    if(!runtimeTargetContext()) clearRuntimeTargets();
     report_.autoLoadPhase.reset();report_.autoLoadCountdownMs.reset();report_.autoLoadCountdownAtMs=0;
     if(knownAuto || (*m==38 && autoState && *autoState>=autoLoadWaiting && *autoState<=autoComplete))
         report_.autoLoadPhase=int(*autoState);
@@ -1375,10 +1467,6 @@ void PhysicalSession::updateReport() {
     report_.held=live && !pairedMotion_ && !twinObserved_ && !report_.moving && fresh(offset) &&
         motionPosition_>=*fresh(offset)*10+heldExtensionMm && motionForce_>=heldForceTenthsLb;
     report_.force=standalone() && live ? std::optional<int>(int(std::lround(convertedWeightTicks(motionForce_,WeightUnit::Pounds,report_.unit)/10.0))) : std::optional<int>{};
-    if(runtimeTarget_ && standalone() && report_.loaded &&
-       now_>=runtimeTarget_->at && now_-runtimeTarget_->at<=liveTargetFreshMs) {
-        report_.liveTargetTenthsLb=runtimeTarget_->tenthsLb;report_.liveTargetAtMs=runtimeTarget_->at;
-    }
     // Rest-time register semantics have not been verified on this firmware.
     report_.restSeconds.reset();
     // Capability describes the source-backed base-register path. Execution also
@@ -1400,6 +1488,14 @@ void PhysicalSession::updateReport() {
 }
 TrainingReport PhysicalSession::trainingReport() const {
     auto result=report_;
+    if(const auto context=runtimeTargetContext()) {
+        const auto* target=runtimeTarget_ && runtimeTargetCurrent(*runtimeTarget_,*context) ? &*runtimeTarget_ :
+            singleMotorTarget_ && runtimeTargetCurrent(*singleMotorTarget_,*context) ? &*singleMotorTarget_ : nullptr;
+        if(target) {
+            result.liveTargetTenthsLb=target->tenthsLb;
+            result.liveTargetAtMs=target->at;
+        }
+    }
     result.autoLoadSupported=result.autoLoadSupported && autoLoadConfigurationReady();
     if(const auto* counters=twinCountersForDisplay()) result.twinDisplayCounters=counters->value;
     if(twinCounterContext()) {
@@ -1443,12 +1539,24 @@ SessionReadiness PhysicalSession::readiness() const {
         if(maximum>0 && maximum<=65535) r.capabilities.effectiveMaxWeightLbs=uint16_t(maximum);
     }
     const auto cable=fresh(position),zero=fresh(offset);
-    r.cableZero=cable && zero && std::abs(*cable-*zero)<=cableZeroToleranceCm;
+    if(cable && zero) {
+        const auto distance=*cable-*zero;
+        r.cableZero=std::abs(distance)<=cableZeroToleranceCm;
+        r.cableExtended=distance>cableZeroToleranceCm;
+    }
     r.twinSafe=standalone() || primaryTwinFresh();r.minWeightLbs=5;
     const auto m=freshMotorMode();
     const bool unloaded=m==0 || (primaryTwinFresh() && fresh(motor)==4);
     r.ready=!readOnlyProbe_ && accepted_ && activated_ && !unloading() && settingsReady() && unloaded && freshDirectMotorMode()==m && cable && zero && controlObservationsCurrent(true) &&
         fresh(mountLock)==securedMount && loadSafetyStatusSupported() && fresh(autoLoadStatus)==0;
+    if(r.cableExtended && r.ready && standalone()) {
+        // Use fresh standalone readbacks to classify remote eligibility.
+        // These volatile fields do not explain a Twin's native menu.
+        const auto direct=fresh(autoLoadEnabled),safety=fresh(autoLoadSafetyEnabled);
+        if(direct==0) r.extendedLoad=ExtendedLoadReadiness::SettingsBlocked;
+        else if(direct==1 && safety==0) r.extendedLoad=ExtendedLoadReadiness::SafetyCheckOff;
+        else if(report_.autoLoadSupported && autoLoadConfigurationReady()) r.extendedLoad=ExtendedLoadReadiness::Guided;
+    }
     if(readOnlyProbe_) r.reason=readOnlyControlReason();
     else if(!accepted_) r.reason="Waiting for VOLTRA acceptance";
     else if(!activated_) r.reason="Waiting for VOLTRA activation status";
@@ -1899,7 +2007,7 @@ void PhysicalSession::tick(uint64_t now) {
             // motors cannot cause a required state read to fail.
             ++twinMotorTargetReads_;
             twinMotorTargetReadAt_=now_;twinMotorTargetPending_=true;
-            if(!read({twinMotorTargetProbe})) twinMotorTargetPending_=false;
+            if(!read({motorTarget})) twinMotorTargetPending_=false;
             return;
         }
         if(!readOnlyProbe_ && primaryTwinFresh() && (pairedRefreshPending_ ||
@@ -1970,6 +2078,7 @@ void PhysicalSession::tick(uint64_t now) {
             }
             send(0x11,payload);return; // Notification selection only; no load/settings replay.
         }
+        if(!busy() && pollSingleMotorTarget()) return;
         if(backgroundRead_++%2) {
             switch(infoRead_++%11) {
             case 0:read({pairedDevice});break;

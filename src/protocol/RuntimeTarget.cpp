@@ -15,8 +15,7 @@ std::optional<RuntimeTarget> decodeRuntimeTarget(const Frame& f) {
         const int target=f.payload[localSize] | (int(f.payload[localSize+1])<<8);
         // Source's bounded telemetry range. This is not a setting capability
         // or permission to control resistance. 0xffff denotes no target.
-        constexpr int maximumTargetTenthsLb=10000;
-        if(target<=maximumTargetTenthsLb) sample.targetTenthsLb=target;
+        if(target<=maximumRuntimeTargetTenthsLb) sample.targetTenthsLb=target;
     }
     return sample;
 }

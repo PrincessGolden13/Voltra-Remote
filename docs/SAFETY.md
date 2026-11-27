@@ -1,5 +1,12 @@
 # Safety contract
 
+November 27: an explicit tap with an already extended cable can offer a
+confirmation for a known, unloaded standalone VOLTRA with fresh ready state
+and both Direct Load safety readbacks. Confirming revalidates that context
+and starts the existing guarded guided-load action once. The VOLTRA runs
+its own Safety Check. Settings-blocked cases explain the restriction on
+the weight screen. See [the video and protocol evidence](SINGLE_LIVE_2026_11_27.md#direct-load-with-the-cable-extended).
+
 November 18: explicit-load readiness supports fresh EP_VOID_LOCK 0 (catalog
 default and value in report bb697e8f) or 6 (previous successful Black observation).
 This is a narrow compatibility inference, not a manufacturer-confirmed decoded

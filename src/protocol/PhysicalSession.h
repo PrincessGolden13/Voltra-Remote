@@ -50,7 +50,7 @@ private:
     std::array<uint8_t,6> helloIdentity_{};
     std::array<FrameParser,3> parsers_; // Command, transport and telemetry response.
     std::array<uint64_t,3> fragmentAt_{};
-    enum class TraceSampleKind { Workout, Pull, Return, SingleB4, TwinB4, TwinB4Negative, RepPull, RepReturn, Progress, Count };
+    enum class TraceSampleKind { Workout, Pull, Return, SingleB4, TwinB4, TwinB4Negative, RepPull, RepReturn, IdleOrProgress, Count };
     struct TraceWindow { uint8_t offset=0, size=0; };
     struct TraceSample {
         uint32_t ms=0, link=0;
@@ -73,11 +73,14 @@ private:
         std::optional<uint64_t> idleStartedAt;
         uint64_t idleLastAt=0;
         std::string lastState;
+        unsigned returnMarkers=0, returnEndpoints=0;
+        std::string returnGate;
     };
     std::optional<BleTrace> bleTrace_;
     std::string bleTraceState() const;
     void traceFrame(size_t channel,const Frame&);
     void traceSample(TraceSampleKind,size_t channel,const Frame&,std::initializer_list<TraceWindow>);
+    void traceReturnBoundary(bool endpoint);
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::optional<Observed> directMotor_;
@@ -116,14 +119,29 @@ private:
     std::optional<uint64_t> twinMotorTargetReadAt_;
     bool twinMotorTargetPending_=false;
     std::optional<int> twinMotorTargetMin_,twinMotorTargetMax_;
-    // The terse runtime target belongs to one exact standalone loaded context.
-    // A settings/core/topology transition cannot reuse an earlier rep's target.
+    // All displayed targets belong to one exact standalone loaded context.
+    // A settings/core/topology transition cannot reuse an earlier reading.
+    struct RuntimeTargetContext {
+        int64_t motor,unit,base;
+        bool operator==(const RuntimeTargetContext& other) const {
+            return motor==other.motor && unit==other.unit && base==other.base;
+        }
+    };
     struct RuntimeTargetObservation {
         int tenthsLb;
         uint64_t at;
-        int64_t motor,workout,unit,base;
+        RuntimeTargetContext context;
     };
-    std::optional<RuntimeTargetObservation> runtimeTarget_;
+    struct MotorTargetRequest { uint64_t at; RuntimeTargetContext context; };
+    std::optional<RuntimeTargetObservation> runtimeTarget_,singleMotorTarget_;
+    std::optional<MotorTargetRequest> singleMotorTargetPending_;
+    std::optional<uint64_t> singleMotorTargetReadAt_;
+    unsigned singleMotorTargetReads_=0,singleMotorTargetReplies_=0,singleMotorTargetUnanswered_=0;
+    std::optional<int> singleMotorTargetLastValue_;
+    std::optional<RuntimeTargetContext> runtimeTargetContext() const;
+    bool runtimeTargetCurrent(const RuntimeTargetObservation&,const RuntimeTargetContext&) const;
+    void clearRuntimeTargets();
+    bool pollSingleMotorTarget();
     unsigned runtimeTargetFrames_=0;
     uint16_t runtimeTargetSource_=0;
     size_t runtimeTargetBytes_=0;
@@ -175,7 +193,9 @@ private:
     bool pairedMotionUsableForEdit_=false;
     uint8_t motionPhase_=0;
     // AA82 phase 2 starts the return; it is not a completed repetition.
-    struct ReturnBoundary { int set; uint32_t rep; bool sawReturn; int64_t motor,unit,base; };
+    struct PullMarker { int set; uint32_t rep; };
+    std::optional<PullMarker> lastPullMarker_;
+    struct ReturnBoundary { int set; uint32_t rep; bool sawReturn, adjacentPull; int64_t motor,unit,base; };
     std::optional<ReturnBoundary> pendingReturn_;
     bool completedRepWindow_=false;
     int completedRepPosition_=0;

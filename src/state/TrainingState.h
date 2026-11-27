@@ -41,8 +41,8 @@ struct TrainingReport {
     // from the selected base and from AA81 sensor force. Twin scope is unknown.
     std::optional<int> liveWeightLbs;
     uint64_t liveWeightAtMs=0;
-    // Independent B4 device target resistance, not measured cable tension or
-    // runtime register 16003. Paired target scope remains unknown.
+    // Standalone device target from B4 or an isolated motor-target read.
+    // The combined Twin target remains unknown.
     std::optional<int> liveTargetTenthsLb;
     uint64_t liveTargetAtMs=0;
     // Independent display feed. These counters do not imply a set boundary,

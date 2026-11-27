@@ -5,11 +5,14 @@
 #include <vector>
 namespace voltra {
 // A VOLTRA-level command boundary, separate from generic GATT transport.
+enum class ExtendedLoadReadiness { Unknown, SettingsBlocked, SafetyCheckOff, Guided };
 struct SessionReadiness {
     bool validated = false, ready = false, cableZero = false, twinSafe = false;
     VoltraCapabilities capabilities;
     uint16_t minWeightLbs = 0;
     std::string reason;
+    bool cableExtended = false;
+    ExtendedLoadReadiness extendedLoad = ExtendedLoadReadiness::Unknown;
 };
 enum class DeviceEndObservation { None, MountLockReleased };
 class ControlSession {

@@ -3,9 +3,9 @@
 Public source: https://github.com/PrincessGolden13/Voltra-Remote
 License: MIT for original code; third-party terms remain in THIRD_PARTY_NOTICES.md.
 
-The owner's requested behavior is a check at power-on and a prompt before
-installation. Settings -> Updates -> CHECK FOR UPDATES checks the same feed;
-INSTALL & RESTART downloads the matching compiled release without a computer.
+The remote checks at power-on and prompts before installation. Opening
+**Settings → Updates** checks the same feed automatically. **Install & Update**
+downloads the matching compiled release and restarts the remote.
 The ESP32 runs firmware, not source code. Merging code into GitHub does not
 publish an update until a maintainer releases a version.
 
@@ -39,8 +39,8 @@ publish an update until a maintainer releases a version.
   to share the 2.4 GHz radio with Wi-Fi. Without saved Wi-Fi discovery starts
   immediately. A person can
   select a VOLTRA immediately. A deferred boot check runs once Wi-Fi is ready
-  while disconnected. Failed checks never trap the app or retry continuously;
-  the manual button can retry. No Internet is needed for ordinary operation.
+  while disconnected. Return to Settings and reopen Updates to retry a failed
+  check. No Internet is needed for ordinary operation.
 - A found release opens the Updates prompt once from Devices, without interrupting
   a connected training session. Checking can be interrupted by a connection.
   Installing reserves the disconnected remote: selection, automatic connection,

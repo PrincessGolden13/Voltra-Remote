@@ -2,6 +2,7 @@
 #include "FrameParser.h"
 
 namespace voltra {
+inline constexpr int maximumRuntimeTargetTenthsLb=10000;
 // One recognized independent B4 sample. A recognized sample without a valid
 // target explicitly clears the previous target; unknown packet shapes do not.
 struct RuntimeTarget {

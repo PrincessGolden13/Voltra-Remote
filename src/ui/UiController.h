@@ -12,7 +12,7 @@
 #include <array>
 #include <map>
 namespace voltra {
-enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice, ConnectionNotice, ControlNotice };
+enum class Screen { Devices, Main, Magic, Eccentric, Drops, Presets, SavePreset, OverridePreset, Live, Settings, Reset, Wifi, Updates, About, PresetNotice, ForgetDevice, ConnectionNotice, ControlNotice, DirectLoadConfirm };
 class UiController {
 public:
     UiController(HardwarePlatform&, TrainingApplication&, RemoteConfigurationStore* = nullptr, RuntimeMode* = nullptr, WifiSetup* = nullptr, FirmwareUpdate* = nullptr, DebugReports* = nullptr);
@@ -40,6 +40,7 @@ private:
     uint64_t touchStartedAt_=0,touchEventAt_=0;
     std::string lastDiagnosticMessage_;
     uint64_t loadRefusalRevision_=0;
+    bool confirmDirectLoadQueued_=false; // One explicit release, revalidated after the BLE poll.
     void openDebugDialog();
     void closeDebugDialog();
     void updateDebugDialog();
@@ -145,7 +146,7 @@ private:
     lv_obj_t* holdBar_ = nullptr;
     lv_obj_t *wifiBody_=nullptr,*wifiButton_=nullptr,*wifiReset_=nullptr,*wifiBack_=nullptr;
     bool wifiConfiguring_=false;
-    lv_obj_t *updateBody_=nullptr,*updateCheck_=nullptr,*updateInstall_=nullptr;
+    lv_obj_t *updateBody_=nullptr,*updateInstall_=nullptr;
     lv_obj_t* settingsValues_[4]{};
     lv_obj_t* bleTraceButton_=nullptr;
     bool bleTraceEnabled_=false;
