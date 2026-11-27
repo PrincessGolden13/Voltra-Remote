@@ -21,12 +21,9 @@ constexpr uint64_t motionFreshMs=500;
 // host-error range. Only an ended, established link can use this indication.
 constexpr int peerTerminatedLinkCode=0x200+0x13;
 constexpr uint64_t restPauseBarDelayMs=250; // User-requested visual threshold.
-// The ordinary read-only path visits each candidate at most once. Allow BLE
-// connection/bootstrap time, then six seconds for independent role evidence.
+// Each candidate gets one transport request. Allow Bluetooth setup and six
+// seconds of role verification, including a separate window after handoff.
 constexpr uint64_t selectionDeadlineMs=30000,selectionReadDeadlineMs=6000;
-// Allow the deliberate known-controller recovery its radio budget, previous
-// link teardown, fresh GATT setup and read-only Twin verification.
-constexpr uint64_t twinRecoveryDeadlineMs=75000;
 const char* restPauseLimitError="RP pause must be shorter than Auto Unload";
 std::string connectingStatus(const std::string& name,const std::string& peer={}) {
     const std::string device=name.empty() ? "VOLTRA" : name;
@@ -97,16 +94,25 @@ DeviceId TrainingApplication::selectionDevice(const DeviceId& id) const {
 }
 DeviceId TrainingApplication::reachableSelectionEndpoint(const DeviceId& id) const {
     const auto preferred=selectionDevice(id);
-    const auto visible=[&](const DeviceId& candidate) {
-        return now_>=latestAdvertisedAt_ && now_-latestAdvertisedAt_<=discoveryGraceMs &&
-            std::find(latestAdvertised_.begin(),latestAdvertised_.end(),candidate)!=latestAdvertised_.end();
-    };
-    if(visible(preferred)) return preferred;
+    if(latestScanSaw(preferred)) return preferred;
     const auto link=twinLinks_.find(preferred);
-    if(link!=twinLinks_.end() && visible(link->second.peer)) return link->second.peer;
+    if(link!=twinLinks_.end() && latestScanSaw(link->second.peer)) return link->second.peer;
     // A saved pair is navigation only. Starting at its advertising member does
     // not authorize it as the primary; normal selection rechecks live evidence.
     return preferred;
+}
+bool TrainingApplication::latestScanSaw(const DeviceId& id) const {
+    return now_>=latestAdvertisedAt_ && now_-latestAdvertisedAt_<=discoveryGraceMs &&
+        std::any_of(latestAdvertised_.begin(),latestAdvertised_.end(),
+            [&](const DeviceId& candidate){return sameDeviceIdentity(candidate,id);});
+}
+bool TrainingApplication::selectionEndpointTried(const DeviceId& id) const {
+    return std::any_of(selectionProbed_.begin(),selectionProbed_.end(),
+        [&](const DeviceId& attempted){return sameDeviceIdentity(attempted,id);});
+}
+bool TrainingApplication::selectionPeerReachable() const {
+    return !selectionPeerCandidate_.empty() && !selectionEndpointTried(selectionPeerCandidate_) &&
+        latestScanSaw(selectionPeerCandidate_);
 }
 void TrainingApplication::setTopologyDiscoveryEnabled(bool enabled) {
     topologyDiscoveryEnabled_=enabled;
@@ -656,8 +662,7 @@ bool TrainingApplication::startSelection(const DeviceId& id, bool userSelected) 
 bool TrainingApplication::beginSelectionEndpoint(const DeviceId& id, BleConnectionPolicy policy,
                                                   const std::string& peerName) {
     const bool recovering=policy==BleConnectionPolicy::RecoverKnownEndpoint;
-    if(!recovering && (selectionProbed_.size()>=2 ||
-       std::find(selectionProbed_.begin(),selectionProbed_.end(),id)!=selectionProbed_.end())) return false;
+    if(selectionProbed_.size()>=2 || selectionEndpointTried(id)) return false;
     const auto it=std::find_if(devices_.begin(),devices_.end(),[&](const auto& d){return d.id==id && (d.online || remembered(id));});
     const auto saved=std::find_if(recent_.begin(),recent_.end(),[&](const auto& d){return d.id==id;});
     DeviceEntry chosen;
@@ -713,6 +718,7 @@ void TrainingApplication::failSelection(const std::string& reason,BleConnectionS
     const auto elapsed=now_>=selectionStartedAt_ ? now_-selectionStartedAt_ : 0;
     lastConnectionFailure_=("at="+std::to_string(now_)+" elapsedMs="+std::to_string(elapsed)+" reason="+failure).substr(0,180);
     diagnostic("Connection selection failed: "+failure);
+    if(resolvingSelection()) for(const auto& endpoint:selectionProbed_) markTopologyProbed(endpoint);
     leave();message_=failure;selectionPhase_=SelectionPhase::Failed;
     connectionEnd_=end;
     // A failed GAP connection can have several causes. Give troubleshooting
@@ -728,10 +734,9 @@ bool TrainingApplication::runSelection() {
     }
     if(selectionPhase_!=SelectionPhase::Resolving) return false;
     const bool recovering=!recoveryFollower_.empty();
-    const auto deadline=recovering ? twinRecoveryDeadlineMs : selectionDeadlineMs;
-    if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=deadline) {
+    if(now_<selectionStartedAt_ || now_-selectionStartedAt_>=selectionDeadlineMs) {
         if(recovering) {
-            if(controller_.connecting()) failSelection("Bluetooth radio connection timed out",BleConnectionStage::Radio);
+            if(controller_.connecting()) failSelection("Twin controller unavailable",BleConnectionStage::Radio);
             else failSelection("Could not verify the paired controller");
             return true;
         }
@@ -740,8 +745,8 @@ bool TrainingApplication::runSelection() {
         const auto r=report();
         const bool identityFresh=connected() && session_.accepted() && r.twinStatusFresh &&
             now_>=r.twinAtMs && now_-r.twinAtMs<=2000 && !r.twinPeerId.empty();
-        if(selectionProbed_.size()>1 && identityFresh && (r.twinPeerId!=selectionFirstEndpoint_ ||
-           (selectionFirstPeerObserved_ && selected_!=selectionExpectedPeer_))) {
+        if(selectionProbed_.size()>1 && identityFresh && (!sameDeviceIdentity(r.twinPeerId,selectionFirstEndpoint_) ||
+           (selectionFirstPeerObserved_ && !sameDeviceIdentity(selected_,selectionExpectedPeer_)))) {
             failSelection("VOLTRA pair changed while connecting");return true;
         }
         const auto stage=selectionFirstFailureStage_;
@@ -751,14 +756,16 @@ bool TrainingApplication::runSelection() {
     if(controller_.connecting()) return true;
     if(!connected()) {
         const auto failure=transport_.connectionFailure();
-        if(recovering) {failSelection(controller_.feedback(),failure.stage);return true;}
+        if(recovering) {
+            failSelection(failure.stage==BleConnectionStage::Radio || failure.stage==BleConnectionStage::Setup
+                ? "Twin controller unavailable" : controller_.feedback(),failure.stage);
+            return true;
+        }
         if(selectionFirstFailure_.empty()) {
             selectionFirstFailure_=std::string(controller_.feedback()).substr(0,160);
             selectionFirstFailureStage_=failure.stage;
         }
-        if(selectionProbed_.size()==1 && !selectionFirstAccepted_ && failure.stage!=BleConnectionStage::None)
-            selectionFirstFailedBeforeAcceptance_=true;
-        if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
+        if(selectionPeerReachable()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
             failSelection(message_,transport_.connectionFailure().stage);return true;
@@ -766,10 +773,7 @@ bool TrainingApplication::runSelection() {
         failSelection(controller_.feedback(),failure.stage);return true;
     }
     if(!selectionReading_) {selectionReadAt_=now_;selectionReading_=true;}
-    if(session_.accepted()) {
-        selectionEndpointAccepted_=true;
-        if(selectionProbed_.size()==1) selectionFirstAccepted_=true;
-    }
+    if(session_.accepted()) selectionEndpointAccepted_=true;
     const auto r=report();
     // Full fresh identity can nominate a read-only candidate while link-state
     // semantics remain unknown. It cannot promote that candidate to controls.
@@ -784,8 +788,8 @@ bool TrainingApplication::runSelection() {
         } else if(selectionProbed_.size()==1) {
             selectionExpectedPeer_=r.twinPeerId;selectionFirstPeerObserved_=true;
             selectionPeerCandidate_=r.twinPeerId;
-        } else if(r.twinPeerId!=selectionFirstEndpoint_ ||
-                  (selectionFirstPeerObserved_ && selected_!=selectionExpectedPeer_)) {
+        } else if(!sameDeviceIdentity(r.twinPeerId,selectionFirstEndpoint_) ||
+                  (selectionFirstPeerObserved_ && !sameDeviceIdentity(selected_,selectionExpectedPeer_))) {
             failSelection("VOLTRA pair changed while connecting");return true;
         }
     }
@@ -829,12 +833,10 @@ bool TrainingApplication::runSelection() {
             failSelection("Could not verify the paired controller");
         return true;
     }
-    const bool verifiedPeerPreviouslyFailed=selectionProbed_.size()==2 && selectionFirstFailedBeforeAcceptance_ &&
-        selectionFirstFailureStage_==BleConnectionStage::Radio && r.twinPeerId==selectionFirstEndpoint_;
-    if(userSelected_ && follower && (selectionProbed_.size()==1 || verifiedPeerPreviouslyFailed)) {
-        // Steven's known-address recovery targets the controller only. This
-        // follows current own-matched follower evidence and permits no writes
-        // until the controller reports the reciprocal, freshly verified pair.
+    if(userSelected_ && follower && !selectionEndpointTried(r.twinPeerId)) {
+        // Current own-matched follower evidence can nominate an exact address
+        // even when the controller does not appear in Devices. Verify its
+        // reciprocal pair before allowing any commands.
         traceSelectionEndpoint();
         recoveryFollower_=selected_;
         selectionStartedAt_=now_;
@@ -843,19 +845,20 @@ bool TrainingApplication::runSelection() {
             failSelection(message_,transport_.connectionFailure().stage);
         return true;
     }
-    if(follower && selectionProbed_.size()==2 && selectionFirstFailedBeforeAcceptance_ && selectionFirstFailureStage_!=BleConnectionStage::None &&
-       r.twinPeerId==selectionFirstEndpoint_) {
-        // The peer is identified, but its earlier connection failed. Preserve
-        // that real failure; revisiting it here would stack another retry loop.
-        failSelection(selectionFirstFailure_,selectionFirstFailureStage_);return true;
+    if(follower && selectionEndpointTried(r.twinPeerId)) {
+        // Radio retries belong to the endpoint's original transport request.
+        // A follower response cannot restart that endpoint's attempt budget.
+        failSelection("Twin controller unavailable",selectionFirstFailureStage_);return true;
     }
     if(follower || now_-selectionReadAt_>=selectionReadDeadlineMs) {
-        if(!selectionPeerCandidate_.empty() && std::find(selectionProbed_.begin(),selectionProbed_.end(),selectionPeerCandidate_)==selectionProbed_.end()) {
+        if(selectionPeerReachable()) {
             traceSelectionEndpoint();
             if(beginSelectionEndpoint(selectionPeerCandidate_)) return true;
             failSelection(message_,transport_.connectionFailure().stage);return true;
         }
-        failSelection(paired ? "Could not identify the paired controller" : "Could not read VOLTRA state");return true;
+        failSelection(follower ? "Twin controller unavailable" :
+            paired ? "Could not identify the paired controller" : "Could not read VOLTRA state");
+        return true;
     }
     return true;
 }
@@ -881,7 +884,7 @@ void TrainingApplication::leave(bool preserveFailure) {
     selectionPhase_=SelectionPhase::Idle;selectionStartedAt_=selectionEndpointStartedAt_=selectionReadAt_=0;selectionReading_=false;
     selectionStatus_.clear();
     userSelected_=false;recoveryFollower_.clear();
-    selectionEndpointAccepted_=selectionFirstAccepted_=selectionFirstFailedBeforeAcceptance_=false;
+    selectionEndpointAccepted_=false;
     selectionFirstFailureStage_=BleConnectionStage::None;
     selectionProbed_.clear();selectionPeerCandidate_.clear();
     selectionFirstEndpoint_.clear();selectionExpectedPeer_.clear();selectionResolvedPeer_.clear();

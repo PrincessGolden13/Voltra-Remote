@@ -1,3 +1,12 @@
+> November 27 v0.4.26. An idle linked VOLTRA disconnect returns directly to
+> Devices. Live disconnects and confirmed mounting-lock release retain the
+> appropriate notice. A Twin selection visits each Bluetooth identity at most
+> once, with up to two radio attempts. A verified controller can open the
+> pair from its link alone. Twin Live returns to Adjust on confirmed rest
+> or after 15 seconds of fresh, continuous reported idle. The idle presentation
+> has no effect on reported set boundaries, load or automatic controls.
+> See [Twin connection and Live follow-up](TWIN_RECOVERY_2026_11_27.md).
+>
 > November 27 v0.4.25. Both Drops editors offer Back. Unsupported Twin
 > recipes can be edited and saved locally without arming an automatic drop.
 > RP selection uses a distinct outline and accent text. Remote Auto Load

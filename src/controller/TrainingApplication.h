@@ -31,6 +31,7 @@ public:
     bool selectionReadOnlyView() const { return selectionReadOnlyView_; }
     bool selectionFailed() const { return selectionPhase_==SelectionPhase::Failed; }
     bool establishedConnectionEnded() const { return connectionEnd_!=ConnectionEnd::None; }
+    bool connectionEndedOnMountRelease() const { return connectionEnd_==ConnectionEnd::MountLockReleased; }
     const char* connectionEndNotice() const;
     bool suggestDisconnectOtherBluetooth() const { return suggestDisconnectOtherBluetooth_; }
     bool canRetrySelection() const;
@@ -124,8 +125,7 @@ private:
     SelectionPhase selectionPhase_=SelectionPhase::Idle;
     uint64_t selectionStartedAt_=0,selectionEndpointStartedAt_=0,selectionReadAt_=0;
     bool selectionReading_=false;
-    bool selectionEndpointAccepted_=false,selectionFirstAccepted_=false;
-    bool selectionFirstFailedBeforeAcceptance_=false;
+    bool selectionEndpointAccepted_=false;
     BleConnectionStage selectionFirstFailureStage_=BleConnectionStage::None;
     std::vector<DeviceId> selectionProbed_;
     DeviceId selectionPeerCandidate_;
@@ -142,6 +142,9 @@ private:
     bool startSelection(const DeviceId&, bool userSelected);
     bool beginSelectionEndpoint(const DeviceId&, BleConnectionPolicy = BleConnectionPolicy::Standard,
                                 const std::string& peerName = {});
+    bool selectionEndpointTried(const DeviceId&) const;
+    bool latestScanSaw(const DeviceId&) const;
+    bool selectionPeerReachable() const;
     bool runSelection();
     void failSelection(const std::string&, BleConnectionStage stage=BleConnectionStage::None,
                        ConnectionEnd end=ConnectionEnd::None);

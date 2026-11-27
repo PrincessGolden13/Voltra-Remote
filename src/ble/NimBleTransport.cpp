@@ -12,12 +12,12 @@ struct RadioPolicy {
     uint32_t budgetMs, attemptMs;
     unsigned maximumAttempts;
 };
-constexpr RadioPolicy standardRadio{10000,4500,3};
-// The longer window covers the ~50 s recovery observed in Steven's capture.
-// Backoff and individual attempts share this bound.
-constexpr RadioPolicy recoveryRadio{55000,10000,7};
-constexpr uint32_t standardRetryDelayMs=500, recoveryFirstDelayMs=1500, recoveryMaxDelayMs=15000, mtuWaitMs=1000;
-// Refresh the exact endpoint's radio route in the existing retry gaps.
+constexpr unsigned maximumConnectionAttempts=2;
+constexpr RadioPolicy standardRadio{10000,4500,maximumConnectionAttempts};
+// Recovery adds time for one exact-address scan between the two attempts.
+constexpr RadioPolicy recoveryRadio{11000,4500,maximumConnectionAttempts};
+constexpr uint32_t standardRetryDelayMs=500, mtuWaitMs=1000;
+// Refresh the exact endpoint's radio route before recovery and during backoff.
 constexpr uint32_t recoveryScanMs=1200;
 // Allow the pinned stack's terminal callback to return before client reuse.
 // This is a radio handoff policy, not a VOLTRA command or readiness delay.
@@ -132,11 +132,8 @@ struct NimBleTransport::Impl : NimBLEScanCallbacks, NimBLEClientCallbacks {
     uint64_t recoveryObservationOrder=0;
     const RadioPolicy& radioPolicy() const { return extendedRecovery ? recoveryRadio : standardRadio; }
     uint32_t retryDelay() const {
-        if(!extendedRecovery) return standardRetryDelayMs;
-        const unsigned shift=std::min(4u,attempts ? attempts-1 : 0);
-        return std::min(recoveryFirstDelayMs<<shift,recoveryMaxDelayMs);
+        return extendedRecovery ? recoveryScanMs : standardRetryDelayMs;
     }
-    bool timeoutRetryUsed=false;
     bool terminalObserved=true,mtuReady=false;
     BleConnectionFailure failure;
     bool resolveRadioTarget() {
@@ -342,23 +339,27 @@ TransportResult NimBleTransport::connect(const DeviceId& id,BleConnectionPolicy 
     const auto address=deviceAddress(id);
     const bool extended=policy==BleConnectionPolicy::RecoverKnownEndpoint;
     std::optional<NimBLEAddress> target;
-    if(validAddress(id)) {
-        bool observed=false;
-        {
-            std::lock_guard<std::mutex> lock(impl_->mutex);
-            const auto found=impl_->observedRadios.find(address);
-            if(found!=impl_->observedRadios.end()) {target=found->second.address;observed=true;}
+    bool routeFresh=false;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        const auto found=impl_->observedRadios.find(address);
+        if(found!=impl_->observedRadios.end()) {
+            const auto& observation=found->second;
+            if(validAddress(id)) target=observation.address;
+            routeFresh=observation.connectable && impl_->now>=observation.at &&
+                impl_->now-observation.at<=recoveryScanMs;
         }
-        if(!observed && !extended) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
-    } else target=NimBLEAddress(address,uint8_t(id[18]-'0'));
+    }
+    if(validDeviceId(id)) target=NimBLEAddress(address,uint8_t(id[18]-'0'));
+    if(!target && !extended) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Unsupported;}
     if(address.empty()) {impl_->fail(BleConnectionStage::Setup);return TransportResult::Failed;}
     if(impl_->scanner->isScanning()) impl_->scanner->stop();
     disconnect();
     impl_->targetAddress=address;
     impl_->target=target;
     impl_->extendedRecovery=extended;
-    impl_->recoveryScanDue=extended;
-    impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;impl_->timeoutRetryUsed=false;
+    impl_->recoveryScanDue=extended && !routeFresh;
+    impl_->connecting=true;impl_->attempts=0;impl_->retryAt=impl_->now;
     // Accepted means queued; onConnection reports completion/failure later.
     return TransportResult::Accepted;
 }
@@ -532,12 +533,10 @@ void NimBleTransport::poll(uint64_t now) {
         impl_->fail(impl_->connected ? BleConnectionStage::Link : BleConnectionStage::Radio,event.reason,hostTimeout);
         if(impl_->connected) {disconnect();return;}
         if(impl_->connecting && impl_->attempts) {
-            const bool retryable=event.reason==establishmentFailure ||
-                (hostTimeout && (impl_->extendedRecovery || !impl_->timeoutRetryUsed));
+            const bool retryable=event.reason==establishmentFailure || hostTimeout;
             const auto radioElapsed=now>=impl_->radioStartedAt ? now-impl_->radioStartedAt : policy.budgetMs;
             const auto delayMs=impl_->retryDelay();
             if(retryable && impl_->attempts<policy.maximumAttempts && radioElapsed+delayMs<policy.budgetMs) {
-                if(hostTimeout) impl_->timeoutRetryUsed=true;
                 impl_->retryAt=now+delayMs;
                 impl_->recoveryScanDue=impl_->extendedRecovery;
                 impl_->log("BLE connect retry code="+std::to_string(event.reason)+" afterMs="+

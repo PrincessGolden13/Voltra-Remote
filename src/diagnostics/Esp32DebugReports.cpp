@@ -16,7 +16,7 @@ extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
 namespace voltra {
 namespace {
 constexpr size_t maximumReportBytes=12*1024,maximumContextBytes=2048,maximumResponseBytes=1024;
-constexpr size_t maximumTraceEvents=10;
+constexpr size_t maximumTraceEvents=11;
 // IDF 4.4 limits an NVS string to 4000 bytes including the terminator. A
 // bounded blob permits larger reports and leaves the legacy string readable.
 constexpr char pendingReportKey[]="pending-v2",legacyReportKey[]="pending";

@@ -50,7 +50,7 @@ private:
     std::array<uint8_t,6> helloIdentity_{};
     std::array<FrameParser,3> parsers_; // Command, transport and telemetry response.
     std::array<uint64_t,3> fragmentAt_{};
-    enum class TraceSampleKind { Workout, Pull, Return, SingleB4, TwinB4, TwinB4Negative, Rep, Progress, Count };
+    enum class TraceSampleKind { Workout, Pull, Return, SingleB4, TwinB4, TwinB4Negative, RepPull, RepReturn, Progress, Count };
     struct TraceWindow { uint8_t offset=0, size=0; };
     struct TraceSample {
         uint32_t ms=0, link=0;
@@ -62,14 +62,16 @@ private:
     };
     struct BleTrace {
         uint64_t startedAt=0;
-        unsigned links=0;
+        unsigned links=0, workoutLink=0;
         struct Channel { unsigned notifications=0, frames=0, b4Headers=0; };
         std::array<Channel,3> channels{};
         unsigned b4Frames=0;
         uint16_t b4Protocol=0, b4PayloadBytes=0, aa81PayloadBytes=0, aa94PayloadBytes=0;
-        std::array<unsigned,7> vendorFrames{}; // AA80–AA85, AA94.
+        std::array<unsigned,8> vendorFrames{}; // AA80–AA86, AA94.
         std::array<TraceSample,size_t(TraceSampleKind::Count)> samples{};
         std::optional<int64_t> rate, mask;
+        std::optional<uint64_t> idleStartedAt;
+        uint64_t idleLastAt=0;
         std::string lastState;
     };
     std::optional<BleTrace> bleTrace_;
@@ -148,6 +150,7 @@ private:
     std::optional<TimedTwinCounters> twinB4Counters_,twinAa81Counters_;
     std::optional<Observed> twinRepPhase_;
     std::optional<TwinWorkoutPhase> twinWorkoutPhase_;
+    std::optional<uint64_t> twinIdleSince_;
     // Uninterpreted AA81 suffix for diagnostics only. Retained across unload.
     struct TwinAa81Tail { uint16_t set,rep,word; uint64_t at; };
     std::array<std::optional<TwinAa81Tail>,2> twinAa81Tails_{};
