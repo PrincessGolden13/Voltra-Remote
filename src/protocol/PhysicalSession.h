@@ -30,6 +30,8 @@ public:
     bool commandFailed() const override { return commandFailed_; }
     const std::string& status() const override { return status_; }
     std::string diagnosticState() const override;
+    void setBleTraceEnabled(bool) override;
+    std::vector<std::string> bleTraceReport() const override;
     DeviceEndObservation endObservation(uint64_t now) const override;
     SessionReadiness readiness() const override;
     TrainingReport trainingReport() const override;
@@ -48,6 +50,32 @@ private:
     std::array<uint8_t,6> helloIdentity_{};
     std::array<FrameParser,3> parsers_; // Command, transport and telemetry response.
     std::array<uint64_t,3> fragmentAt_{};
+    enum class TraceSampleKind { Workout, Pull, Return, SingleB4, TwinB4, TwinB4Negative, Rep, Progress, Count };
+    struct TraceWindow { uint8_t offset=0, size=0; };
+    struct TraceSample {
+        uint32_t ms=0, link=0;
+        uint8_t channel=0, command=0;
+        uint16_t protocol=0, payloadBytes=0;
+        bool twin=false;
+        std::array<TraceWindow,4> windows{};
+        std::array<uint8_t,20> bytes{};
+    };
+    struct BleTrace {
+        uint64_t startedAt=0;
+        unsigned links=0;
+        struct Channel { unsigned notifications=0, frames=0, b4Headers=0; };
+        std::array<Channel,3> channels{};
+        unsigned b4Frames=0;
+        uint16_t b4Protocol=0, b4PayloadBytes=0, aa81PayloadBytes=0, aa94PayloadBytes=0;
+        std::array<unsigned,7> vendorFrames{}; // AA80–AA85, AA94.
+        std::array<TraceSample,size_t(TraceSampleKind::Count)> samples{};
+        std::optional<int64_t> rate, mask;
+        std::string lastState;
+    };
+    std::optional<BleTrace> bleTrace_;
+    std::string bleTraceState() const;
+    void traceFrame(size_t channel,const Frame&);
+    void traceSample(TraceSampleKind,size_t channel,const Frame&,std::initializer_list<TraceWindow>);
     struct Observed { int64_t value; uint64_t at; };
     std::map<uint16_t,Observed> values_;
     std::optional<Observed> directMotor_;
@@ -192,6 +220,7 @@ private:
     void updateReadback();
     bool settingsReady() const;
     bool loadSafetyStatusSupported() const;
+    bool autoLoadConfigurationReady() const;
     bool controlContextReady() const;
     bool liveWeightReady() const;
     bool pairedManualWeightReady() const;

@@ -63,9 +63,6 @@ struct TrainingReport {
     int weightIncrement = 1; // Smallest absolute-setting step in display ticks; not the base floor.
     std::array<bool, 3> magicSupported{};
     bool eccentricSupported = false, autoLoadSupported = false, liveWeightSupported = false;
-    // Exact current configuration readbacks used only to explain an unavailable
-    // hold. Missing or out-of-scope fields have no value.
-    std::optional<bool> autoLoadEnabled, autoLoadSafetyEnabled;
     bool liveModifierAmountsSupported = false; // Same curve and units; never a load/reassertion.
     // Explicit base-only dial edits while loaded and idle. Separate from the
     // automatic drop capability; a paired source must observe both channels.

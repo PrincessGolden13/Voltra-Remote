@@ -1,5 +1,27 @@
 # Validation status and pending tests
 
+## November 27 v0.4.25 Twin Drops and BLE trace
+
+Actual LVGL tests for 360, 466 and 480 px passed 27 Drops cases, 420 RP
+assertions and 105 trace-toggle assertions. Back discards changes, Twin Save
+retains a disabled recipe, and the loaded and stale-state touch targets send
+an explicit unload. Single Apply keeps its existing behavior. A full Hold
+arc is visually distinct from selection. Trace starts off, switches without
+settings or BLE writes, clears on disable and is captured only on SEND.
+Receipts are under `/workspace/preview-tools/twin-drops-v0425` and
+`/workspace/preview-tools/rp-selection-v0425/current`.
+
+All 31 physical-session regression scenarios and two focused Auto scenarios
+passed with a simulated transport. Ready single and Twin requests send one
+trigger with fresh matching flags. An unsupported or stale request sends none.
+The hold/input matrix passed 129 scenarios and 1,386 assertions. The offline
+core and packet inspector builds pass. No physical radio or motor operation.
+
+The production report serializer was compiled with host stubs. Seven
+fixtures passed the inbox handler with a simulated database. Ordinary
+reports matched the previous JSON byte for byte. The trace is placed first
+and counts toward the existing report limits. No reports were uploaded.
+
 ## November 26 v0.4.24 Twin workout recovery and rep timing
 
 Report evidence and limits are in [Twin workout transitions and rep timing](TWIN_LIFECYCLE_2026_11_26.md).

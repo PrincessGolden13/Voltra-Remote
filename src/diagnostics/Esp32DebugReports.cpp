@@ -1,5 +1,6 @@
 #include "Esp32DebugReports.h"
 #include "Esp32CrashNotes.h"
+#include <algorithm>
 #include <Arduino.h>
 #include <Preferences.h>
 #include <WiFi.h>
@@ -15,6 +16,7 @@ extern "C" esp_err_t esp_crt_bundle_attach(void* conf);
 namespace voltra {
 namespace {
 constexpr size_t maximumReportBytes=12*1024,maximumContextBytes=2048,maximumResponseBytes=1024;
+constexpr size_t maximumTraceEvents=10;
 // IDF 4.4 limits an NVS string to 4000 bytes including the terminator. A
 // bounded blob permits larger reports and leaves the legacy string readable.
 constexpr char pendingReportKey[]="pending-v2",legacyReportKey[]="pending";
@@ -154,6 +156,10 @@ std::string field(const std::string& body,const char* name) {
     const std::string result=cJSON_IsString(value) && value->valuestring ? value->valuestring : "";
     cJSON_Delete(json);return result;
 }
+std::string encodeEvent(const EventLog::Event& event) {
+    return "{\"at\":"+std::to_string(event.at)+",\"message\":"+
+        EventLog::quote(event.message.substr(0,EventLog::maximumMessageBytes))+"}";
+}
 }
 void Esp32DebugReports::set(ReportPhase phase,const std::string& message) {
     std::lock_guard<std::mutex> lock(mutex_);view_.phase=phase;view_.message=message;view_.id=id_.substr(0,8);
@@ -186,33 +192,44 @@ void Esp32DebugReports::begin() {
     if(restorePending()) set(ReportPhase::Queued,"Saved report queued for Wi-Fi.");
     diagnostic("Firmware " VOLTRA_VERSION " started");
 }
-bool Esp32DebugReports::submit(const std::vector<EventLog::Event>& events,const std::string& context) {
+bool Esp32DebugReports::submit(const std::vector<EventLog::Event>& events,const std::string& context,
+                              const std::vector<EventLog::Event>& bleTrace) {
     if(active_) return false;
     if(!payload_.empty()) {set(ReportPhase::Queued,"Previous report saved. Waiting for Wi-Fi.");return true;}
     uint8_t random[16];esp_fill_random(random,sizeof(random));id_=hex(random,sizeof(random));
     const auto reportContext=bootContext_+" "+context.substr(0,maximumContextBytes-bootContext_.size()-1);
-    payload_="{\"schema\":1,\"id\":"+EventLog::quote(id_)+",\"firmware\":\"" VOLTRA_VERSION "\",\"context\":"+EventLog::quote(reportContext)+",\"events\":[";
-    const size_t start=events.size()>EventLog::capacity ? events.size()-EventLog::capacity : 0;
+    payload_="{\"schema\":1,\"id\":"+EventLog::quote(id_)+",\"firmware\":\"" VOLTRA_VERSION "\"";
+    const auto contextField=",\"context\":"+EventLog::quote(reportContext);
+    const auto traceCount=std::min(bleTrace.size(),maximumTraceEvents);
+    // Put an explicitly requested trace first so the bounded inbox preview
+    // exposes it. Ordinary reports retain their original JSON field order.
+    if(!traceCount) payload_+=contextField;
+    payload_+=",\"events\":[";
+    for(size_t i=0;i<traceCount;++i) {
+        if(i) payload_+=',';
+        payload_+=encodeEvent(bleTrace[i]);
+    }
+    const auto tail=traceCount ? "]"+contextField+"}" : std::string("]}");
+    const auto eventLimit=EventLog::capacity-traceCount;
+    const auto start=events.size()>eventLimit ? events.size()-eventLimit : 0;
     // Select newest first using the encoded length, including separators and
     // the closing brackets. Then serialize in chronological order.
     std::vector<std::string> encoded;
     encoded.reserve(events.size()-start);
-    size_t reportSize=payload_.size()+2;
+    size_t reportSize=payload_.size()+tail.size();
     for(size_t i=events.size();i>start;--i) {
-        const auto& event=events[i-1];
-        auto item="{\"at\":"+std::to_string(event.at)+",\"message\":"+
-            EventLog::quote(event.message.substr(0,EventLog::maximumMessageBytes))+"}";
-        const size_t size=item.size()+size_t(!encoded.empty());
+        auto item=encodeEvent(events[i-1]);
+        const size_t size=item.size()+size_t(traceCount || !encoded.empty());
         if(size>maximumReportBytes-reportSize) break;
         reportSize+=size;
         encoded.push_back(std::move(item));
     }
     payload_.reserve(reportSize);
     for(auto item=encoded.rbegin();item!=encoded.rend();++item) {
-        if(item!=encoded.rbegin()) payload_+=',';
+        if(traceCount || item!=encoded.rbegin()) payload_+=',';
         payload_+=*item;
     }
-    payload_+="]}";
+    payload_+=tail;
     Preferences nvs;bool saved=false;
     if(payload_.size()<=maximumReportBytes && nvs.begin("voltra-debug",false)) {
         saved=nvs.putBytes(pendingReportKey,payload_.data(),payload_.size())==payload_.size();nvs.end();

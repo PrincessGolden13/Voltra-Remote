@@ -78,8 +78,10 @@ void UiController::sendDebugReport() {
     diagnostic("Debug report SEND requested");
     const auto events=EventLog::instance().snapshot();
     const auto context="firmware=" VOLTRA_VERSION " screen="+std::to_string(int(page_))+" "+app_.diagnosticState();
+    std::vector<EventLog::Event> trace;
+    for(auto& line:app_.bleTraceReport()) trace.push_back({hardware_.nowMs(),std::move(line)});
     // A failed save leaves Bluetooth intact and the retry button available.
-    if(reports_->submit(events,context)) {
+    if(reports_->submit(events,context,trace)) {
         debugDisconnectPending_=true;
         app_.setMaintenance(true);
         // The ordinary handoff resumes Wi-Fi after Bluetooth. When the radio

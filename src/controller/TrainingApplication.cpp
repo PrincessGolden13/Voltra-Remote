@@ -1020,11 +1020,6 @@ void TrainingApplication::unload() {
     diagnostic("Unload request result="+std::to_string(int(result)));
     if(result!=TransportResult::Accepted) recordControlFailure(message_.empty() ? "Unload request not accepted" : message_);
 }
-const char* TrainingApplication::autoLoadUnavailableText(const TrainingReport& r) {
-    if(r.autoLoadEnabled==false) return "Auto Load off on VOLTRA";
-    if(r.autoLoadSafetyEnabled==false) return "Safety Check off on VOLTRA";
-    return "Auto Load unavailable";
-}
 void TrainingApplication::autoLoad() {
     if(!retainSelectionControl()) return;
     diagnostic("Explicit Auto Load action");
@@ -1033,7 +1028,7 @@ void TrainingApplication::autoLoad() {
     }
     const auto r = report(); const auto e = session_.readiness();
     if (!settingsAllowed() || pending_ || r.loaded || !r.autoLoadSupported || !e.ready || !e.twinSafe || r.settings.weight < r.minWeight) {
-        message_ = e.reason.empty() ? autoLoadUnavailableText(r) : e.reason; recordLoadRefusal();return;
+        message_ = e.reason.empty() ? "Auto Load unavailable" : e.reason; recordLoadRefusal();return;
     }
     const auto result = session_.triggerAutoLoad();
     // A new explicit Auto Load starts a new execution sequence, preserving the
@@ -1159,23 +1154,19 @@ std::optional<int> TrainingApplication::restPauseRemainingPermille() const {
 bool TrainingApplication::applyDrops(DropSettings d) {
     if(!retainSelectionControl()) return false;
     if (!fresh() || selected_.empty()) { message_ = "Device state unavailable"; return false; }
-    const auto current=report();
-    if(current.twin && !current.liveWeightSupported) {
-        const auto previous=drops();
-        if(d.enabled || d.mode!=previous.mode || d.step!=previous.step || d.drops!=previous.drops ||
-           d.percent!=previous.percent || d.holdSeconds!=previous.holdSeconds) {
-            message_="Drops unavailable for this VOLTRA";return false;
-        }
+    const auto r=report();
+    // A disabled recipe is local editor state. It cannot authorize a drop.
+    if(d.enabled && r.twin && !r.liveWeightSupported) {
+        message_="Drops unavailable in Twin";return false;
     }
-    if(d.enabled && (!report().liveWeightSupported || report().minWeight<1 || report().autoLoadArmed || pending())) {
+    if(d.enabled && (!r.liveWeightSupported || r.minWeight<1 || r.autoLoadArmed || pending())) {
         message_="Wait for weight controls before arming drops";return false;
     }
     if(d.enabled && d.mode==DropMode::RestPause &&
-       (restPauseHoldMaximum(report())<1 || d.holdSeconds>restPauseHoldMaximum(report()))) {
+       (restPauseHoldMaximum(r)<1 || d.holdSeconds>restPauseHoldMaximum(r))) {
         message_=restPauseLimitError;return false;
     }
     if(dropTarget_) stopDrops("");
-    const auto r=report();
     const int maximum=weightTicksDown(r,r.maxWeight);
     const int sign=d.step<0 ? -1 : 1;
     d.step = sign*std::min(weightTicksNearest(r,std::abs(d.step)),maximum);

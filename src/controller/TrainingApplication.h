@@ -52,6 +52,8 @@ public:
             (selectionTrace_.empty() ? std::string{} : " selectionProbes={"+selectionTrace_+"}")+
             " lastFailure={"+lastControlFailure_+"}";
     }
+    void setBleTraceEnabled(bool enabled) { session_.setBleTraceEnabled(enabled); }
+    std::vector<std::string> bleTraceReport() const { return session_.bleTraceReport(); }
     uint64_t loadRefusalRevision() const { return loadRefusalRevision_; }
     const std::string& loadRefusalMessage() const { return loadRefusalMessage_; }
     TrainingReport report() const;
@@ -75,7 +77,6 @@ public:
     void toggleWeight();
     void unload();
     void autoLoad();
-    static const char* autoLoadUnavailableText(const TrainingReport&);
     bool checkingTwinAfterWorkoutExit() const { return session_.checkingTwinAfterWorkoutExit(); }
     void toggleModifier(bool magic);
     bool applyModifier(bool magic, MagicMode mode, int value, bool percent);

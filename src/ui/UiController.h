@@ -88,6 +88,7 @@ private:
     lv_obj_t *tiles_[3]{};
     lv_obj_t *stairs_[3]{};
     lv_obj_t* dropTitle_ = nullptr;
+    lv_obj_t* dropsCommitLabel_ = nullptr;
     lv_obj_t *center_ = nullptr, *battery_ = nullptr;
     lv_obj_t *scaleLabels_[7]{}, *choiceNames_[3]{};
     static constexpr int tickCount = 41;
@@ -146,6 +147,9 @@ private:
     bool wifiConfiguring_=false;
     lv_obj_t *updateBody_=nullptr,*updateCheck_=nullptr,*updateInstall_=nullptr;
     lv_obj_t* settingsValues_[4]{};
+    lv_obj_t* bleTraceButton_=nullptr;
+    bool bleTraceEnabled_=false;
+    void setBleTrace(bool enabled);
     lv_obj_t* liveValues_[3]{};
     uint32_t accent() const;
     uint32_t limitAccent() const;
@@ -167,6 +171,7 @@ private:
     void build();
     void update();
     std::string controlFeedback() const;
+    bool saveDropsOnly(const TrainingReport&) const;
     void rotate(int delta);
     int editMaximum() const;
     int editValue(int amount) const;

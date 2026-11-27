@@ -1,7 +1,14 @@
+> November 27 v0.4.25. Both Drops editors offer Back. Unsupported Twin
+> recipes can be edited and saved locally without arming an automatic drop.
+> RP selection uses a distinct outline and accent text. Remote Auto Load
+> reports its availability without inferring the VOLTRA menu setting.
+> Settings includes an opt-in BLE trace attached on Send. See
+> [Diagnostic reports](DEBUG_REPORTS.md).
+>
 > November 26 v0.4.24. An idle exit from Weight Training gets a bounded Twin
 > check before closing the connection. A direct Twin load stays on Adjust
 > until fresh rep activity. Rest or set end returns to Adjust while loaded.
-> Known disabled Auto Load settings get a short reason. See
+> The Auto Load refusal wording was superseded by v0.4.25. See
 > TWIN_LIFECYCLE_2026_11_26.md.
 >
 > November 26 v0.4.23. A connected single that joins Twin transitions to its

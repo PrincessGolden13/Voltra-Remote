@@ -1,6 +1,6 @@
 # Diagnostic reports
 
-Choose **Settings -> Send debug log**, or hold a finger anywhere on an awake
+Choose **Settings → Send log**, or hold a finger anywhere on an awake
 screen for six seconds. No debug hint appears before three seconds; then it says
 **Keep holding to send a debug log**. The dialog says **Wi-Fi connection required.**
 and **Sending disconnects Bluetooth from VOLTRA.** Tap SEND to save the
@@ -27,9 +27,10 @@ snapshot is captured on SEND before disconnecting, so dialog unload actions and
 their results can be included. Reports preserve the newest events if escaped JSON
 would exceed the 12 KiB upload limit. The events
 include user actions, connection outcomes, relevant state changes, protocol parse
-failures and displayed errors. Each message is limited to 256 bytes. No raw BLE
-payloads, bootstrap identities, Wi-Fi credentials, Bluetooth addresses or paired
-device identifiers are included. A snapshot also records firmware, screen, numeric
+failures and displayed errors. Each message is limited to 256 bytes. Ordinary
+reports omit raw BLE payloads. Bootstrap identities, Wi-Fi credentials,
+Bluetooth addresses and paired device identifiers are excluded. A snapshot
+also records firmware, screen, numeric
 readiness fields and their ages. The paired ID is represented only by presence.
 The context starts with the current boot's reset reason and running build's ELF
 fingerprint. A stored crash may predate this boot. At startup the remote checks
@@ -52,6 +53,13 @@ disconnect, so Settings can report the original blocked state. Manually leaving
 the connection also retains its last numeric session snapshot. Weight command
 and readback events include measured force context where available, without
 claiming that register readback proves actual resistance.
+
+**Settings → BLE trace** starts off at each boot. Turn it on before connecting and
+doing a set. It keeps bounded samples of allowlisted training packets and
+counts of received packet types in RAM. Turn it off to clear the local trace.
+Send the debug log after the set to include the trace, then switch tracing
+off. The trace entries appear first in the report so the inbox preview shows
+them. They count toward the existing 40-event and 12 KiB limits.
 
 SEND persists one approved snapshot as a blob in `voltra-debug/pending-v2`. The
 firmware can still deliver queued reports stored by older firmware at

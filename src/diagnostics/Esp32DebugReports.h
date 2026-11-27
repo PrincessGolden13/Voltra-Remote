@@ -9,7 +9,8 @@ class Esp32DebugReports final : public DebugReports {
 public:
     void begin();
     ReportStatus status() const override;
-    bool submit(const std::vector<EventLog::Event>&,const std::string&) override;
+    bool submit(const std::vector<EventLog::Event>&,const std::string&,
+        const std::vector<EventLog::Event>&) override;
     void tick(bool networkReady,bool controlIdle) override;
 private:
     mutable std::mutex mutex_;
