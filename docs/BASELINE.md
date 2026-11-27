@@ -1,5 +1,20 @@
 # Foundation baseline
 
+## November 27 v0.4.27 Updates, standalone Live and Direct Load
+
+- Settings opens Updates and checks the feed automatically. An available
+  release adds the explicit Install & Update action.
+- Grey report `98abc5dd` contained rep telemetry without B4. Standalone
+  Live now has an isolated motor-target readback path. Stairs preserves the
+  return candidate when a transition frame still carries the preceding count.
+  [Protocol and report evidence](SINGLE_LIVE_2026_11_27.md)
+- An eligible standalone with its cable extended can offer Load Weight and
+  Cancel. Confirmation is consumed after current BLE readback and uses the
+  existing guided Safety Check sequence. Blocked settings show inline.
+- Release 461135346 and the public update feed passed verification. Grey's
+  live target response, physical Stairs timing and the new confirmation flow
+  remain hardware checks. [Validation](TESTING.md) · [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.27)
+
 ## November 27 v0.4.26 Twin recovery and Live
 
 - The phone video opens the pair from one visible device. The failed remote

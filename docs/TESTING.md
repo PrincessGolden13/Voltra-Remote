@@ -22,7 +22,24 @@ did not contain its endpoint or loaded write-gate snapshot.
 Five extended-cable PhysicalSession mock scenarios checked positive
 extension, fresh flags, unavailable and unknown state, single scope, no
 unguarded ordinary load, and the existing one-shot countdown and cancel.
+The integrated app and LVGL matrix passed 147 cases and 1,479 assertions at
+360, 466 and 480 px. These include 45 Direct Load consent, rejection and
+progress cases. Changes applied during the BLE poll invalidated a queued
+confirmation before a motor request could run. No physical operations.
 See [the report and video evidence](SINGLE_LIVE_2026_11_27.md).
+
+[PR CI46078393931](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46078393931)
+at 9b7152ac and [tag CI46079024665](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46079024665)
+at 0a22d4cb passed. Artifact IDs 15235459420 and 15236014449.
+Both tagged images match the reviewed PR bytes. Normal has 2,095,232 bytes,
+SHA-256 `5135c033060bb92565f6692a0d1f3cd6cb70b4bc0e8c0a0eba071c4b3345f66d`.
+The image descriptors, manifest, USB layout, backend isolation, NVS and
+rollback hooks, release notes and four assets passed. Receipts in ignored
+`build/review-v0427` and `build/review-v0427-tag`.
+
+Release 461135346 was published as latest at 2026-11-27 22:55:00 UTC.
+The public manifest and pinned asset match the reviewed tag. Receipt in
+ignored `build/published-v0427/verification.json`.
 
 ## November 27 v0.4.26 Twin recovery and Live
 
