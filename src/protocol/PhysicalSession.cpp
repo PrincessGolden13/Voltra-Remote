@@ -168,7 +168,6 @@ bool PhysicalSession::prepareConnection() {
 void PhysicalSession::connectionChanged(bool connected) {
     const bool prepared=connected && helloPrepared_;
     helloPrepared_=false;
-    if(!connected) selectedAddress_.reset();
     if(bleTrace_) {
         if(connected) {
             countTrace(bleTrace_->links);
@@ -176,6 +175,7 @@ void PhysicalSession::connectionChanged(bool connected) {
         }
         else if(accepted_) bleTrace_->lastState=bleTraceState();
     }
+    if(!connected) selectedAddress_.reset();
     connected_=connected;accepted_=activated_=false; bootstrap_=prepared ? 1 : 0;backgroundRead_=infoRead_=0;sequence_=0;pollAt_={};
     activationKnown_=false;activationReadAttempts_=0;activationReadAt_=activationStatusAt_=0;
     connectionClockPending_=connected;

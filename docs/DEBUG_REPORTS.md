@@ -60,6 +60,10 @@ counts of received packet types in RAM. Turn it off to clear the local trace.
 Send the debug log after the set to include the trace, then switch tracing
 off. The trace entries appear first in the report so the inbox preview shows
 them. They count toward the existing 40-event and 12 KiB limits.
+The trace lists notification chunks, valid frames and leading B4 headers in
+command, transport and telemetry characteristic order. Sample times are
+milliseconds since enabling the trace. The link ordinal groups each sample
+with its connection, and hex windows are labeled by payload offset.
 
 SEND persists one approved snapshot as a blob in `voltra-debug/pending-v2`. The
 firmware can still deliver queued reports stored by older firmware at
