@@ -54,7 +54,7 @@ The November 27 recheck replayed four captured independent B4 frames and
 seven captured Twin B4 frames through the current parser at every two-chunk
 split. Each decoded in its own layout. The independent samples supplied a
 target word. The Twin layout supplied two motion channels and optional
-counters; it has no verified combined target field. Report `00886881`
+counters. Its combined target field remains unverified. Report `00886881`
 received 57 valid Twin rep frames and zero B4 frames. Cortex likewise
 specifies separate single and Twin stream contracts. Its public documentation
 does not give the BLE field offset for the controller display.

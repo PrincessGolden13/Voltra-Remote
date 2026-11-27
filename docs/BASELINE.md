@@ -1,5 +1,18 @@
 # Foundation baseline
 
+## November 27 v0.4.25 Twin Drops and BLE trace
+
+- Both Drops editors have Back. Twin Save keeps a disabled recipe locally,
+  and the RP selection uses a distinct outline and matching text.
+- The Auto Load refusal describes the remote's availability. A fresh,
+  verified device state is still required for an explicit trigger.
+- Settings can capture bounded BLE telemetry on demand and include it in
+  a debug log. Report `00886881` has neither the single VOLTRA target stream
+  nor a verified combined target. [Protocol evidence](TWIN_LIFECYCLE_2026_11_26.md)
+- Public release 460032338 passed validation and the latest update feed matches
+  the reviewed image. Physical verification and exact Twin live weight remain
+  open. [Validation](TESTING.md) · [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.25)
+
 ## November 26 v0.4.24 Twin workout recovery and rep timing
 
 - Report `00886881` and the photo match the v0.4.23 idle workout-exit

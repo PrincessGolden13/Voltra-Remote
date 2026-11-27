@@ -17,10 +17,27 @@ trigger with fresh matching flags. An unsupported or stale request sends none.
 The hold/input matrix passed 129 scenarios and 1,386 assertions. The offline
 core and packet inspector builds pass. No physical radio or motor operation.
 
-The production report serializer was compiled with host stubs. Seven
+The production report serializer was compiled with host stubs. Nine
 fixtures passed the inbox handler with a simulated database. Ordinary
-reports matched the previous JSON byte for byte. The trace is placed first
-and counts toward the existing report limits. No reports were uploaded.
+reports matched the previous JSON byte for byte. All ten production trace rows
+fit in the 2,048-byte inbox preview. The physical-session trace fixture checked
+the three routes, CRC rejection, explicit enable and clear, preserved samples
+through disconnect, and allowlisted payloads. The fixture sent no commands
+from tracing and supplied no Twin Live target. No reports were uploaded.
+
+[PR CI45916596703](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45916596703)
+at d7b9bc53 and [tag CI45917135716](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/45917135716)
+at 4b951def both passed. Artifact IDs 15162766802 and 15163007093.
+The tag's Normal and Simulator images match the reviewed PR bytes. Normal has
+2,084,752 bytes and SHA-256
+`69252557a1a08b4978283caabb45dcd03e0c5caabf18e02f5ec84bad094e8dd0`.
+The version descriptors, manifest, USB hashes and offsets, partition map,
+backend isolation, NVS and rollback hooks, four assets and tagged notes pass.
+Receipts are in ignored `build/review-v0425` and `build/review-v0425-tag`.
+
+Release 460032338 became latest at 2026-11-27 00:35:25 UTC. The public latest
+manifest and pinned image match the checked tag. Receipt in ignored
+`build/published-v0425/verification.json`. Twin hardware behavior remains open.
 
 ## November 26 v0.4.24 Twin workout recovery and rep timing
 
