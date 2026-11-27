@@ -1,5 +1,18 @@
 # Foundation baseline
 
+## November 27 v0.4.26 Twin recovery and Live
+
+- The phone video opens the pair from one visible device. The failed remote
+  reports reached a follower and then timed out attempting its controller.
+  Connection attempts are bounded to two per identity and the verified
+  controller can keep its link. [Evidence](TWIN_RECOVERY_2026_11_27.md)
+- Idle loss returns to Devices. Live loss and a confirmed mounting-lock
+  release retain notices. Fresh Twin idle telemetry can return Live to
+  Adjust after 15 seconds without changing the loaded state.
+- Release 461114157 passed package review and the public feed matched the
+  reviewed image. Physical connection recovery and the exact combined Live
+  target remain open. [Validation](TESTING.md) · [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.26)
+
 ## November 27 v0.4.25 Twin Drops and BLE trace
 
 - Both Drops editors have Back. Twin Save keeps a disabled recipe locally,

@@ -18,12 +18,28 @@ Five foreground selection scenarios and five native retry scenarios passed.
 A verified controller was retained when it alone advertised. Exact follower
 handoff, absent and exhausted endpoints, and ordinary two-attempt limits
 passed. Existing application handoff and native GATT fixtures passed 14 and
-16 scenarios respectively. The offline core and packet inspector built.
+16 scenarios respectively. The final physical-session regression passed all
+31 scenarios, including standalone load and unload. The offline core and
+packet inspector built.
 
 The physical-session tracing fixture emitted all 11 rows within 1,473 encoded
 bytes. The trace retained the Twin workout through a read-only discovery,
 kept AA82 phases separate, and supplied neither a command nor a Twin live
-display value.
+display value. Nine host serializer and inbox cases passed. The largest
+trace fixture fit the inbox preview and the report size and entry limits.
+
+[PR CI46074970625](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46074970625)
+at 1827954b and [tag CI46075581207](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46075581207)
+at dc2b5cfb passed. Artifact IDs 15233624565 and 15235355268.
+Both tagged images matched the reviewed PR. Normal has 2,087,536 bytes with
+SHA-256 `6de63c69c6a736f29da747ecd32acb4b886d557484c1ac218772f31df018d562`.
+Product descriptors, manifest, USB bundle, partition map, backend isolation,
+NVS and rollback hooks, four draft assets and notes passed. Receipts are in
+ignored `build/review-v0426` and `build/review-v0426-tag`.
+
+Release 461114157 became latest at 2026-11-27 22:20:37 UTC. The public
+manifest and pinned asset matched the tag bytes. Receipt in ignored
+`build/published-v0426/verification.json`. Physical behavior is unverified.
 
 ## November 27 v0.4.25 Twin Drops and BLE trace
 
