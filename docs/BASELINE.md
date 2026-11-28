@@ -1,5 +1,14 @@
 # Foundation baseline
 
+## November 28 v0.4.29 standalone Live cadence
+
+- A confirmed standalone motor-target fallback can read every 180 ms when
+  the link is available. In a matched replay, median sample spacing fell
+  from 360 to 180 ms. The native display comparison remains unverified.
+  [Video and cadence evidence](LIVE_CADENCE_2026_11_28.md)
+- Published release 461254127 as latest. The public manifest and image match
+  the reviewed build. [Validation](TESTING.md) · [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.29)
+
 ## November 28 v0.4.28 Auto Load guidance, Live continuity and loaded dial
 
 - Auto Load keeps the hold ring and adds larger instructions after release,

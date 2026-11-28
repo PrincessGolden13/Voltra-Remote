@@ -1,5 +1,35 @@
 # Validation status and pending tests
 
+## November 28 v0.4.29 standalone Live cadence
+
+Matched mock runs compared both versions using the same changing 59–89 lb
+device target. With 25–60 ms replies and a 90 ms pacing grid, 33 seconds
+showed 73 accepted samples on v0.4.28 and 122 on v0.4.29. Median spacing fell
+from 360 to 180 ms and median step from 12 to 6 lb. The 630 ms maximum was
+unchanged. At 110–240 ms reply latency with a fast host loop, the sample
+count rose from 73 to 97. With a deliberately slower 110 ms host loop and
+70–190 ms reply latency, both sampled 75 times. In that case median spacing
+improved from 440 to 330 ms and the maximum widened from 660 to 770 ms.
+
+The six required query groups had the same maximum spacing in both versions,
+at most 1,350 ms. Background activation polls ran and explicit load and unload
+used the same commands and confirmation timing. Four pacing profiles, 14
+standalone continuity mocks, 31 protocol scenarios and the core/packet inspector
+build passed. Physical matching remains unverified. [Video and cadence evidence](LIVE_CADENCE_2026_11_28.md)
+
+[PR CI46099373563](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46099373563)
+at d5624f96 and [tag CI46099772569](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46099772569)
+at b0a4b918 passed. Artifact IDs 15245205926 and 15245221689. Both tagged
+images match the reviewed PR byte for byte. Normal has 2,098,896 bytes,
+SHA-256 `348d8a9f9ad0f2cbc76e6b08e243de9eca301ca7b95da87b0db49e5414a2d015`.
+Descriptors, manifest, USB layout, backend isolation, NVS and rollback hooks,
+release notes and all four assets passed independent checks.
+
+Release 461254127 became latest at 2026-11-28 02:51:40 UTC. The public
+manifest and pinned image match the tag bytes. Receipts are in ignored
+`build/review-v0429`, `build/review-v0429-tag` and
+`build/published-v0429/verification.json`.
+
 ## November 28 v0.4.28 Auto Load guidance, Live continuity and loaded dial
 
 The Auto Load hold, reported phases and Cancel passed 222 cases and 2,778
