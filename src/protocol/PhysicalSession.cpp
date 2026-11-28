@@ -25,6 +25,7 @@ constexpr unsigned twinMotorTargetReadLimit=3;
 constexpr uint64_t twinMotorTargetReadSpacingMs=750;
 constexpr uint64_t liveTargetFreshMs=500;
 constexpr uint64_t singleMotorTargetReadSpacingMs=300;
+constexpr uint64_t supportedMotorTargetReadSpacingMs=180;
 constexpr uint64_t singleMotorTargetRecoveryMs=5000;
 constexpr unsigned singleMotorTargetMissLimit=3;
 constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentricPercent=21456;
@@ -547,8 +548,10 @@ bool PhysicalSession::pollSingleMotorTarget() {
         now_-*singleMotorTargetReadAt_<singleMotorTargetRecoveryMs)) return false;
     if(singleMotorTargetPending_ && now_>=singleMotorTargetPending_->at &&
        now_-singleMotorTargetPending_->at<=liveTargetFreshMs) return false;
+    // Use every other paced turn at most after a valid reply on this link.
+    const auto spacing=singleMotorTargetReplies_ ? supportedMotorTargetReadSpacingMs : singleMotorTargetReadSpacingMs;
     if(singleMotorTargetReadAt_ && now_>=*singleMotorTargetReadAt_ &&
-       now_-*singleMotorTargetReadAt_<singleMotorTargetReadSpacingMs) return false;
+       now_-*singleMotorTargetReadAt_<spacing) return false;
     // Isolate the optional read from all control writes and required state
     // groups. An unsupported register gets a small, finite probe budget.
     // Once supported, a temporary outage gets a slow recovery check.
