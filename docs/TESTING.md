@@ -2,9 +2,9 @@
 
 ## November 28 v0.4.28 Auto Load guidance, Live continuity and loaded dial
 
-The Auto Load hold, reported phases and Cancel were replayed in actual LVGL
-at 360, 466 and 480 pixels. The mock cases cover single and Twin guidance,
-countdown freshness, pending or rejected requests, Direct Load and the
+The Auto Load hold, reported phases and Cancel passed 222 cases and 2,778
+assertions in actual LVGL at 360, 466 and 480 pixels. The mocks cover single
+and Twin guidance, countdown freshness, pending or rejected requests, Direct Load and the
 one-unload paths. The reference videos establish which instructions appear
 on the native screen. See [video and protocol evidence](LIVE_GUIDANCE_2026_11_28.md).
 
@@ -13,8 +13,25 @@ assertions. The replay preserves exact target values across short gaps and
 clears them when the readout context changes. The 31 physical-session mock
 scenarios and five loaded dial protocol cases passed, including raw accessory
 preservation, write-time invalidation, the native limits and existing mode
-and lock gates. Physical device behavior and Twin Live target availability
-remain unverified.
+and lock gates. The 53-scenario Stairs endpoint suite passed. The preference
+passed 19 UI assertions each at 360 and 466 px. Mock K5 storage checks kept
+the legacy configuration blob byte-identical, and desktop config v1, v2 and
+v3, reboot persistence and unreadable preference checks passed. Physical
+device behavior and Twin Live target availability remain unverified.
+
+[PR CI46093894877](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46093894877)
+at 7dd8c9e5 and [tag CI46094371910](https://github.com/PrincessGolden13/Voltra-Remote/actions/runs/46094371910)
+at 7de33861 passed. Artifact IDs 15242436804 and 15242239645. The exact
+tagged Normal and Simulator images match the reviewed PR. Normal has
+2,098,880 bytes, SHA-256
+`36403b20e88835c2c5165e387e445dac9b3c697f1d4ea3fbb009bb216a7a2753`.
+Descriptors, manifest, USB layout, backend isolation, NVS and rollback hooks,
+release notes and the four assets passed independent package checks.
+
+Release 461222807 was published as latest at 2026-11-28 01:46:43 UTC.
+The public manifest and pinned image match the tag bytes. Receipts are in
+ignored `build/review-v0428`, `build/review-v0428-tag` and
+`build/published-v0428/verification.json`.
 
 ## November 27 v0.4.27 Updates, standalone Live and Direct Load
 

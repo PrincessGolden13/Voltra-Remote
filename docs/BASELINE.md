@@ -1,5 +1,18 @@
 # Foundation baseline
 
+## November 28 v0.4.28 Auto Load guidance, Live continuity and loaded dial
+
+- Auto Load keeps the hold ring and adds larger instructions after release,
+  following the reported Pull & Stabilize and Progressive Loading stages.
+  The reported countdown and Cancel are visible on the remote.
+- Standalone Live preserves the exact last device target across a short gap
+  in the same reported phase. **Adjust while loaded** is on by default and
+  allows eligible manual base-only dial turns. [Video and protocol evidence](LIVE_GUIDANCE_2026_11_28.md)
+- Release 461222807 was published as latest. Its update feed and normal
+  image match the reviewed firmware. White's loaded adjustment, physical
+  Live matching and the Twin Live target source remain hardware checks.
+  [Validation](TESTING.md) · [Release](https://github.com/PrincessGolden13/Voltra-Remote/releases/tag/v0.4.28)
+
 ## November 27 v0.4.27 Updates, standalone Live and Direct Load
 
 - Settings opens Updates and checks the feed automatically. An available
