@@ -131,15 +131,17 @@ private:
         int tenthsLb;
         uint64_t at;
         RuntimeTargetContext context;
+        uint64_t phaseRevision;
     };
-    struct MotorTargetRequest { uint64_t at; RuntimeTargetContext context; };
+    struct MotorTargetRequest { uint64_t at; RuntimeTargetContext context; uint64_t phaseRevision; };
     std::optional<RuntimeTargetObservation> runtimeTarget_,singleMotorTarget_;
+    uint64_t liveTargetPhaseRevision_=0;
     std::optional<MotorTargetRequest> singleMotorTargetPending_;
     std::optional<uint64_t> singleMotorTargetReadAt_;
     unsigned singleMotorTargetReads_=0,singleMotorTargetReplies_=0,singleMotorTargetUnanswered_=0;
     std::optional<int> singleMotorTargetLastValue_;
     std::optional<RuntimeTargetContext> runtimeTargetContext() const;
-    bool runtimeTargetCurrent(const RuntimeTargetObservation&,const RuntimeTargetContext&) const;
+    bool runtimeTargetCurrent(const RuntimeTargetObservation&,const RuntimeTargetContext&,uint64_t maximumAgeMs) const;
     void clearRuntimeTargets();
     bool pollSingleMotorTarget();
     unsigned runtimeTargetFrames_=0;
@@ -204,6 +206,9 @@ private:
     bool intentLoaded_=false;
     std::optional<TrainingSettings> liveIntent_;
     std::optional<TrainingSettings> liveBefore_;
+    std::optional<std::array<int64_t,2>> intentBaseAccessories_;
+    std::optional<std::array<int64_t,2>> activeAccessoryAmounts() const;
+    bool rawBaseWithAccessoriesFits(int pounds, const std::array<int64_t,2>& amounts) const;
     // Applies only to automatic base changes, through their first wire write.
     struct AutomaticWeightWindow { uint8_t phase; int set,rep,position; };
     std::optional<AutomaticWeightWindow> automaticWeightWindow_;

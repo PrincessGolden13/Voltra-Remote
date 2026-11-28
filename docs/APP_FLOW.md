@@ -1,3 +1,11 @@
+> November 28 v0.4.28. After the Auto Load hold, large Pull & Stabilize and
+> Progressive Loading instructions follow the VOLTRA's confirmed stages.
+> Keep Cancel visible and use a countdown only from the device. Live can
+> carry the last valid target through short Bluetooth gaps in the same
+> loaded workout. Settings offers **Adjust while loaded**, on by default
+> for manual dial changes when the VOLTRA's loaded controls are available.
+> See [video and protocol evidence](LIVE_GUIDANCE_2026_11_28.md).
+>
 > November 27 v0.4.27. Opening Updates from Settings checks automatically.
 > The current screen offers Back. A newer release adds Install & Update.
 > Installing still requires that explicit action. Standalone Live prefers

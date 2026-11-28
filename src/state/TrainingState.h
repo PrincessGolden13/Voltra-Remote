@@ -16,6 +16,8 @@ struct TrainingSettings {
     Modifier magic, eccentric;
 };
 struct TwinDisplayCounters { int set, rep; };
+// Presentation only: bridge a brief gap in an unchanged loaded session.
+inline constexpr uint64_t liveTargetDisplayMs=1500;
 // Device-reported display lifecycle. Separate from control and drop evidence.
 enum class TwinWorkoutPhase : uint8_t { Unloaded=0, Loading=1, InProgress=2, Resting=3, Unloading=4 };
 struct TrainingReport {

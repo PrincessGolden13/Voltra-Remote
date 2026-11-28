@@ -1,5 +1,21 @@
 # Validation status and pending tests
 
+## November 28 v0.4.28 Auto Load guidance, Live continuity and loaded dial
+
+The Auto Load hold, reported phases and Cancel were replayed in actual LVGL
+at 360, 466 and 480 pixels. The mock cases cover single and Twin guidance,
+countdown freshness, pending or rejected requests, Direct Load and the
+one-unload paths. The reference videos establish which instructions appear
+on the native screen. See [video and protocol evidence](LIVE_GUIDANCE_2026_11_28.md).
+
+The standalone Live fix passed 14 focused continuity cases and 72 B4 replay
+assertions. The replay preserves exact target values across short gaps and
+clears them when the readout context changes. The 31 physical-session mock
+scenarios and five loaded dial protocol cases passed, including raw accessory
+preservation, write-time invalidation, the native limits and existing mode
+and lock gates. Physical device behavior and Twin Live target availability
+remain unverified.
+
 ## November 27 v0.4.27 Updates, standalone Live and Direct Load
 
 The Updates UI passed 48 actual LVGL scenes and 429 assertions at 360,

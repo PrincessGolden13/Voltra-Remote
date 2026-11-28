@@ -942,8 +942,10 @@ bool TrainingApplication::sendSettings(TrainingSettings s,bool explicitBaseEdit)
     if (result == TransportResult::Accepted) settingsIntent_ = s;
     return result == TransportResult::Accepted;
 }
-void TrainingApplication::adjustWeight(int delta) {
+void TrainingApplication::adjustWeight(int delta, bool allowLoaded) {
     if(!retainSelectionControl()) return;
+    const auto r=report();
+    if(r.loaded && !allowLoaded) {message_="Loaded adjustment is off";return;}
     if(dropRestore_) {message_="Restoring starting weight; please wait";return;}
     if (presetIntent_) { message_ = "Awaiting preset confirmation"; return; }
     if (!settingsAllowed()) {
@@ -951,12 +953,14 @@ void TrainingApplication::adjustWeight(int delta) {
         message_ = reason.empty() ? "Device state unavailable" : reason;
         recordControlFailure(message_);return;
     }
-    auto r = report();
-    if (r.loaded && !r.liveWeightSupported && !r.manualLiveWeightSupported) { message_ = "Unload to adjust"; return; }
+    if(r.loaded && !r.liveWeightSupported && !r.manualLiveWeightSupported) {message_="Adjust weight on VOLTRA";return;}
+    if(r.loaded && settingsIntent_ && (settingsIntent_->magicMode!=r.settings.magicMode ||
+       !sameModifier(settingsIntent_->magic,r.settings.magic) || !sameModifier(settingsIntent_->eccentric,r.settings.eccentric))) {
+        message_="Waiting for modifier change";return;
+    }
     dropStart_.reset(); // A subsequent manual base choice supersedes restoration.
     if(running_ || dropTarget_ || dropsExhausted_) stopDrops("Drops stopped for manual adjustment");
-    const bool loadedBaseOnly=r.loaded && !r.liveWeightSupported && r.manualLiveWeightSupported;
-    auto s = loadedBaseOnly ? r.settings : settingsIntent_.value_or(r.settings);
+    auto s = r.loaded ? r.settings : settingsIntent_.value_or(r.settings);
     const int minimum=weightTicksUp(r,r.minWeight),ceiling=weightTicksDown(r,r.loaded ? baseMaximum(r) : r.maxWeight);
     if(ceiling<minimum) {message_="Outside device limits";return;}
     const int requested=(weightIntent_ && weightIntentUnit_==r.unit ? *weightIntent_ : s.weight)+delta;
@@ -964,7 +968,7 @@ void TrainingApplication::adjustWeight(int delta) {
     s.weight = std::clamp(aligned, minimum, ceiling);
     // The original brief specifies reducing modifiers before capping the base.
     // Trim EO first, then magic; this is part of this explicit knob request.
-    for (auto* m : {&s.eccentric, &s.magic}) {
+    if(!r.loaded) for (auto* m : {&s.eccentric, &s.magic}) {
         const int divisor = m->percent ? s.weight : 100;
         const int excess = envelopeHundredths(s) - r.maxWeight*100;
         if (excess > 0 && m->enabled && divisor > 0)

@@ -75,7 +75,7 @@ public:
     bool autoLoadRequested() const { return pending_ && autoLoadRequested_; }
     bool directLoadActive() const { return directLoadActive_; }
     const std::string& message() const { return message_.empty() && connected() ? session_.status() : message_; }
-    void adjustWeight(int delta);
+    void adjustWeight(int delta, bool allowLoaded=true);
     void toggleWeight();
     bool directLoadConfirmationPending() const;
     void cancelDirectLoad() { directLoadConfirmation_.reset(); }
