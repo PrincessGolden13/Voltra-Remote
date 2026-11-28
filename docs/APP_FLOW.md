@@ -1,3 +1,8 @@
+> November 28 v0.4.29. During standalone Live, an available streamed target
+> still takes priority. If the fallback read is confirmed for this connection,
+> the remote can ask for new device targets more often. The displayed weight
+> still comes from the VOLTRA. See [cadence evidence](LIVE_CADENCE_2026_11_28.md).
+>
 > November 28 v0.4.28. After the Auto Load hold, large Pull & Stabilize and
 > Progressive Loading instructions follow the VOLTRA's confirmed stages.
 > Keep Cancel visible and use a countdown only from the device. Live can
