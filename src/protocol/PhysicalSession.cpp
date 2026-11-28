@@ -25,6 +25,7 @@ constexpr unsigned twinMotorTargetReadLimit=3;
 constexpr uint64_t twinMotorTargetReadSpacingMs=750;
 constexpr uint64_t liveTargetFreshMs=500;
 constexpr uint64_t singleMotorTargetReadSpacingMs=300;
+constexpr uint64_t singleMotorTargetRecoveryMs=5000;
 constexpr unsigned singleMotorTargetMissLimit=3;
 constexpr uint16_t inverse=21424, extraMode=21446, chainsPercent=21722, eccentricPercent=21456;
 // kirby6365/voltra_remote 8e1ea1c: polled uint8 switches, absent from older CSV.
@@ -195,7 +196,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     autoLoadCountdownProbed_=autoLoadCountdownSupported_=false;autoLoadPollAt_=0;
     pairedRefreshAt_=0;pairedRefreshPending_=pairedDirectRefreshSent_=false;
     singleAutoFollowup_=SingleAutoFollowup::None;
-    liveWeightProbed_=false;clearRuntimeTargets();
+    liveWeightProbed_=false;liveTargetPhaseRevision_=0;clearRuntimeTargets();
     singleMotorTargetReadAt_.reset();singleMotorTargetLastValue_.reset();
     singleMotorTargetReads_=singleMotorTargetReplies_=singleMotorTargetUnanswered_=0;
     twinMotorTargetReads_=twinMotorTargetReplies_=0;
@@ -209,6 +210,7 @@ void PhysicalSession::connectionChanged(bool connected) {
     workoutExitCheck_.reset();
     targetImmediate_=false;
     telemetryAt_=unitSwitchAt_=0;commandFailed_=false;intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();
+    intentBaseAccessories_.reset();
     deviceSet_.reset();deviceRep_.reset();completedSets_.reset();completedReps_.reset();
     clearTwinDisplayTelemetry();
     twinAa81Tails_={};
@@ -316,7 +318,7 @@ void PhysicalSession::cancelWrites(const char* reason) {
     singleAutoFollowup_=SingleAutoFollowup::None;
     automaticWeightWindow_.reset();clearRepBoundary();
     targetClockPending_=targetImmediate_=false;
-    liveIntent_.reset();liveBefore_.reset();
+    liveIntent_.reset();liveBefore_.reset();intentBaseAccessories_.reset();
     intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();unitSwitchAt_=0;commandFailed_=*reason!=0;
 }
 void PhysicalSession::clearRepBoundary() {
@@ -330,6 +332,7 @@ bool PhysicalSession::automaticWeightWindowCurrent() const {
         std::abs(motionVelocity_)<=stationarySpeedMmPerSec && std::abs(motionPosition_-window.position)<=automaticWindowDriftMm;
 }
 bool PhysicalSession::liveAccessoriesExpected() const {
+    if(intentBaseAccessories_ && activeAccessoryAmounts()!=intentBaseAccessories_) return false;
     if(!liveIntent_ || !liveBefore_) return true;
     const auto& r=report_.settings;
     const auto expected=[&](Modifier actual,Modifier before,Modifier target,bool magic) {
@@ -341,6 +344,24 @@ bool PhysicalSession::liveAccessoriesExpected() const {
     return r.magicMode==liveBefore_->magicMode &&
         expected(r.magic,liveBefore_->magic,liveIntent_->magic,true) &&
         expected(r.eccentric,liveBefore_->eccentric,liveIntent_->eccentric,false);
+}
+std::optional<std::array<int64_t,2>> PhysicalSession::activeAccessoryAmounts() const {
+    const auto display=fresh(accessoryDisplayPercent);
+    if(display!=0 && display!=1) return {};
+    const auto magic=fresh(display==1 ? percentParameter(true) : chains);
+    const auto eccentricAmount=fresh(display==1 ? percentParameter(false) : eccentric);
+    if(!magic || !eccentricAmount || *magic<0 || *eccentricAmount<0) return {};
+    return std::array<int64_t,2>{*magic,*eccentricAmount};
+}
+bool PhysicalSession::rawBaseWithAccessoriesFits(int pounds,const std::array<int64_t,2>& amounts) const {
+    const auto maximum=fresh(maxForce),display=fresh(accessoryDisplayPercent);
+    if(!maximum) return false;
+    const auto accessories=amounts[0]+amounts[1];
+    // Percentage registers are hundredths of a percent. Preserve the raw
+    // values for the envelope instead of rounding to whole display percent.
+    constexpr int wholePercentScale=10000;
+    if(display==1) return pounds*(wholePercentScale+accessories)<=*maximum*wholePercentScale;
+    return display==0 && pounds+accessories<=*maximum;
 }
 bool PhysicalSession::standalone() const {
     // October 18: the user confirmed standalone while BOTH current coworker
@@ -504,8 +525,13 @@ std::optional<PhysicalSession::RuntimeTargetContext> PhysicalSession::runtimeTar
     return RuntimeTargetContext{*m,*u,*w};
 }
 bool PhysicalSession::runtimeTargetCurrent(const RuntimeTargetObservation& sample,
-                                           const RuntimeTargetContext& context) const {
-    return sample.context==context && now_>=sample.at && now_-sample.at<=liveTargetFreshMs;
+                                           const RuntimeTargetContext& context, uint64_t maximumAgeMs) const {
+    if(!(sample.context==context) || now_<sample.at || now_-sample.at>maximumAgeMs) return false;
+    if(now_-sample.at<=liveTargetFreshMs) return true;
+    // Bridge an absent target only while AA81 still confirms the same phase.
+    return motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs &&
+        sample.phaseRevision==liveTargetPhaseRevision_ &&
+        (!workoutStatus_ || *workoutStatus_==2);
 }
 void PhysicalSession::clearRuntimeTargets() {
     runtimeTarget_.reset();
@@ -514,18 +540,21 @@ void PhysicalSession::clearRuntimeTargets() {
 }
 bool PhysicalSession::pollSingleMotorTarget() {
     const auto context=runtimeTargetContext();
-    if(!context || (runtimeTarget_ && runtimeTargetCurrent(*runtimeTarget_,*context)) ||
-       !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs ||
-       singleMotorTargetUnanswered_>=singleMotorTargetMissLimit) return false;
+    if(!context || (runtimeTarget_ && runtimeTargetCurrent(*runtimeTarget_,*context,liveTargetFreshMs)) ||
+       !motionAt_ || now_<motionAt_ || now_-motionAt_>motionFreshMs) return false;
+    if(singleMotorTargetUnanswered_>=singleMotorTargetMissLimit &&
+       (!singleMotorTargetReplies_ || !singleMotorTargetReadAt_ || now_<*singleMotorTargetReadAt_ ||
+        now_-*singleMotorTargetReadAt_<singleMotorTargetRecoveryMs)) return false;
     if(singleMotorTargetPending_ && now_>=singleMotorTargetPending_->at &&
        now_-singleMotorTargetPending_->at<=liveTargetFreshMs) return false;
     if(singleMotorTargetReadAt_ && now_>=*singleMotorTargetReadAt_ &&
        now_-*singleMotorTargetReadAt_<singleMotorTargetReadSpacingMs) return false;
     // Isolate the optional read from all control writes and required state
     // groups. An unsupported register gets a small, finite probe budget.
+    // Once supported, a temporary outage gets a slow recovery check.
     singleMotorTargetReadAt_=now_;
-    singleMotorTargetPending_=MotorTargetRequest{now_,*context};
-    ++singleMotorTargetUnanswered_;
+    singleMotorTargetPending_=MotorTargetRequest{now_,*context,liveTargetPhaseRevision_};
+    if(singleMotorTargetUnanswered_<singleMotorTargetMissLimit) ++singleMotorTargetUnanswered_;
     countTrace(singleMotorTargetReads_);
     if(!read({motorTarget})) singleMotorTargetPending_.reset();
     return true;
@@ -847,8 +876,13 @@ void PhysicalSession::apply(const Frame& f) {
         if(!decoded) return;
         runtimeTarget_.reset();
         const auto context=runtimeTargetContext();
-        if(decoded->targetTenthsLb && context)
-            runtimeTarget_=RuntimeTargetObservation{*decoded->targetTenthsLb,now_,*context};
+        if(decoded->targetTenthsLb && context) {
+            runtimeTarget_=RuntimeTargetObservation{*decoded->targetTenthsLb,now_,*context,liveTargetPhaseRevision_};
+            // A streamed target supersedes an older motor observation and any
+            // read that was issued before the stream resumed.
+            singleMotorTarget_.reset();
+            singleMotorTargetPending_.reset();
+        }
         updateReport();return;
     }
     if(f.command==twinStatusCommand) {
@@ -993,7 +1027,7 @@ void PhysicalSession::apply(const Frame& f) {
                    now_-request.at<=liveTargetFreshMs) {
                     singleMotorTargetLastValue_=int(pair.second);
                     if(pair.second>=0 && pair.second<=maximumRuntimeTargetTenthsLb) {
-                        singleMotorTarget_=RuntimeTargetObservation{int(pair.second),now_,*context};
+                        singleMotorTarget_=RuntimeTargetObservation{int(pair.second),now_,*context,request.phaseRevision};
                         singleMotorTargetUnanswered_=0;
                         countTrace(singleMotorTargetReplies_);
                     } else singleMotorTarget_.reset();
@@ -1187,6 +1221,7 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
             if(automaticWeightWindow_) cancelWrites("Drop stopped: motion unavailable");
             updateReport();return;
         }
+        ++liveTargetPhaseRevision_;
         if(automaticWeightWindow_) cancelWrites("Drop stopped: movement resumed");
         if(p[2]==1) clearRepBoundary();
         else completedRepWindow_=false;
@@ -1229,7 +1264,7 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
         completedReps_=u16(p,15);telemetryAt_=now_;
         // A repeated close/summary for this set must not restart the rest clock.
         if(completedSets_ && *completedReps_>0 && closedSet_!=completedSets_) {
-            closedSet_=completedSets_;setEndedAt_=now_;++setEndRevision_;
+            closedSet_=completedSets_;setEndedAt_=now_;++setEndRevision_;++liveTargetPhaseRevision_;
         }
         Serial.printf("VOLTRA set summary set=%d reps=%d\n",completedSets_.value_or(-1),*completedReps_);
     } else if(p.size()==45 && p[0]==0x81 && p[1]==0x2b) {
@@ -1247,6 +1282,7 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
         }
         const bool continuous=motionAt_ && now_>=motionAt_ && now_-motionAt_<=motionFreshMs;
         const auto previousPhase=motionPhase_;
+        if(!continuous || previousPhase!=p[2] || deviceSet_!=p[3] || deviceRep_!=rep) ++liveTargetPhaseRevision_;
         deviceSet_=p[3];deviceRep_=rep;telemetryAt_=motionAt_=now_;++motionRevision_;
         pairedMotion_=pairedMotionUsableForEdit_=false;peerMotionVelocity_=0;
         motionPhase_=p[2];motionForce_=u16(p,11);motionPosition_=u16(p,13);motionVelocity_=int16_t(u16(p,15));
@@ -1288,6 +1324,7 @@ void PhysicalSession::applyTelemetry(const Frame& f) {
     } else if(p.size()==39 && p[0]==0x80 && p[1]==0x25 && p[2]==1 && p[3]==0) {
         // Retain unknown values as unknown phases, never the previous active
         // phase. Readiness accepts only the explicitly recognized states.
+        if(workoutStatus_!=p[4]) ++liveTargetPhaseRevision_;
         workoutStatus_=p[4];
         if(*workoutStatus_!=2) {
             clearRepBoundary();
@@ -1489,8 +1526,13 @@ void PhysicalSession::updateReport() {
 TrainingReport PhysicalSession::trainingReport() const {
     auto result=report_;
     if(const auto context=runtimeTargetContext()) {
-        const auto* target=runtimeTarget_ && runtimeTargetCurrent(*runtimeTarget_,*context) ? &*runtimeTarget_ :
-            singleMotorTarget_ && runtimeTargetCurrent(*singleMotorTarget_,*context) ? &*singleMotorTarget_ : nullptr;
+        const auto* target=runtimeTarget_ && runtimeTargetCurrent(*runtimeTarget_,*context,liveTargetDisplayMs)
+            ? &*runtimeTarget_ : nullptr;
+        // Prefer the fresh stream. Once it needs grace, show a newer exact
+        // isolated reply immediately instead of keeping the older reading.
+        if(singleMotorTarget_ && runtimeTargetCurrent(*singleMotorTarget_,*context,liveTargetDisplayMs) &&
+           (!target || (now_-target->at>liveTargetFreshMs && singleMotorTarget_->at>target->at)))
+            target=&*singleMotorTarget_;
         if(target) {
             result.liveTargetTenthsLb=target->tenthsLb;
             result.liveTargetAtMs=target->at;
@@ -1655,10 +1697,11 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     if((!settingsReady() && !loadedEdit) || (waitingWrite_ && waitingWrite_->first==motor)) {
         status_=!updateAllowsControls() ? updateBlockReason() : "Unload / wait for fresh control state";return TransportResult::Unsupported;
     }
+    const auto same=[](Modifier a,Modifier b) {return a.enabled==b.enabled && a.value==b.value && a.percent==b.percent;};
+    const bool baseOnly=report_.loaded && settings.magicMode==report_.settings.magicMode &&
+        same(settings.magic,report_.settings.magic) && same(settings.eccentric,report_.settings.eccentric);
     if(report_.loaded) {
-        const auto same=[](Modifier a,Modifier b) {return a.enabled==b.enabled && a.value==b.value && a.percent==b.percent;};
-        if(twinObserved_ && (!loadedEdit || settings.magicMode!=report_.settings.magicMode ||
-            !same(settings.magic,report_.settings.magic) || !same(settings.eccentric,report_.settings.eccentric))) {
+        if(twinObserved_ && (!loadedEdit || !baseOnly)) {
             status_="Unload to adjust accessories";return TransportResult::Unsupported;
         }
         if(!twinObserved_ && (!loadedEdit || settings.magicMode!=report_.settings.magicMode ||
@@ -1678,7 +1721,8 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     const auto rawBase=encodedWeight(settings.weight,true);
     if(!rawBase) {status_="Outside device limits";return TransportResult::Failed;}
     pounds.weight=*rawBase;
-    for(auto* m:{&pounds.magic,&pounds.eccentric}) if(!m->percent) {
+    const auto existingAccessories=baseOnly ? activeAccessoryAmounts() : std::nullopt;
+    if(!baseOnly) for(auto* m:{&pounds.magic,&pounds.eccentric}) if(!m->percent) {
         const auto encoded=encodedWeight(m->enabled ? m->value : 0,false);
         if(!encoded) {status_="Value is not supported by VOLTRA";return TransportResult::Failed;}
         m->value=*encoded;
@@ -1688,7 +1732,8 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
        (settings.magic.enabled && !settings.magic.percent && !weightOnIncrement(report_,settings.magic.value)) ||
        (settings.eccentric.enabled && !settings.eccentric.percent && !weightOnIncrement(report_,settings.eccentric.value)) ||
        envelopeHundredths(settings)>report_.maxWeight*100 ||
-       envelopeHundredths(pounds)>*fresh(maxForce)*100) {
+        (baseOnly ? !existingAccessories || !rawBaseWithAccessoriesFits(*rawBase,*existingAccessories) :
+         envelopeHundredths(pounds)>*fresh(maxForce)*100)) {
         status_="Outside device limits";return TransportResult::Failed;
     }
     // Coalesce only new explicit settings intents. Never replay on reconnect,
@@ -1699,6 +1744,7 @@ TransportResult PhysicalSession::setTraining(const TrainingSettings& settings) {
     intentLoaded_=report_.loaded;
     liveIntent_=intentLoaded_ ? std::optional<TrainingSettings>(settings) : std::optional<TrainingSettings>{};
     liveBefore_=intentLoaded_ ? std::optional<TrainingSettings>(report_.settings) : std::optional<TrainingSettings>{};
+    intentBaseAccessories_=existingAccessories;
     if(!intentDisplay_) intentDisplay_=fresh(accessoryDisplayPercent);
     return TransportResult::Accepted;
 }
@@ -1725,13 +1771,18 @@ void PhysicalSession::prepareWrites(const TrainingSettings& s) {
     const auto add=[&](uint16_t id,int value,int bytes) {writes_.push_back({id,value,bytes});};
     const auto rawBase=encodedWeight(s.weight,true);
     if(!rawBase) {cancelWrites("Value is not supported by VOLTRA");return;}
+    const int pounds=*rawBase;
+    const int oldBase=int(*fresh(base)); // Control readiness was checked before planning.
+    if(intentBaseAccessories_) {
+        if(!rawBaseWithAccessoriesFits(pounds,*intentBaseAccessories_)) {cancelWrites("Outside device limits");return;}
+        if(pounds!=oldBase) add(base,pounds,2);
+        return;
+    }
     const auto magicWire=s.magic.percent ? std::optional<int>(s.magic.value*100) : encodedWeight(s.magic.value,false);
     const auto eccentricWire=s.eccentric.percent ? std::optional<int>(s.eccentric.value*100) : encodedWeight(s.eccentric.value,false);
     if((s.magic.enabled && !magicWire) || (s.eccentric.enabled && !eccentricWire)) {
         cancelWrites("Value is not supported by VOLTRA");return;
     }
-    const int pounds=*rawBase;
-    const int oldBase=int(*fresh(base)); // settingsReady checked before planning.
     // Monotone envelope ordering: reductions first, then increases. An unchanged
     // modifier is never cleared/restored. Changing IC must not disturb EO.
     if(pounds<oldBase) add(base,pounds,2);
@@ -2059,7 +2110,7 @@ void PhysicalSession::tick(uint64_t now) {
             else read({waitingWrite_->first});
             return;
         }
-        if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();liveBefore_.reset();}
+        if(!target_) {intentUnit_.reset();intentInterpretation_.reset();intentMaximum_.reset();intentDisplay_.reset();liveIntent_.reset();liveBefore_.reset();intentBaseAccessories_.reset();}
         if(!liveWeightProbed_) {
             liveWeightProbed_=true;read({liveWireWeight});return;
         }

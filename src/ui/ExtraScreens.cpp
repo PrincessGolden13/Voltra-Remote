@@ -183,11 +183,13 @@ void UiController::buildExtra() {
     if (page_ == Screen::Settings) {
         const char* names[]={"Theme", "Rest alert", "Dim", "Sleep"};
         for(int i=0;i<4;++i) {
-            auto* b=action(names[i],19,25+i*9,62,8,ThemeField+i); settingsValues_[i]=lv_obj_get_child(b,0);
+            auto* b=action(names[i],25,24+i*8,50,7,ThemeField+i); settingsValues_[i]=lv_obj_get_child(b,0);
         }
-        action("Send log",19,62,29,9,SendDebugLog);
-        bleTraceButton_=action("",51,62,30,9,ToggleBleTrace);
-        action("Wi-Fi",16,73,31,8,OpenWifi); action("Updates",53,73,31,8,OpenUpdates);
+        loadedAdjustmentButton_=action("",18,56,64,8,ToggleLoadedAdjustment);
+        style::set_text_font(lv_obj_get_child(loadedAdjustmentButton_,0),medium,0);
+        action("Send log",19,65,29,8,SendDebugLog);
+        bleTraceButton_=action("",51,65,30,8,ToggleBleTrace);
+        action("Wi-Fi",16,74,31,8,OpenWifi); action("Updates",53,74,31,8,OpenUpdates);
         action("About",24,83,24,8,OpenAbout); action("Reset",52,83,24,8,OpenReset);
     } else if(page_ == Screen::Reset) {
         label(face_,"Erase themes, preferences\nand saved presets?\nRecent devices are kept.",width_*73/100,height_*36/100,medium);
@@ -281,18 +283,20 @@ void UiController::updateExtra() {
         text(status_,"");
         const bool known=app_.fresh() && r.telemetryValid;
         const auto now=hardware_.nowMs();
-        constexpr uint64_t liveWeightFreshMs=500;
         const bool liveWeightFresh=app_.fresh() && app_.readbackFresh() && r.loadStateKnown &&
             r.loaded && !r.autoLoadArmed && !r.twin && !r.twinDetected && r.twinKnown &&
             r.liveTargetTenthsLb && *r.liveTargetTenthsLb>=0 && *r.liveTargetTenthsLb<=10000 &&
-            now>=r.liveTargetAtMs && now-r.liveTargetAtMs<=liveWeightFreshMs;
+            now>=r.liveTargetAtMs && now-r.liveTargetAtMs<=liveTargetDisplayMs;
         // Round the device-reported target for the user's whole-LB display.
         // Do not substitute measured tension, 16003, base, curve or phase math.
         const int targetTicks=liveWeightFresh ? int(std::lround(
             convertedWeightTicks(*r.liveTargetTenthsLb,WeightUnit::Pounds,r.unit)/10.0)) : 0;
         largeValue(liveWeightFresh ? weightText(targetTicks,r.unit) : "--");
-        text(start_,app_.readbackFresh() ? d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) :
-            "BASE "+weightText(r.settings.weight,r.unit)+" "+unitName(r.unit) : "");
+        const auto selectedWeight=app_.weightPreview();
+        text(start_,!app_.readbackFresh() ? "" : selectedWeight ?
+            "SET "+weightText(*selectedWeight,r.unit)+" "+unitName(r.unit) :
+            d.enabled ? "START "+weightText(app_.startingWeight(),r.unit) :
+            "BASE "+weightText(r.settings.weight,r.unit)+" "+unitName(r.unit));
         int next=d.mode == DropMode::Stairs ? nextStairWeight(r,d.step) : nextRestPauseWeight(r,d.percent);
         if(d.mode == DropMode::RestPause && app_.dropsCompleted() >= d.drops) next=r.settings.weight;
         const bool atFloor=known && r.minWeight>0 && r.settings.weight<=r.minWeight &&
@@ -334,6 +338,9 @@ void UiController::updateExtra() {
         for(int i=0;i<4;++i) style::set_text_color(settingsValues_[i],lv_color_hex(i==settingsField_ ? white : dim),0);
         text(lv_obj_get_child(bleTraceButton_,0),bleTraceEnabled_ ? "BLE trace On" : "BLE trace Off");
         glow(bleTraceButton_,accent(),bleTraceEnabled_);
+        text(lv_obj_get_child(loadedAdjustmentButton_,0),config_.loadedWeightAdjustment ?
+            "Adjust while loaded  On" : "Adjust while loaded  Off");
+        glow(loadedAdjustmentButton_,accent(),config_.loadedWeightAdjustment);
     }
 }
 }

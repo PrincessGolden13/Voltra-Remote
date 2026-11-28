@@ -32,6 +32,11 @@ public:
             if (p.eccentric.value == 0) p.eccentric.enabled = false;
             c.presets.push_back(p);
         }
+        // Earlier readers ignore the optional preference after the recipes.
+        if(version==3 && (in>>std::ws) && !in.eof()) {
+            int adjustment=0;
+            c.loadedWeightAdjustment=bool(in>>adjustment) && adjustment==1;
+        }
         return c;
     }
     bool save(const RemoteConfiguration& c) override {
@@ -42,6 +47,7 @@ public:
             out << int(p.mode) << ' ' << p.magic.enabled << ' ' << p.magic.value << ' ' << p.eccentric.enabled << ' '
                 << p.eccentric.value << ' ' << p.magic.percent << ' ' << int(p.unit) << ' ' << p.drops.enabled << ' '
                 << int(p.drops.mode) << ' ' << p.drops.step << ' ' << p.drops.drops << ' ' << p.drops.percent << ' ' << p.drops.holdSeconds << ' ' << p.magic.percent << ' ' << p.eccentric.percent << '\n';
+        out << int(c.loadedWeightAdjustment) << '\n';
         out.close(); if (!out) return false;
 #ifdef _WIN32
         return MoveFileExW(temp.c_str(), path_.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;

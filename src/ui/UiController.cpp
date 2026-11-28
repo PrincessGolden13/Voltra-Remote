@@ -9,6 +9,7 @@ namespace voltra {
 namespace {
 constexpr uint32_t bg = 0x04080b, bright = 0xf5f8ff, muted = 0x59677d;
 constexpr uint32_t soft = 0x96a7bd, amber = 0xffc374;
+constexpr int autoLoadPullPhase=11, autoLoadStabilizePhase=12, autoLoadProgressivePhase=13;
 
 void color(lv_obj_t* obj, uint32_t c) { style::set_text_color(obj, lv_color_hex(c), 0); }
 void value(lv_obj_t* obj, const std::string& text) { if (obj && text != lv_label_get_text(obj)) lv_label_set_text(obj, text.c_str()); }
@@ -654,6 +655,15 @@ void UiController::act(int action, const std::string& id, bool held) {
         navigate(Screen::Main); return;
     }
     if (action == OpenSettings) { navigate(Screen::Settings); return; }
+    if (action == ToggleLoadedAdjustment) {
+        if(!held && page_==Screen::Settings) {
+            const bool previous=config_.loadedWeightAdjustment;
+            config_.loadedWeightAdjustment=!previous;
+            if(!saveConfiguration()) config_.loadedWeightAdjustment=previous;
+            else value(message_,"");
+        }
+        return;
+    }
     if (action == SendDebugLog) { debugPending_=true; return; }
     if (action == ToggleBleTrace) { if(!held) setBleTrace(!bleTraceEnabled_); return; }
     if(action==InstallUpdate) {
@@ -769,6 +779,7 @@ void UiController::build() {
     weight_ = title_ = status_ = hint_ = message_ = arc_ = unit_ = limit_ = dropTitle_ = nullptr;
     dropsCommitLabel_=nullptr;
     autoLoadArc_=autoLoadTitle_=autoLoadPrompt_=nullptr;
+    autoLoadTarget_=autoLoadDetail_=autoLoadCountdown_=autoLoadCancel_=nullptr;
     weightHoldActive_=weightUnloadGesture_=autoFeedbackVisible_=false;
     center_ = battery_ = nullptr; ticks_.fill(nullptr);
     presetTile_ = presetValue_ = presetCaption_ = stats_ = start_ = nextWeight_ = nullptr;
@@ -776,7 +787,7 @@ void UiController::build() {
     wifiBody_=wifiButton_=wifiReset_=wifiBack_=nullptr;
     updateBody_=updateInstall_=nullptr;
     for (auto& item : settingsValues_) item = nullptr;
-    bleTraceButton_ = nullptr;
+    bleTraceButton_=loadedAdjustmentButton_=nullptr;
     for (auto& item : liveValues_) item = nullptr;
     for (auto& item : unitChoices_) item = nullptr;
     for (int i=0; i<3; ++i) {
@@ -960,8 +971,7 @@ void UiController::build() {
         lv_obj_set_y(battery_,height_*94/100);
         message_ = label(face_, "", width_*68/100, height_*88/100, small); color(message_, soft);
         lv_obj_add_flag(hint_,LV_OBJ_FLAG_HIDDEN);
-        // VOLTRA's circular hold cue, adapted to the remote's cyan palette.
-        // Decorative objects pass touches through to the weight/cancel target.
+        // Decorative objects pass touches through to the weight target.
         autoLoadArc_=arc(face_,width_*50/100,accent());
         style::align(autoLoadArc_,LV_ALIGN_TOP_MID,0,height_*24/100);
         lv_arc_set_rotation(autoLoadArc_,270);lv_arc_set_bg_angles(autoLoadArc_,0,360);
@@ -969,9 +979,16 @@ void UiController::build() {
         style::set_arc_width(autoLoadArc_,std::max(4,width_/70),LV_PART_INDICATOR);
         autoLoadTitle_=label(face_,"",width_*56/100,height_*30/100,medium);
         autoLoadPrompt_=label(face_,"",width_*46/100,height_*59/100,small);
+        autoLoadTarget_=label(face_,"",width_*46/100,height_*27/100,small);
+        autoLoadDetail_=label(face_,"",width_*49/100,height_*51/100,medium);
+        autoLoadCountdown_=label(face_,"",width_*46/100,height_*61/100,
+            width_ < 400 ? &lv_font_montserrat_28 : &lv_font_montserrat_36);
+        autoLoadCancel_=button(face_,"Cancel",width_*35/100,height_*79/100,width_*30/100,height_*11/100,Unload);
+        glow(autoLoadCancel_,accent(),true);
         lv_label_set_long_mode(autoLoadPrompt_,LV_LABEL_LONG_WRAP);
-        color(autoLoadTitle_,accent());color(autoLoadPrompt_,bright);
-        for(auto* item:{autoLoadArc_,autoLoadTitle_,autoLoadPrompt_}) lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
+        color(autoLoadTitle_,accent());color(autoLoadTarget_,soft);
+        for(auto* item:{autoLoadArc_,autoLoadTitle_,autoLoadPrompt_,autoLoadTarget_,autoLoadDetail_,autoLoadCountdown_,autoLoadCancel_})
+            lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
         return;
     }
     if (page_ == Screen::Magic) {
@@ -1113,9 +1130,9 @@ void UiController::rotate(int delta) {
         if(settingsField_==0) {next_=page_;rebuild_=true;}
         return;
     }
-    if (page_ == Screen::Live) { app_.adjustWeight(delta); return; }
+    if (page_ == Screen::Live) { app_.adjustWeight(delta,config_.loadedWeightAdjustment); return; }
     if (page_ == Screen::Devices || int(page_) >= int(Screen::Presets) || !app_.fresh()) return;
-    if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta); return; }
+    if (page_ == Screen::Main) { weightFocused_ = true; app_.adjustWeight(delta,config_.loadedWeightAdjustment); return; }
     if (page_ != Screen::Drops) {
         auto& memory = unitSelection();
         draftValue_ = editValue(draftValue_+delta);
@@ -1172,9 +1189,11 @@ void UiController::update() {
         value(title_,detectedTwin ? deviceNames(app_.name(),r.twinPeerName) : app_.name());
         value(status_,"");
         updateScale(readback ? shownWeight : 0,readback ? r.maxWeight : 0,"",atMaximum ? maximumColor : accent());
-        for(auto* mark:scaleLabels_) {
-            if(readback && r.maxWeight>0) lv_obj_remove_flag(mark,LV_OBJ_FLAG_HIDDEN);
-            else lv_obj_add_flag(mark,LV_OBJ_FLAG_HIDDEN);
+        if(lv_obj_has_flag(autoLoadCancel_,LV_OBJ_FLAG_HIDDEN)) {
+            for(auto* mark:scaleLabels_) {
+                if(readback && r.maxWeight>0) lv_obj_remove_flag(mark,LV_OBJ_FLAG_HIDDEN);
+                else lv_obj_add_flag(mark,LV_OBJ_FLAG_HIDDEN);
+            }
         }
         const bool modifierKnown[]={readback && r.magicSupported[int(r.settings.magicMode)],readback && r.eccentricSupported};
         for (int i=0; i<2; ++i) {
@@ -1320,12 +1339,34 @@ void UiController::updateAutoLoadFeedback() {
         touchPressTwin_==(r.twin || r.twinDetected) && elapsed>=autoLoadHintMs && elapsed<debugHoldMs &&
         app_.fresh() && !r.loaded && !r.autoLoadArmed && !app_.pending();
     const bool holding=holdingWeight && r.autoLoadSupported;
-    const bool starting=app_.autoLoadRequested() && !r.loaded && !r.autoLoadArmed;
     const bool armed=app_.fresh() && r.autoLoadArmed;
-    const bool visible=(holding || starting || armed) && !debugDialog_ && !debugPending_;
-    for(auto* item:{autoLoadArc_,autoLoadTitle_,autoLoadPrompt_}) {
-        if(visible) lv_obj_remove_flag(item,LV_OBJ_FLAG_HIDDEN);
+    const bool starting=app_.autoLoadRequested() && !r.loaded && !armed;
+    const bool guided=(starting || armed) && app_.selectionReady() && !debugDialog_ && !debugPending_;
+    const bool visible=guided || (holding && !debugDialog_ && !debugPending_);
+    const bool wasGuided=!lv_obj_has_flag(autoLoadCancel_,LV_OBJ_FLAG_HIDDEN);
+    const auto show=[](lv_obj_t* item,bool shown) {
+        if(!item) return;
+        if(shown) lv_obj_remove_flag(item,LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(item,LV_OBJ_FLAG_HIDDEN);
+    };
+    for(auto* item:{autoLoadArc_,autoLoadTitle_,autoLoadPrompt_}) show(item,visible);
+    for(auto* item:{autoLoadTarget_,autoLoadDetail_,autoLoadCountdown_,autoLoadCancel_}) show(item,guided);
+    if(guided || wasGuided) {
+        const bool twin=r.twin || r.twinDetected;
+        const bool readback=app_.readbackFresh() && (!twin || (app_.twinFresh() && r.combinedWeightKnown));
+        for(auto* tick:ticks_) show(tick,!guided);
+        for(auto* mark:scaleLabels_) show(mark,!guided && readback && r.maxWeight>0);
+        for(auto* item:{weight_,unit_,message_}) show(item,!guided);
+        if(guided) value(autoLoadTarget_,readback ? weightText(r.settings.weight,r.unit)+" "+unitName(r.unit)+" target" : "");
+    }
+    if(guided!=wasGuided) {
+        lv_obj_set_size(autoLoadArc_,width_*(guided ? 56 : 50)/100,width_*(guided ? 56 : 50)/100);
+        lv_obj_set_y(autoLoadArc_,height_*(guided ? 22 : 24)/100);
+        lv_obj_set_y(autoLoadTitle_,height_*(guided ? 16 : 30)/100);
+        lv_obj_set_width(autoLoadPrompt_,width_*(guided ? 52 : 46)/100);
+        lv_obj_set_y(autoLoadPrompt_,height_*(guided ? 34 : 59)/100);
+        style::set_text_font(autoLoadPrompt_,guided ? (width_ < 400 ? &lv_font_montserrat_18 : &lv_font_montserrat_28) :
+            (width_ < 400 ? &lv_font_montserrat_12 : &lv_font_montserrat_14),0);
     }
     if(visible || autoFeedbackVisible_) {
         // Replace the unavailable modifier controls with a focused circular
@@ -1348,7 +1389,7 @@ void UiController::updateAutoLoadFeedback() {
         if(visible) {
             lv_obj_add_flag(status_,LV_OBJ_FLAG_HIDDEN);
         } else lv_obj_remove_flag(status_,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_y(title_,height_*(visible ? 17 : 21)/100);
+        lv_obj_set_y(title_,height_*(guided ? 7 : visible ? 17 : 21)/100);
         lv_obj_set_y(center_,height_*(visible ? 38 : 35)/100);
         const int scale=std::min(width_*(visible ? 390 : 560)/480,
             width_*(visible ? 40 : 64)/100*256/std::max(1,int(lv_obj_get_width(weight_))));
@@ -1367,37 +1408,38 @@ void UiController::updateAutoLoadFeedback() {
     value(autoLoadTitle_,direct ? "DIRECT LOAD" : "AUTO LOAD");
     style::set_arc_color(autoLoadArc_,lv_color_hex(accent()),LV_PART_INDICATOR);
     color(autoLoadTitle_,accent());
-    if(holding) {
+    if(!guided) {
         lv_arc_set_rotation(autoLoadArc_,270);
         lv_arc_set_value(autoLoadArc_,int(std::min<uint64_t>(elapsed,autoLoadHoldMs)*1000/autoLoadHoldMs));
         style::set_opa(autoLoadArc_,LV_OPA_COVER,0);
         value(autoLoadPrompt_,elapsed>=autoLoadHoldMs ? "Release for\nAuto Load" : "Keep holding...");
         value(message_,elapsed>=autoLoadHoldMs ? "Release to start" : "Release early to cancel");
-    } else if(starting) {
-        // This is request feedback, never a claim of device confirmation.
-        lv_arc_set_rotation(autoLoadArc_,int(now%1200)*360/1200);
-        lv_arc_set_value(autoLoadArc_,260);
-        style::set_opa(autoLoadArc_,LV_OPA_COVER,0);
-        value(autoLoadPrompt_,"Starting...");
-        value(message_,"Tap weight to cancel");
     } else {
-        lv_arc_set_rotation(autoLoadArc_,270);lv_arc_set_value(autoLoadArc_,1000);
-        const auto wave=now%1600;
-        const auto pulse=wave<800 ? wave : 1600-wave;
-        style::set_opa(autoLoadArc_,lv_opa_t(96+pulse*159/800),0);
-        std::string prompt=direct ? "Hold cable still" :
-            r.twin && r.autoLoadPhase!=11 ? "Waiting for\nVOLTRA" : "Pull cable and\nhold still";
-        if(r.autoLoadPhase==12) {
-            prompt=direct ? "Safety Check" : "Hold still";
-            if(r.autoLoadCountdownMs && now>=r.autoLoadCountdownAtMs && now-r.autoLoadCountdownAtMs<=500) {
-                // Show only received countdown values. Do not decrement a
-                // local clock or substitute the two-second touch-hold timer.
-                const int tenths=(*r.autoLoadCountdownMs+99)/100;
-                prompt+="\n"+std::to_string(tenths/10)+"."+std::to_string(tenths%10)+"s";
+        // The circular cue remains visible through the request. The next
+        // action and countdown come from the machine's confirmed phase.
+        lv_arc_set_rotation(autoLoadArc_,starting ? int(now%1200)*360/1200 : 270);
+        lv_arc_set_value(autoLoadArc_,starting ? 260 : 1000);
+        style::set_opa(autoLoadArc_,LV_OPA_COVER,0);
+        std::string prompt=starting ? "Starting..." : "Waiting for\nVOLTRA";
+        std::string detail=starting && !direct ? "Get ready to pull." : "";
+        std::string countdown;
+        if(armed && (r.autoLoadPhase==autoLoadPullPhase || r.autoLoadPhase==autoLoadStabilizePhase)) {
+            prompt=direct ? "Safety Check" : "Pull & Stabilize";
+            detail=!direct && r.autoLoadPhase==autoLoadPullPhase ? "Pull the cable to\nyour start position.\nStay steady." :
+                "Hold the cable still.";
+            if(r.autoLoadPhase==autoLoadStabilizePhase && r.autoLoadCountdownMs && *r.autoLoadCountdownMs>0 &&
+               now>=r.autoLoadCountdownAtMs && now-r.autoLoadCountdownAtMs<=500) {
+                countdown=std::to_string((*r.autoLoadCountdownMs+999)/1000);
             }
-        } else if(r.autoLoadPhase==13) prompt=direct ? "Progressive\nLoading" : "Engaging...";
+        } else if(armed && r.autoLoadPhase==autoLoadProgressivePhase) {
+            prompt="Progressive\nLoading";
+            detail="Load increases during\nyour first rep.";
+        }
+        if(armed && app_.message()=="Use VOLTRA to unload") detail=app_.message();
         value(autoLoadPrompt_,prompt);
-        value(message_,"Tap weight to cancel");
+        value(autoLoadDetail_,detail);
+        value(autoLoadCountdown_,countdown);
+        lv_obj_set_y(autoLoadDetail_,height_*(armed && r.autoLoadPhase==autoLoadProgressivePhase ? 54 : 50)/100);
     }
     color(message_,soft);
 }

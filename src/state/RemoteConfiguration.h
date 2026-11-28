@@ -26,6 +26,7 @@ struct RemoteConfiguration {
     int restAlertSeconds = 0; // Off on first use and factory reset; preserve explicit saved choices.
     int dimMinutes = 15, sleepMinutes = 20;
     std::vector<Preset> presets;
+    bool loadedWeightAdjustment = true;
 };
 class RemoteConfigurationStore {
 public:

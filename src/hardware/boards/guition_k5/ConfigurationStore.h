@@ -3,15 +3,24 @@
 #include <Preferences.h>
 #include <nvs.h>
 namespace voltra::guition {
-// A single remote-wide NVS blob. No machine identifiers, load state or base weight.
+// Remote preferences and recipes. No machine identifiers, load state or base weight.
 class ConfigurationStore final : public RemoteConfigurationStore {
     static constexpr int version=2, headerWords=6, recipeWords=14;
+    // A separate key lets OTA rollback keep reading the existing recipe blob.
+    static constexpr const char* loadedAdjustmentKey="loaded-adjust";
     bool writable_=true;
 public:
     RemoteConfiguration load() override {
         RemoteConfiguration c;writable_=true;
         nvs_handle_t handle;const auto opened=nvs_open("voltra-ui",NVS_READONLY,&handle);
-        if(opened!=ESP_OK) {writable_=opened==ESP_ERR_NVS_NOT_FOUND;return c;}
+        if(opened!=ESP_OK) {
+            writable_=opened==ESP_ERR_NVS_NOT_FOUND;
+            c.loadedWeightAdjustment=writable_;
+            return c;
+        }
+        uint8_t adjustment=0;
+        const auto preference=nvs_get_u8(handle,loadedAdjustmentKey,&adjustment);
+        c.loadedWeightAdjustment=preference==ESP_ERR_NVS_NOT_FOUND || (preference==ESP_OK && adjustment==1);
         size_t bytes=0;const auto found=nvs_get_blob(handle,"config",nullptr,&bytes);
         if(found==ESP_ERR_NVS_NOT_FOUND) {nvs_close(handle);return c;}
         if(found!=ESP_OK || bytes<headerWords*4 || bytes>(headerWords+99*recipeWords)*4 || bytes%4) {
@@ -62,7 +71,11 @@ public:
             nvs.getBytes("config",persisted.data(),bytes)==bytes && persisted==data;
         const bool saved=(unchanged || nvs.putBytes("config",data.data(),bytes)==bytes) &&
             nvs.getBytesLength("config")==bytes && nvs.getBytes("config",persisted.data(),bytes)==bytes && persisted==data;
-        nvs.end();return saved;
+        const uint8_t adjustment=c.loadedWeightAdjustment;
+        const bool preferenceSaved=saved && (nvs.getUChar(loadedAdjustmentKey,2)==adjustment ||
+            (adjustment && !nvs.isKey(loadedAdjustmentKey)) ||
+            (nvs.putUChar(loadedAdjustmentKey,adjustment)==1 && nvs.getUChar(loadedAdjustmentKey,2)==adjustment));
+        nvs.end();return preferenceSaved;
     }
 };
 }

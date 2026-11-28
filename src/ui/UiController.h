@@ -74,6 +74,7 @@ private:
     lv_obj_t *face_ = nullptr, *weight_ = nullptr, *title_ = nullptr, *status_ = nullptr,
         *hint_ = nullptr, *message_ = nullptr, *arc_ = nullptr, *unit_ = nullptr, *limit_ = nullptr;
     lv_obj_t *autoLoadArc_=nullptr,*autoLoadTitle_=nullptr,*autoLoadPrompt_=nullptr;
+    lv_obj_t *autoLoadTarget_=nullptr,*autoLoadDetail_=nullptr,*autoLoadCountdown_=nullptr,*autoLoadCancel_=nullptr;
     bool weightHoldActive_=false,weightUnloadGesture_=false,autoFeedbackVisible_=false;
     void updateAutoLoadFeedback();
     // Presentation only: confirmed Auto Load completion can precede the first
@@ -148,7 +149,7 @@ private:
     bool wifiConfiguring_=false;
     lv_obj_t *updateBody_=nullptr,*updateInstall_=nullptr;
     lv_obj_t* settingsValues_[4]{};
-    lv_obj_t* bleTraceButton_=nullptr;
+    lv_obj_t *bleTraceButton_=nullptr,*loadedAdjustmentButton_=nullptr;
     bool bleTraceEnabled_=false;
     void setBleTrace(bool enabled);
     lv_obj_t* liveValues_[3]{};
